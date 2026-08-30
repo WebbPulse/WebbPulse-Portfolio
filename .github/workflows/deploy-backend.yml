@@ -3,7 +3,7 @@
 #
 # Ordering guarantee: the image build runs immediately (no conflict with Terraform), but
 # before touching App Runner the job waits for any active HCP Terraform run on the
-# WebbPulse workspace to reach a terminal state. This prevents the
+# WebbPulse-Portfolio workspace to reach a terminal state. This prevents the
 # OPERATION_IN_PROGRESS error that occurs when Terraform updates App Runner config
 # at the same time as a deployment.
 #
@@ -43,7 +43,7 @@ jobs:
       AWS_REGION: us-west-2
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       TFC_ORG: WebbPulse
-      TFC_WORKSPACE: WebbPulse
+      TFC_WORKSPACE: WebbPulse-Portfolio
 
     steps:
       - uses: actions/checkout@v5
