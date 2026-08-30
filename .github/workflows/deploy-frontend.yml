@@ -33,7 +33,7 @@ jobs:
 
     env:
       AWS_REGION: us-west-2
-      TFC_ORG: WebbPulseTerraform
+      TFC_ORG: WebbPulse
       TFC_WORKSPACE: WebbPulse
 
     steps:
