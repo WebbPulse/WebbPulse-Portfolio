@@ -3,7 +3,7 @@
 #
 # Ordering guarantee: the npm build runs immediately (no conflict with Terraform), but
 # before syncing to S3 the job waits for any active HCP Terraform run on the
-# WebbPulse workspace to reach a terminal state. This prevents partial deploys
+# WebbPulse-Portfolio workspace to reach a terminal state. This prevents partial deploys
 # against infrastructure that is mid-update.
 #
 # GitHub Actions variables required (Settings → Secrets and variables → Variables):
@@ -34,7 +34,7 @@ jobs:
     env:
       AWS_REGION: us-west-2
       TFC_ORG: WebbPulse
-      TFC_WORKSPACE: WebbPulse
+      TFC_WORKSPACE: WebbPulse-Portfolio
 
     steps:
       - uses: actions/checkout@v5
