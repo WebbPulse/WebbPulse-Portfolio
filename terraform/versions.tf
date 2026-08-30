@@ -16,7 +16,7 @@ terraform {
     organization = "WebbPulse"
 
     workspaces {
-      name = "WebbPulse"
+      name = "WebbPulse-Portfolio"
     }
   }
 }
