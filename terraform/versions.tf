@@ -13,7 +13,7 @@ terraform {
   }
 
   cloud {
-    organization = "WebbPulseTerraform"
+    organization = "WebbPulse"
 
     workspaces {
       name = "WebbPulse"
