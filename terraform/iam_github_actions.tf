@@ -7,8 +7,6 @@ data "aws_iam_openid_connect_provider" "github_actions" {
 resource "aws_iam_role" "github_actions_deploy" {
   name = "${local.prefix}-github-actions-deploy"
 
-  # GitHub OIDC "sub" is repo:OWNER/NAME:ref:... — must match the repository as GitHub
-  # resolves it (e.g. after a repo transfer, OWNER changes from Tylert2610 → WebbPulse).
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -23,22 +21,7 @@ resource "aws_iam_role" "github_actions_deploy" {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
           }
           StringLike = {
-            "token.actions.githubusercontent.com:sub" = "repo:WebbPulse/WebbPulse:*"
-          }
-        }
-      },
-      {
-        Effect = "Allow"
-        Principal = {
-          Federated = data.aws_iam_openid_connect_provider.github_actions.arn
-        }
-        Action = "sts:AssumeRoleWithWebIdentity"
-        Condition = {
-          StringEquals = {
-            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          }
-          StringLike = {
-            "token.actions.githubusercontent.com:sub" = "repo:Tylert2610/WebbPulse:*"
+            "token.actions.githubusercontent.com:sub" = "repo:WebbPulse/WebbPulse-Portfolio:*"
           }
         }
       }
