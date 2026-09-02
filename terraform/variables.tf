@@ -48,3 +48,14 @@ variable "staging_profile" {
     error_message = "Refusing to plan: staging_profile is 'none', so this environment is switched off and no resources should be created in it. To stand this environment up, change staging_profile to 'reduced' or 'full' on the workspace in WebbPulse-Organization/bootstrap/locals.tf."
   }
 }
+
+variable "route53_zone_id" {
+  description = "Route53 hosted zone ID for webbpulse.com. Owned by the WebbPulse-Organization bootstrap workspace and delivered here as a workspace variable."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.environment != "production" || var.route53_zone_id != null
+    error_message = "route53_zone_id must be set when environment is 'production'. The webbpulse.com hosted zone is owned by the WebbPulse-Organization bootstrap workspace; set the workspace variable from WebbPulse-Organization/bootstrap/locals.tf."
+  }
+}
