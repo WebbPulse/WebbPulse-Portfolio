@@ -7,6 +7,8 @@
 # ---------------------------------------------------------------------------
 
 resource "aws_route53_record" "www" {
+  provider = aws.dns
+
   zone_id = var.route53_zone_id
   name    = "www.webbpulse.com"
   type    = "A"
@@ -30,6 +32,8 @@ locals {
 }
 
 resource "aws_route53_record" "apprunner_cert_validation_0" {
+  provider = aws.dns
+
   zone_id = var.route53_zone_id
   name    = local.apprunner_cert_validation_records[0].name
   type    = local.apprunner_cert_validation_records[0].type
@@ -38,6 +42,8 @@ resource "aws_route53_record" "apprunner_cert_validation_0" {
 }
 
 resource "aws_route53_record" "apprunner_cert_validation_1" {
+  provider = aws.dns
+
   zone_id = var.route53_zone_id
   name    = local.apprunner_cert_validation_records[1].name
   type    = local.apprunner_cert_validation_records[1].type
@@ -46,6 +52,8 @@ resource "aws_route53_record" "apprunner_cert_validation_1" {
 }
 
 resource "aws_route53_record" "api" {
+  provider = aws.dns
+
   zone_id = var.route53_zone_id
   name    = "api.webbpulse.com"
   type    = "CNAME"
@@ -58,6 +66,8 @@ resource "aws_route53_record" "api" {
 # A CloudFront Function on the distribution redirects to www.webbpulse.com.
 # ---------------------------------------------------------------------------
 resource "aws_route53_record" "apex_a" {
+  provider = aws.dns
+
   zone_id = var.route53_zone_id
   name    = "webbpulse.com"
   type    = "A"

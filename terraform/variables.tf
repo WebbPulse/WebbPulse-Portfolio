@@ -59,3 +59,9 @@ variable "route53_zone_id" {
     error_message = "route53_zone_id must be set when environment is 'production'. The webbpulse.com hosted zone is owned by the WebbPulse-Organization bootstrap workspace; set the workspace variable from WebbPulse-Organization/bootstrap/locals.tf."
   }
 }
+
+variable "route53_write_role_arn" {
+  description = "IAM role ARN assumed to write records into the webbpulse.com hosted zone, which is owned by another account. Delivered here as a workspace variable. Empty means write with the run role directly."
+  type        = string
+  default     = ""
+}
