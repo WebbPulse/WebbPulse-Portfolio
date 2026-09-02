@@ -1,17 +1,6 @@
 # ---------------------------------------------------------------------------
-# AWS myApplications — Service Catalog AppRegistry
-# Provides a unified console view of all application resources,
-# cost breakdown, security findings, and operational data.
-# ---------------------------------------------------------------------------
-resource "aws_servicecatalogappregistry_application" "webbpulse" {
-  name        = local.prefix
-  description = "WebbPulse portfolio website"
-}
-
-# ---------------------------------------------------------------------------
 # Resource Group — tag-based auto-discovery
-# Surfaces all Project=webbpulse resources in the console and feeds
-# the myApplications view.
+# Surfaces all Project=webbpulse resources in the console.
 # ---------------------------------------------------------------------------
 resource "aws_resourcegroups_group" "webbpulse" {
   name        = local.prefix
@@ -35,21 +24,9 @@ resource "aws_resourcegroups_group" "webbpulse" {
 # Monitors per AWS service; daily digest when any anomaly >= $10.
 # ---------------------------------------------------------------------------
 resource "aws_ce_anomaly_monitor" "webbpulse" {
-  name         = local.prefix
-  monitor_type = "CUSTOM"
-
-  monitor_specification = jsonencode({
-    And            = null
-    CostCategories = null
-    Dimensions     = null
-    Not            = null
-    Or             = null
-    Tags = {
-      Key          = "user:Project"
-      MatchOptions = ["EQUALS"]
-      Values       = ["webbpulse"]
-    }
-  })
+  name              = local.prefix
+  monitor_type      = "DIMENSIONAL"
+  monitor_dimension = "SERVICE"
 }
 
 resource "aws_ce_anomaly_subscription" "webbpulse" {
@@ -110,27 +87,6 @@ resource "aws_budgets_budget" "critical" {
     notification_type          = "ACTUAL"
     subscriber_email_addresses = ["tyler@webbpulse.com", "tylert2610@gmail.com"]
   }
-}
-
-# ---------------------------------------------------------------------------
-# AppRegistry Attribute Group — enriches the myApplications console view
-# with owner and technology metadata.
-# ---------------------------------------------------------------------------
-resource "aws_servicecatalogappregistry_attribute_group" "webbpulse" {
-  name        = "${local.prefix}-metadata"
-  description = "Application metadata for WebbPulse"
-
-  attributes = jsonencode({
-    owner      = "Tyler Webb"
-    email      = "tyler@webbpulse.com"
-    repository = "https://github.com/WebbPulse/WebbPulse"
-    technology = "FastAPI, PostgreSQL, React"
-  })
-}
-
-resource "aws_servicecatalogappregistry_attribute_group_association" "webbpulse" {
-  application_id     = aws_servicecatalogappregistry_application.webbpulse.id
-  attribute_group_id = aws_servicecatalogappregistry_attribute_group.webbpulse.id
 }
 
 # ---------------------------------------------------------------------------
