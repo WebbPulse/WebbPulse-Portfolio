@@ -24,7 +24,7 @@ resource "aws_route53_record" "www_cert_validation" {
     }
   }
 
-  zone_id         = aws_route53_zone.webbpulse.zone_id
+  zone_id         = var.route53_zone_id
   name            = each.value.name
   type            = each.value.type
   ttl             = 60

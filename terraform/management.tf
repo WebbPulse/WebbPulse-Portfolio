@@ -39,10 +39,15 @@ resource "aws_ce_anomaly_monitor" "webbpulse" {
   monitor_type = "CUSTOM"
 
   monitor_specification = jsonencode({
+    And            = null
+    CostCategories = null
+    Dimensions     = null
+    Not            = null
+    Or             = null
     Tags = {
-      Key          = "Project"
-      Values       = ["webbpulse"]
+      Key          = "user:Project"
       MatchOptions = ["EQUALS"]
+      Values       = ["webbpulse"]
     }
   })
 }
