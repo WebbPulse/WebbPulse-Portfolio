@@ -29,3 +29,24 @@ provider "aws" {
     keys = ["awsApplication"]
   }
 }
+
+provider "aws" {
+  alias  = "dns"
+  region = var.aws_region
+
+  dynamic "assume_role" {
+    for_each = var.route53_write_role_arn == "" ? [] : [var.route53_write_role_arn]
+
+    content {
+      role_arn = assume_role.value
+    }
+  }
+
+  default_tags {
+    tags = local.common_tags
+  }
+
+  ignore_tags {
+    keys = ["awsApplication"]
+  }
+}
