@@ -28,8 +28,12 @@ def test_health_reports_unhealthy_database(client: TestClient, monkeypatch):
         TableName="webbpulse-test-site-content"
     )
     response = client.get("/health")
-    assert response.status_code == 200
-    assert response.json()["database"] == "unhealthy"
+    assert response.status_code == 503
+    assert response.json() == {
+        "status": "healthy",
+        "database": "unhealthy",
+        "version": "1.0.0",
+    }
 
 
 @pytest.mark.api

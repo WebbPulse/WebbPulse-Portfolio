@@ -1,5 +1,6 @@
 import time
 
+from botocore.exceptions import ClientError
 from fastapi import Request
 
 from ..config import settings
@@ -51,18 +52,30 @@ class LoginLimiter:
         return max(1, int(item["ttl"]) - now())
 
     def record_failure(self, ip: str) -> int:
-        if self._current(ip) is None:
-            self.table.put_item(
-                Item={**self.key(ip), "failures": 1, "ttl": now() + self.window_seconds}
+        current = now()
+        try:
+            response = self.table.update_item(
+                Key=self.key(ip),
+                UpdateExpression=(
+                    "ADD failures :one SET #ttl = if_not_exists(#ttl, :ttl)"
+                ),
+                ConditionExpression="attribute_not_exists(#ttl) OR #ttl > :now",
+                ExpressionAttributeNames={"#ttl": "ttl"},
+                ExpressionAttributeValues={
+                    ":one": 1,
+                    ":ttl": current + self.window_seconds,
+                    ":now": current,
+                },
+                ReturnValues="ALL_NEW",
             )
-            return 1
-        response = self.table.update_item(
-            Key=self.key(ip),
-            UpdateExpression="ADD failures :one",
-            ExpressionAttributeValues={":one": 1},
-            ReturnValues="UPDATED_NEW",
+            return int(response["Attributes"]["failures"])
+        except ClientError as error:
+            if error.response["Error"]["Code"] != "ConditionalCheckFailedException":
+                raise
+        self.table.put_item(
+            Item={**self.key(ip), "failures": 1, "ttl": current + self.window_seconds}
         )
-        return int(response["Attributes"]["failures"])
+        return 1
 
     def clear(self, ip: str) -> None:
         self.table.delete_item(Key=self.key(ip))

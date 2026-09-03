@@ -33,8 +33,8 @@ resource "aws_route53_record" "apex_a" {
 }
 
 locals {
-  apprunner_api_dns_count           = local.legacy_enabled && local.custom_domains_enabled && var.api_dns_target == "apprunner" ? 1 : 0
-  apigateway_api_dns_count          = local.custom_domains_enabled && var.api_dns_target == "apigateway" ? 1 : 0
+  api_dns_apigateway                = var.api_dns_target == "apigateway"
+  api_dns_count                     = local.custom_domains_enabled && (local.api_dns_apigateway || local.legacy_enabled) ? 1 : 0
   apprunner_cert_validation_records = local.legacy_enabled && local.custom_domains_enabled ? tolist(aws_apprunner_custom_domain_association.api[0].certificate_validation_records) : []
 }
 
@@ -61,34 +61,21 @@ resource "aws_route53_record" "apprunner_cert_validation_1" {
 }
 
 resource "aws_route53_record" "api" {
-  count    = local.apprunner_api_dns_count
+  count    = local.api_dns_count
   provider = aws.dns
 
   zone_id = var.route53_zone_id
   name    = "api.webbpulse.com"
-  type    = "CNAME"
-  ttl     = 300
-  records = [aws_apprunner_custom_domain_association.api[0].dns_target]
-}
+  type    = local.api_dns_apigateway ? "A" : "CNAME"
+  ttl     = local.api_dns_apigateway ? null : 300
+  records = local.api_dns_apigateway ? null : [aws_apprunner_custom_domain_association.api[0].dns_target]
 
-resource "aws_route53_record" "api_apigateway" {
-  count    = local.apigateway_api_dns_count
-  provider = aws.dns
-
-  zone_id = var.route53_zone_id
-  name    = "api.webbpulse.com"
-  type    = "A"
-
-  alias {
-    name                   = aws_apigatewayv2_domain_name.api[0].domain_name_configuration[0].target_domain_name
-    zone_id                = aws_apigatewayv2_domain_name.api[0].domain_name_configuration[0].hosted_zone_id
-    evaluate_target_health = false
-  }
-}
-
-check "api_dns_single_owner" {
-  assert {
-    condition     = !local.custom_domains_enabled || local.apprunner_api_dns_count + local.apigateway_api_dns_count == 1
-    error_message = "api.webbpulse.com must be owned by exactly one backend when custom domains are enabled."
+  dynamic "alias" {
+    for_each = local.api_dns_apigateway ? [1] : []
+    content {
+      name                   = aws_apigatewayv2_domain_name.api[0].domain_name_configuration[0].target_domain_name
+      zone_id                = aws_apigatewayv2_domain_name.api[0].domain_name_configuration[0].hosted_zone_id
+      evaluate_target_health = false
+    }
   }
 }

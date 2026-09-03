@@ -85,7 +85,7 @@ uv venv --python 3.13 venv
 VIRTUAL_ENV=$PWD/venv uv pip install -r requirements-dev.txt
 
 docker compose up -d
-export DYNAMODB_ENDPOINT_URL=http://localhost:8000
+export DYNAMODB_ENDPOINT_URL=http://localhost:8001
 export DYNAMODB_TABLE_PREFIX=webbpulse-development
 export SECRET_KEY=dev-secret ADMIN_USERNAME=admin ADMIN_PASSWORD=admin ADMIN_EMAIL=admin@example.com
 venv/bin/python scripts/create_local_tables.py
@@ -115,7 +115,7 @@ scripts/build_lambda.sh
 ```
 
 Installs `requirements.txt` for `manylinux2014_aarch64` / CPython 3.13, adds
-`app/`, strips caches and dist-info, and writes a deterministic
+`app/`, strips caches and test packages, and writes a deterministic
 `dist/function.zip`. The handler is `app.lambda_handler.handler`; run the
 function on `python3.13`, `arm64`.
 
@@ -128,7 +128,10 @@ venv/bin/python scripts/migrate_postgres_to_dynamo.py "$DATABASE_URL" --verify
 ```
 
 The script copies every row with its original id, writes the uniqueness lookup
-items, raises each counter to the highest id, and is safe to re-run. `--verify`
-re-reads Postgres and reports any row or field that differs in DynamoDB, exiting
-non-zero when it finds drift. It needs `DYNAMODB_TABLE_PREFIX` (and AWS
+items and sets each counter to the highest id. It refuses to run when any target
+table already holds data, including an admin user seeded by a Lambda that served
+a request first; `--replace` purges every entity table, its lookup items and its
+counter before importing. `--dry-run` reports what the target currently holds.
+`--verify` re-reads Postgres and reports any row or field that differs in
+DynamoDB, exiting non-zero when it finds drift. It needs `DYNAMODB_TABLE_PREFIX` (and AWS
 credentials for the target account) in the environment.

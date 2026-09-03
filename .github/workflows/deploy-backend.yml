@@ -17,6 +17,7 @@ concurrency:
 
 jobs:
   deploy:
+    if: github.ref_name == 'main' || vars.LAMBDA_FUNCTION_NAME != ''
     runs-on: ubuntu-latest
     environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
 
@@ -104,9 +105,11 @@ jobs:
           API_BASE_URL: ${{ vars.API_BASE_URL }}
         run: |
           for i in $(seq 1 10); do
-            BODY=$(curl -sS --max-time 20 "$API_BASE_URL/health" || true)
-            echo "  Attempt $i/10 — $BODY"
-            if echo "$BODY" | grep -q '"status"[[:space:]]*:[[:space:]]*"healthy"'; then
+            BODY=$(curl -sS --max-time 20 -w '\n%{http_code}' "$API_BASE_URL/health" || true)
+            CODE=$(echo "$BODY" | tail -n1)
+            BODY=$(echo "$BODY" | sed '$d')
+            echo "  Attempt $i/10 — HTTP $CODE $BODY"
+            if [ "$CODE" = "200" ] && echo "$BODY" | grep -q '"database"[[:space:]]*:[[:space:]]*"healthy"'; then
               echo "Backend is healthy."
               exit 0
             fi

@@ -4,7 +4,7 @@ services:
     container_name: portfolio-dynamodb
     command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/home/dynamodblocal/data"]
     ports:
-      - "8000:8000"
+      - "8001:8000"
     volumes:
       - portfolio_dynamodb:/home/dynamodblocal/data
     restart: unless-stopped

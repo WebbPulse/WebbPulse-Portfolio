@@ -155,6 +155,25 @@ class TestLoginLimiter:
         assert attempt(client, "adminpassword123", ip="10.0.0.1").status_code == 200
 
     @pytest.mark.auth
+    def test_failures_accumulate_atomically(self, aws_tables):
+        limiter = limiter_module.LoginLimiter(3, 60)
+        assert limiter.record_failure("10.0.0.9") == 1
+        assert limiter.record_failure("10.0.0.9") == 2
+        assert limiter.record_failure("10.0.0.9") == 3
+        assert limiter.retry_after("10.0.0.9") >= 1
+        assert limiter.record_failure("10.0.0.8") == 1
+
+    @pytest.mark.auth
+    def test_expired_window_restarts_count(self, aws_tables, monkeypatch):
+        limiter = limiter_module.LoginLimiter(3, 60)
+        limiter.record_failure("10.0.0.9")
+        limiter.record_failure("10.0.0.9")
+        real_now = limiter_module.now()
+        monkeypatch.setattr(limiter_module, "now", lambda: real_now + 61)
+        assert limiter.record_failure("10.0.0.9") == 1
+        assert limiter.retry_after("10.0.0.9") is None
+
+    @pytest.mark.auth
     def test_unknown_usernames_count_as_failures(self, client: TestClient):
         for _ in range(settings.LOGIN_MAX_FAILURES - 1):
             assert attempt(client, ip="10.0.0.3", username="nobody").status_code == 401

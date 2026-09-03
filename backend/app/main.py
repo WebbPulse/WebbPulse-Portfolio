@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api.seo import router as seo_router
@@ -42,8 +42,11 @@ def database_status() -> str:
 
 
 @app.get("/health")
-async def health_check():
-    return {"status": "healthy", "database": database_status(), "version": VERSION}
+async def health_check(response: Response):
+    database = database_status()
+    if database != "healthy":
+        response.status_code = 503
+    return {"status": "healthy", "database": database, "version": VERSION}
 
 
 app.add_middleware(AdminSeedMiddleware)

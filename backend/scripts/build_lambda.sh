@@ -36,7 +36,7 @@ fi
 
 cp -R "$BACKEND_DIR/app" "$BUILD_DIR/app"
 
-find "$BUILD_DIR" -type d \( -name "__pycache__" -o -name "tests" -o -name "test" -o -name "*.dist-info" \) -prune -exec rm -rf {} +
+find "$BUILD_DIR" -type d \( -name "__pycache__" -o -name "tests" -o -name "test" \) -prune -exec rm -rf {} +
 find "$BUILD_DIR" -type f \( -name "*.pyc" -o -name "*.pyo" \) -delete
 find "$BUILD_DIR" -exec touch -t 200001010000 {} +
 

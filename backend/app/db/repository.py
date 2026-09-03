@@ -1,4 +1,4 @@
-from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.conditions import Attr, Key
 from boto3.dynamodb.types import TypeSerializer
 from botocore.exceptions import ClientError
 
@@ -66,17 +66,8 @@ class Repository:
         )
         return int(response["Attributes"]["seq"])
 
-    def raise_counter_to(self, value):
-        try:
-            self.meta.update_item(
-                Key={"pk": self.counter_key()},
-                UpdateExpression="SET seq = :value",
-                ConditionExpression="attribute_not_exists(seq) OR seq < :value",
-                ExpressionAttributeValues={":value": int(value)},
-            )
-        except ClientError as error:
-            if error.response["Error"]["Code"] != "ConditionalCheckFailedException":
-                raise
+    def set_counter(self, value):
+        self.meta.put_item(Item={"pk": self.counter_key(), "seq": int(value)})
 
     def current_counter(self):
         response = self.meta.get_item(Key={"pk": self.counter_key()})
@@ -180,6 +171,29 @@ class Repository:
                     Item={"pk": self.unique_key(field, value), "ref_id": item["id"]}
                 )
         return from_item(item)
+
+    def purge(self):
+        removed = 0
+        with self.table.batch_writer() as batch:
+            for item in self.list_all(include_inactive=True):
+                batch.delete_item(Key={"id": item["id"]})
+                removed += 1
+        prefix = f"{UNIQUE_PREFIX}{self.entity}#"
+        kwargs = {
+            "FilterExpression": Attr("pk").begins_with(prefix),
+            "ProjectionExpression": "pk",
+        }
+        with self.meta.batch_writer() as batch:
+            while True:
+                response = self.meta.scan(**kwargs)
+                for pointer in response.get("Items", []):
+                    batch.delete_item(Key={"pk": pointer["pk"]})
+                last_key = response.get("LastEvaluatedKey")
+                if not last_key:
+                    break
+                kwargs["ExclusiveStartKey"] = last_key
+        self.meta.delete_item(Key={"pk": self.counter_key()})
+        return removed
 
     def _visible(self, item, include_inactive):
         if item is None:

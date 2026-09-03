@@ -65,11 +65,27 @@ class TestRepository:
         assert entities.skills.current_counter() == 2
 
     @pytest.mark.unit
-    def test_raise_counter_to_never_lowers(self):
-        entities.skills.raise_counter_to(10)
-        entities.skills.raise_counter_to(5)
+    def test_set_counter_overrides_sequence(self):
+        entities.skills.set_counter(10)
         assert entities.skills.current_counter() == 10
         assert entities.skills.create({"name": "A", "category": "frontend"})["id"] == 11
+        entities.skills.set_counter(5)
+        assert entities.skills.create({"name": "B", "category": "frontend"})["id"] == 6
+
+    @pytest.mark.unit
+    def test_purge_removes_items_pointers_and_counter(self):
+        entities.categories.create({"name": "A", "slug": "a"})
+        entities.categories.create({"name": "B", "slug": "b"})
+        entities.categories.soft_delete(2)
+        entities.skills.create({"name": "S", "category": "frontend"})
+        assert entities.categories.purge() == 2
+        assert entities.categories.count(include_inactive=True) == 0
+        assert entities.categories.find_by_unique("slug", "a") is None
+        assert entities.categories.find_by_unique("slug", "b") is None
+        assert entities.categories.current_counter() == 0
+        assert entities.skills.count() == 1
+        assert entities.skills.current_counter() == 1
+        assert entities.categories.create({"name": "C", "slug": "c"})["id"] == 1
 
     @pytest.mark.unit
     def test_defaults_are_applied(self):

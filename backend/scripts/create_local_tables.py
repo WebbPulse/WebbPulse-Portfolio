@@ -19,7 +19,7 @@ def parse_args():
     )
     parser.add_argument(
         "--endpoint-url",
-        default=os.environ.get("DYNAMODB_ENDPOINT_URL", "http://localhost:8000"),
+        default=os.environ.get("DYNAMODB_ENDPOINT_URL", "http://localhost:8001"),
     )
     parser.add_argument(
         "--region", default=os.environ.get("AWS_DEFAULT_REGION", "us-west-2")

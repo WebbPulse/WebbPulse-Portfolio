@@ -202,7 +202,7 @@ def test_transform_row(script, postgres_rows):
 @pytest.mark.integration
 def test_migrate_then_verify(script, postgres_rows):
     summary = script.migrate(postgres_rows)
-    assert summary["posts"] == {"rows": 2, "max_id": 11}
+    assert summary["posts"] == {"rows": 2, "max_id": 11, "existing": 0}
     assert script.verify(postgres_rows) == []
 
     assert entities.users.find_by_unique("username", "legacy-admin")[
@@ -217,19 +217,66 @@ def test_migrate_then_verify(script, postgres_rows):
 
 
 @pytest.mark.integration
-def test_migrate_is_idempotent(script, postgres_rows):
+def test_refuses_non_empty_target(script, postgres_rows):
+    seeded = entities.users.create(
+        {
+            "username": "seeded-admin",
+            "email": "seeded@example.com",
+            "hashed_password": "x",
+            "is_admin": True,
+        }
+    )
+    with pytest.raises(script.TargetNotEmpty) as excinfo:
+        script.migrate(postgres_rows)
+    assert excinfo.value.existing == {"users": 1}
+    assert "--replace" in str(excinfo.value)
+    assert entities.users.get(seeded["id"])["username"] == "seeded-admin"
+    assert entities.projects.count() == 0
+
+
+@pytest.mark.integration
+def test_replace_purges_stale_pointers(script, postgres_rows):
+    entities.users.create(
+        {
+            "username": "seeded-admin",
+            "email": "seeded@example.com",
+            "hashed_password": "x",
+            "is_admin": True,
+        }
+    )
+    entities.categories.create({"name": "Old", "slug": "old"})
+    entities.categories.create({"name": "Older", "slug": "older"})
+    summary = script.migrate(postgres_rows, replace=True)
+    assert summary["users"]["existing"] == 1
+    assert summary["categories"]["existing"] == 2
+    assert script.verify(postgres_rows) == []
+    assert entities.users.find_by_unique("username", "seeded-admin") is None
+    assert entities.users.find_by_unique("email", "seeded@example.com") is None
+    assert entities.categories.find_by_unique("slug", "old") is None
+    assert entities.categories.count() == 2
+    assert entities.categories.current_counter() == 7
+    assert entities.users.current_counter() == 1
+    assert entities.posts.current_counter() == 11
+
+
+@pytest.mark.integration
+def test_replace_twice_is_idempotent(script, postgres_rows):
     script.migrate(postgres_rows)
-    script.migrate(postgres_rows)
+    script.migrate(postgres_rows, replace=True)
     assert script.verify(postgres_rows) == []
     assert entities.categories.count() == 2
 
 
 @pytest.mark.integration
 def test_dry_run_writes_nothing(script, postgres_rows):
+    entities.skills.create({"name": "Existing", "category": "c", "tier": "t"})
     summary = script.migrate(postgres_rows, dry_run=True)
     assert summary["categories"]["rows"] == 2
+    assert summary["categories"]["existing"] == 0
+    assert summary["skills"]["existing"] == 1
     assert entities.categories.count() == 0
     assert entities.categories.current_counter() == 0
+    assert entities.skills.count() == 1
 
 
 @pytest.mark.integration

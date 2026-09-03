@@ -73,20 +73,44 @@ def fetch_rows(connection, table):
         return [dict(row) for row in cursor.fetchall()]
 
 
-def migrate(rows_by_table, dry_run=False):
+class TargetNotEmpty(Exception):
+    def __init__(self, existing):
+        self.existing = existing
+        detail = ", ".join(f"{entity}={count}" for entity, count in existing.items())
+        super().__init__(f"target tables already hold data ({detail}); use --replace")
+
+
+def existing_counts():
+    return {
+        entity: BY_ENTITY[entity].count(include_inactive=True)
+        for entity in POSTGRES_TABLES.values()
+    }
+
+
+def migrate(rows_by_table, dry_run=False, replace=False):
+    existing = existing_counts()
+    occupied = {entity: count for entity, count in existing.items() if count}
+    if occupied and not replace and not dry_run:
+        raise TargetNotEmpty(occupied)
     summary = {}
     for table, entity in POSTGRES_TABLES.items():
         rows = rows_by_table.get(table, [])
         repository = BY_ENTITY[entity]
+        if replace and not dry_run:
+            repository.purge()
         max_id = 0
         for row in rows:
             data = transform_row(entity, row)
             max_id = max(max_id, data["id"])
             if not dry_run:
                 repository.import_item(data)
-        if not dry_run and max_id:
-            repository.raise_counter_to(max_id)
-        summary[entity] = {"rows": len(rows), "max_id": max_id}
+        if not dry_run:
+            repository.set_counter(max_id)
+        summary[entity] = {
+            "rows": len(rows),
+            "max_id": max_id,
+            "existing": existing[entity],
+        }
     return summary
 
 
@@ -136,6 +160,7 @@ def parse_args():
     )
     parser.add_argument("dsn", nargs="?", default=os.environ.get("DATABASE_URL"))
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--replace", action="store_true")
     parser.add_argument("--verify", action="store_true")
     return parser.parse_args()
 
@@ -162,10 +187,19 @@ def main():
         print(f"verify: {len(problems)} problem(s)")
         sys.exit(1 if problems else 0)
 
-    summary = migrate(rows_by_table, dry_run=args.dry_run)
+    try:
+        summary = migrate(rows_by_table, dry_run=args.dry_run, replace=args.replace)
+    except TargetNotEmpty as error:
+        sys.exit(f"refusing to migrate: {error}")
     label = "would migrate" if args.dry_run else "migrated"
     for entity, stats in summary.items():
-        print(f"{label} {stats['rows']:>4} {entity} (counter -> {stats['max_id']})")
+        print(
+            f"{label} {stats['rows']:>4} {entity} "
+            f"(counter -> {stats['max_id']}, target held {stats['existing']})"
+        )
+    if args.dry_run and any(stats["existing"] for stats in summary.values()):
+        action = "will be purged by --replace" if args.replace else "blocks migration"
+        print(f"target is not empty: existing data {action}")
     if args.dry_run:
         for table, entity in POSTGRES_TABLES.items():
             rows = rows_by_table.get(table)
