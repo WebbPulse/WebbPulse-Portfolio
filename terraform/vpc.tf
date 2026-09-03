@@ -10,6 +10,8 @@
 # ---------------------------------------------------------------------------
 
 resource "aws_vpc" "main" {
+  count = local.legacy_count
+
   cidr_block           = "10.0.0.0/16"
   enable_dns_hostnames = true
   enable_dns_support   = true
@@ -19,7 +21,9 @@ resource "aws_vpc" "main" {
 
 # RDS subnet groups require subnets in at least two AZs.
 resource "aws_subnet" "public_a" {
-  vpc_id                  = aws_vpc.main.id
+  count = local.legacy_count
+
+  vpc_id                  = aws_vpc.main[0].id
   cidr_block              = "10.0.0.0/24"
   availability_zone       = "${var.aws_region}a"
   map_public_ip_on_launch = true
@@ -30,7 +34,9 @@ resource "aws_subnet" "public_a" {
 # New CIDR (not 10.0.2.0/24, which belonged to private_b) so terraform can
 # create this before destroying private_b without a range collision.
 resource "aws_subnet" "public_b" {
-  vpc_id                  = aws_vpc.main.id
+  count = local.legacy_count
+
+  vpc_id                  = aws_vpc.main[0].id
   cidr_block              = "10.0.3.0/24"
   availability_zone       = "${var.aws_region}b"
   map_public_ip_on_launch = true
@@ -39,38 +45,48 @@ resource "aws_subnet" "public_b" {
 }
 
 resource "aws_internet_gateway" "main" {
-  vpc_id = aws_vpc.main.id
+  count = local.legacy_count
+
+  vpc_id = aws_vpc.main[0].id
 
   tags = { Name = local.prefix }
 }
 
 resource "aws_route_table" "public" {
-  vpc_id = aws_vpc.main.id
+  count = local.legacy_count
+
+  vpc_id = aws_vpc.main[0].id
 
   route {
     cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.main.id
+    gateway_id = aws_internet_gateway.main[0].id
   }
 
   tags = { Name = "${local.prefix}-public" }
 }
 
 resource "aws_route_table_association" "public_a" {
-  subnet_id      = aws_subnet.public_a.id
-  route_table_id = aws_route_table.public.id
+  count = local.legacy_count
+
+  subnet_id      = aws_subnet.public_a[0].id
+  route_table_id = aws_route_table.public[0].id
 }
 
 resource "aws_route_table_association" "public_b" {
-  subnet_id      = aws_subnet.public_b.id
-  route_table_id = aws_route_table.public.id
+  count = local.legacy_count
+
+  subnet_id      = aws_subnet.public_b[0].id
+  route_table_id = aws_route_table.public[0].id
 }
 
 # App Runner egress IPs are AWS-managed and not fixed, so 0.0.0.0/0 is
 # required on the ingress rule. DB auth + rds.force_ssl secure the instance.
 resource "aws_security_group" "rds" {
+  count = local.legacy_count
+
   name        = "${local.prefix}-rds"
   description = "Allow PostgreSQL inbound (secured by auth + SSL)"
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = aws_vpc.main[0].id
 
   ingress {
     description = "PostgreSQL"

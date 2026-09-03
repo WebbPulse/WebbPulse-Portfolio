@@ -2,7 +2,7 @@ name: Test Frontend
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, staging]
     paths:
       - "frontend/**"
       - ".github/workflows/test-frontend.yml"
@@ -12,36 +12,30 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: "18"
-          cache: "npm"
+          node-version: "20"
+          cache: npm
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install frontend dependencies
-        working-directory: ./frontend
+        working-directory: frontend
         run: npm ci
 
       - name: Run frontend linting
-        working-directory: ./frontend
+        working-directory: frontend
         run: npm run lint
 
       - name: Check frontend formatting
-        working-directory: ./frontend
+        working-directory: frontend
         run: npm run format:check
 
       - name: Run frontend type checking
-        working-directory: ./frontend
+        working-directory: frontend
         run: npm run build
 
-      - name: Run frontend tests
-        working-directory: ./frontend
-        run: npm run test:run
-
       - name: Run frontend tests with coverage
-        working-directory: ./frontend
+        working-directory: frontend
         run: npm run test:run -- --coverage

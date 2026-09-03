@@ -29,41 +29,51 @@ resource "aws_iam_role" "github_actions_deploy" {
   })
 }
 
-resource "aws_iam_role_policy" "github_actions_deploy" {
-  name = "deploy-permissions"
-  role = aws_iam_role.github_actions_deploy.id
+locals {
+  github_actions_legacy_statements = local.legacy_enabled ? [
+    {
+      Effect   = "Allow"
+      Action   = ["ecr:GetAuthorizationToken"]
+      Resource = "*"
+    },
+    {
+      Effect = "Allow"
+      Action = [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:CompleteLayerUpload",
+        "ecr:InitiateLayerUpload",
+        "ecr:PutImage",
+        "ecr:UploadLayerPart",
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer",
+      ]
+      Resource = one(aws_ecr_repository.backend[*].arn)
+    },
+    {
+      Effect   = "Allow"
+      Action   = ["apprunner:StartDeployment", "apprunner:DescribeService"]
+      Resource = one(aws_apprunner_service.backend[*].arn)
+    },
+  ] : []
 
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      # ECR — push backend images
+  github_actions_statements = concat(
+    local.github_actions_legacy_statements,
+    [
       {
         Effect = "Allow"
         Action = [
-          "ecr:GetAuthorizationToken",
+          "lambda:UpdateFunctionCode",
+          "lambda:GetFunction",
+          "lambda:GetFunctionConfiguration",
+          "lambda:PublishVersion",
         ]
-        Resource = "*"
+        Resource = aws_lambda_function.api.arn
       },
-      {
-        Effect = "Allow"
-        Action = [
-          "ecr:BatchCheckLayerAvailability",
-          "ecr:CompleteLayerUpload",
-          "ecr:InitiateLayerUpload",
-          "ecr:PutImage",
-          "ecr:UploadLayerPart",
-          "ecr:BatchGetImage",
-          "ecr:GetDownloadUrlForLayer",
-        ]
-        Resource = aws_ecr_repository.backend.arn
-      },
-      # App Runner — trigger redeployment and poll readiness before deploying
       {
         Effect   = "Allow"
-        Action   = ["apprunner:StartDeployment", "apprunner:DescribeService"]
-        Resource = aws_apprunner_service.backend.arn
+        Action   = ["s3:PutObject", "s3:GetObject", "s3:ListBucket"]
+        Resource = [aws_s3_bucket.lambda_artifacts.arn, "${aws_s3_bucket.lambda_artifacts.arn}/*"]
       },
-      # S3 — sync frontend build artefacts
       {
         Effect = "Allow"
         Action = [
@@ -77,7 +87,6 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
           "${aws_s3_bucket.frontend.arn}/*",
         ]
       },
-      # CloudFront — invalidate the cache after a frontend deploy
       {
         Effect = "Allow"
         Action = [
@@ -86,6 +95,16 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
         ]
         Resource = aws_cloudfront_distribution.frontend.arn
       },
-    ]
+    ],
+  )
+}
+
+resource "aws_iam_role_policy" "github_actions_deploy" {
+  name = "deploy-permissions"
+  role = aws_iam_role.github_actions_deploy.id
+
+  policy = jsonencode({
+    Version   = "2012-10-17"
+    Statement = local.github_actions_statements
   })
 }

@@ -11,4 +11,13 @@ locals {
     Environment = var.environment
     ManagedBy   = "terraform"
   }
+
+  legacy_enabled         = var.legacy_stack_enabled && var.environment == "production"
+  legacy_count           = local.legacy_enabled ? 1 : 0
+  custom_domains_enabled = var.staging_profile == "full" && var.route53_zone_id != null
+  custom_domain_count    = local.custom_domains_enabled ? 1 : 0
+
+  frontend_url = local.custom_domains_enabled ? "https://www.webbpulse.com" : "https://${aws_cloudfront_distribution.frontend.domain_name}"
+  api_url      = local.custom_domains_enabled ? "https://api.webbpulse.com" : aws_apigatewayv2_api.backend.api_endpoint
+  cors_origins = local.custom_domains_enabled ? "https://www.webbpulse.com,https://webbpulse.com" : local.frontend_url
 }

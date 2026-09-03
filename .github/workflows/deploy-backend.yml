@@ -1,27 +1,8 @@
-# Builds a Docker image, pushes it to ECR, and triggers an App Runner deployment.
-# AWS resources (ECR, App Runner, IAM, etc.) must already exist in Terraform state.
-#
-# Ordering guarantee: the image build runs immediately (no conflict with Terraform), but
-# before touching App Runner the job waits for any active HCP Terraform run on the
-# WebbPulse-Portfolio workspace to reach a terminal state. This prevents the
-# OPERATION_IN_PROGRESS error that occurs when Terraform updates App Runner config
-# at the same time as a deployment.
-#
-# Concurrency: only one deploy runs at a time. A second push queues rather than
-# cancels, so no deploy is ever silently skipped.
-#
-# GitHub Actions variables required (Settings → Secrets and variables → Variables):
-#   AWS_DEPLOY_ROLE_ARN      — IAM role ARN for OIDC (e.g. arn:aws:iam::ACCOUNT:role/webbpulse-production-github-actions-deploy)
-#   ECR_REPOSITORY_NAME      — ECR repo name only (terraform output: webbpulse-production-backend)
-#   APP_RUNNER_SERVICE_ARN   — Full App Runner service ARN (from AWS console or aws apprunner list-services)
-#
-# GitHub Actions secrets required (Settings → Secrets and variables → Secrets):
-#   TFC_API_TOKEN            — HCP Terraform user/team token (for workspace polling)
 name: Deploy Backend
 
 on:
   push:
-    branches: [main]
+    branches: [main, staging]
     paths:
       - "backend/**"
       - ".github/workflows/deploy-backend.yml"
@@ -31,22 +12,30 @@ permissions:
   contents: read
 
 concurrency:
-  group: backend-deploy
+  group: backend-deploy-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: production
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
 
     env:
       AWS_REGION: us-west-2
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       TFC_ORG: WebbPulse
-      TFC_WORKSPACE: WebbPulse-Portfolio
+      TFC_WORKSPACE: ${{ github.ref_name == 'main' && 'WebbPulse-Portfolio' || 'WebbPulse-Portfolio-staging' }}
+      ARTIFACT_KEY: backend/${{ github.sha }}.zip
 
     steps:
       - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Build Lambda package
+        run: bash backend/scripts/build_lambda.sh
 
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v6
@@ -54,26 +43,12 @@ jobs:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Log in to ECR
-        id: ecr-login
-        uses: aws-actions/amazon-ecr-login@v2
-
-      # Build and push runs in parallel with any active Terraform run — ECR is
-      # independent of App Runner state.
-      - name: Build and push image
-        working-directory: backend
+      - name: Upload artifact
         env:
-          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
-          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY_NAME }}
-          IMAGE_TAG: ${{ github.sha }}
+          LAMBDA_ARTIFACT_BUCKET: ${{ vars.LAMBDA_ARTIFACT_BUCKET }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          aws s3 cp backend/dist/function.zip "s3://$LAMBDA_ARTIFACT_BUCKET/$ARTIFACT_KEY"
 
-      # Wait for HCP Terraform to finish before touching App Runner.
-      # Polls every 15 s for up to 10 min (40 attempts).
       - name: Wait for Terraform run to complete
         env:
           TFC_API_TOKEN: ${{ secrets.TFC_API_TOKEN }}
@@ -109,31 +84,33 @@ jobs:
             sleep 15
           done
 
-      # Secondary guard: wait for App Runner itself to reach RUNNING (handles any
-      # residual in-progress state, e.g. a prior deployment finishing up).
-      - name: Wait for App Runner service to be ready
+      - name: Update Lambda function code
         env:
-          APP_RUNNER_SERVICE_ARN: ${{ vars.APP_RUNNER_SERVICE_ARN }}
+          LAMBDA_FUNCTION_NAME: ${{ vars.LAMBDA_FUNCTION_NAME }}
+          LAMBDA_ARTIFACT_BUCKET: ${{ vars.LAMBDA_ARTIFACT_BUCKET }}
         run: |
-          echo "Waiting for App Runner service to reach RUNNING state..."
-          for i in $(seq 1 30); do
-            STATUS=$(aws apprunner describe-service \
-              --service-arn "$APP_RUNNER_SERVICE_ARN" \
-              --query 'Service.Status' --output text)
-            echo "  Attempt $i/30 — App Runner status: $STATUS"
-            if [ "$STATUS" = "RUNNING" ]; then
-              echo "Service is ready."
+          aws lambda wait function-updated-v2 --function-name "$LAMBDA_FUNCTION_NAME"
+          aws lambda update-function-code \
+            --function-name "$LAMBDA_FUNCTION_NAME" \
+            --s3-bucket "$LAMBDA_ARTIFACT_BUCKET" \
+            --s3-key "$ARTIFACT_KEY" \
+            --publish \
+            --query '{Version: Version, CodeSha256: CodeSha256, LastModified: LastModified}' \
+            --output table
+          aws lambda wait function-updated-v2 --function-name "$LAMBDA_FUNCTION_NAME"
+
+      - name: Smoke test
+        env:
+          API_BASE_URL: ${{ vars.API_BASE_URL }}
+        run: |
+          for i in $(seq 1 10); do
+            BODY=$(curl -sS --max-time 20 "$API_BASE_URL/health" || true)
+            echo "  Attempt $i/10 — $BODY"
+            if echo "$BODY" | grep -q '"status"[[:space:]]*:[[:space:]]*"healthy"'; then
+              echo "Backend is healthy."
               exit 0
             fi
-            if [ "$i" -eq 30 ]; then
-              echo "Timed out waiting for App Runner (last status: $STATUS)."
-              exit 1
-            fi
-            sleep 20
+            sleep 6
           done
-
-      - name: Deploy to App Runner
-        env:
-          APP_RUNNER_SERVICE_ARN: ${{ vars.APP_RUNNER_SERVICE_ARN }}
-        run: |
-          aws apprunner start-deployment --service-arn "$APP_RUNNER_SERVICE_ARN"
+          echo "Backend did not report healthy."
+          exit 1

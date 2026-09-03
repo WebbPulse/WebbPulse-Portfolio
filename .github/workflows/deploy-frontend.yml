@@ -1,23 +1,8 @@
-# Builds and deploys the React frontend to S3/CloudFront on push to main.
-# AWS resources (S3, CloudFront) must already exist in Terraform state.
-#
-# Ordering guarantee: the npm build runs immediately (no conflict with Terraform), but
-# before syncing to S3 the job waits for any active HCP Terraform run on the
-# WebbPulse-Portfolio workspace to reach a terminal state. This prevents partial deploys
-# against infrastructure that is mid-update.
-#
-# GitHub Actions variables required (Settings → Secrets and variables → Variables):
-#   AWS_DEPLOY_ROLE_ARN          — IAM role ARN for OIDC (e.g. arn:aws:iam::ACCOUNT:role/webbpulse-production-github-actions-deploy)
-#   FRONTEND_S3_BUCKET           — S3 bucket name (terraform output frontend_bucket)
-#   CLOUDFRONT_DISTRIBUTION_ID   — CloudFront distribution ID (terraform output cloudfront_distribution_id)
-#
-# GitHub Actions secrets required (Settings → Secrets and variables → Secrets):
-#   TFC_API_TOKEN                — HCP Terraform user/team token (for workspace polling)
 name: Deploy Frontend
 
 on:
   push:
-    branches: [main]
+    branches: [main, staging]
     paths:
       - "frontend/**"
       - ".github/workflows/deploy-frontend.yml"
@@ -26,15 +11,19 @@ permissions:
   id-token: write
   contents: read
 
+concurrency:
+  group: frontend-deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: production
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
 
     env:
       AWS_REGION: us-west-2
       TFC_ORG: WebbPulse
-      TFC_WORKSPACE: WebbPulse-Portfolio
+      TFC_WORKSPACE: ${{ github.ref_name == 'main' && 'WebbPulse-Portfolio' || 'WebbPulse-Portfolio-staging' }}
 
     steps:
       - uses: actions/checkout@v5
@@ -49,9 +38,10 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      # Build runs in parallel with any active Terraform run — it is purely local.
       - name: Build
         working-directory: frontend
+        env:
+          VITE_API_BASE_URL: ${{ vars.API_BASE_URL != '' && format('{0}/api/v1', vars.API_BASE_URL) || '' }}
         run: npm run build
 
       - name: Configure AWS credentials via OIDC
@@ -60,8 +50,6 @@ jobs:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # Wait for HCP Terraform to finish before touching S3/CloudFront.
-      # Polls every 15 s for up to 10 min (40 attempts).
       - name: Wait for Terraform run to complete
         env:
           TFC_API_TOKEN: ${{ secrets.TFC_API_TOKEN }}
