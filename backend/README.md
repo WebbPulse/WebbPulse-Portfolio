@@ -1,365 +1,137 @@
-# Portfolio Blog API Backend
+# Portfolio API Backend
 
-A FastAPI-based backend for the portfolio website blog functionality, featuring PostgreSQL database integration.
+FastAPI application for the WebbPulse portfolio, running on AWS Lambda behind an
+API Gateway HTTP API with DynamoDB as the datastore. The public API contract is
+unchanged from the previous Postgres deployment; only the runtime moved.
 
-## Features
+## Layout
 
-- FastAPI REST API with automatic OpenAPI documentation
-- PostgreSQL database with SQLAlchemy ORM
-- User authentication and authorization
-- Blog post management with categories
-- Email subscription system
-- Dockerized development environment
-- PgAdmin for database management (optional)
+```
+app/
+├── main.py                 FastAPI app, CORS, middleware, /health
+├── lambda_handler.py       Lambda entrypoint: app.lambda_handler.handler
+├── config.py               Settings (env vars, optional SSM secrets)
+├── api/
+│   ├── seo.py              /sitemap.xml and /robots.txt
+│   └── v1/
+│       ├── api.py          Router wiring under /api/v1
+│       ├── crud_router.py  Factory for the soft-deleted CRUD resources
+│       └── endpoints/      posts, admin, projects, experience, skills,
+│                           education, certifications, site_content
+├── core/
+│   ├── security.py         bcrypt, JWT, get_current_user, require_admin
+│   ├── admin.py            Admin user seeding from settings
+│   ├── login_limiter.py    Login brute-force limiter backed by DynamoDB
+│   ├── middleware.py       Trailing-slash, admin-seed, request logging
+│   └── logging.py          Powertools logger
+├── db/
+│   ├── tables.py           Canonical table and index definitions
+│   ├── client.py           boto3 resource/client factories
+│   ├── serializer.py       Python <-> DynamoDB value encoding
+│   ├── repository.py       Generic repository (counters, uniqueness, soft delete)
+│   ├── ordering.py         In-memory sort orders matching the old SQL queries
+│   └── entities.py         Repository instances per table
+└── schemas/                Pydantic request/response models
+scripts/
+├── create_local_tables.py  Create the tables against DynamoDB Local
+├── migrate_postgres_to_dynamo.py  One-time Postgres -> DynamoDB copy
+└── build_lambda.sh         Build dist/function.zip for python3.13 arm64
+tests/                      pytest suite backed by moto
+```
 
-## Prerequisites
+## Configuration
 
-- Python 3.8+
-- Docker and Docker Compose
-- Git
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `DYNAMODB_TABLE_PREFIX` | Tables are named `{prefix}-{entity}` | `webbpulse-development` |
+| `DYNAMODB_ENDPOINT_URL` | Point at DynamoDB Local | unset |
+| `SSM_PARAMETER_PREFIX` | When set, secrets are read from SSM SecureStrings `{prefix}/secret-key`, `/admin-username`, `/admin-password`, `/admin-email` | unset |
+| `SECRET_KEY`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ADMIN_EMAIL` | Secrets when not using SSM; env values win over SSM | required |
+| `ENVIRONMENT` | Environment label | `development` |
+| `CORS_ORIGINS` | Comma-separated allowed origins (localhost dev origins are always added) | empty |
+| `SITE_URL` | Base URL used in sitemap and robots | `https://www.webbpulse.com` |
+| `LOG_LEVEL` | Powertools logger level | `INFO` |
+| `POWERTOOLS_SERVICE_NAME` | Logger service name | `webbpulse-portfolio-api` |
+| `POWERTOOLS_METRICS_NAMESPACE` | Reserved for metrics | `WebbPulse/Portfolio` |
+| `LOGIN_MAX_FAILURES` / `LOGIN_FAILURE_WINDOW_SECONDS` | Login limiter | `10` / `900` |
 
-## Quick Start
+Settings fail fast at import time if any of the four secrets cannot be resolved.
 
-### 1. Clone and Setup
+## Data model
+
+One on-demand table per entity: `users`, `categories`, `posts`, `projects`,
+`experience`, `skills`, `education`, `certifications`, `site-content`, plus a
+shared `meta` table.
+
+- Entity tables have a numeric hash key `id`. Ids come from atomic counters so
+  they stay integers and keep the existing values after migration.
+- `posts` has two GSIs: `published-index` (`published_flag` = `"1"`, range
+  `published_at`) for public listings and `category-index` (`category_id`,
+  range `id`) for the category delete guard. Draft posts carry no
+  `published_flag`, so they never appear in the index.
+- `meta` (hash key `pk`, TTL attribute `ttl`) holds `COUNTER#<entity>` items,
+  `UNIQUE#<entity>#<field>#<value>` lookup items that enforce unique slugs,
+  usernames and emails inside a transaction, and `LOGIN_FAIL#<ip>` items for
+  the login limiter.
+- Timestamps are stored as fixed-width UTC ISO-8601 strings, dates as
+  `YYYY-MM-DD`, and absent values are omitted rather than stored as NULL.
+
+`app/db/tables.py` is the single source of truth for table and index names.
+
+## Local development
 
 ```bash
-# Navigate to backend directory
-cd backend
+uv venv --python 3.13 venv
+VIRTUAL_ENV=$PWD/venv uv pip install -r requirements-dev.txt
 
-# Copy environment template
-cp env.example .env
-
-# Edit .env file with your configuration
-nano .env
+docker compose up -d
+export DYNAMODB_ENDPOINT_URL=http://localhost:8001
+export DYNAMODB_TABLE_PREFIX=webbpulse-development
+export SECRET_KEY=dev-secret ADMIN_USERNAME=admin ADMIN_PASSWORD=admin ADMIN_EMAIL=admin@example.com
+venv/bin/python scripts/create_local_tables.py
+venv/bin/uvicorn app.main:app --reload
 ```
 
-### 2. Start Development Environment
+The admin user is created (or reconciled with the settings) on the first
+request handled by each process, so there is no separate seed step. Docs are
+served at `/docs` and `/redoc`.
+
+## Tests and lint
 
 ```bash
-# Run the development setup script
-./dev-setup.sh
+venv/bin/python -m pytest
+venv/bin/python -m black --check app tests scripts
+venv/bin/python -m isort --check-only app tests scripts
+venv/bin/python -m flake8 app tests scripts
 ```
 
-This script will:
+Tests run against moto; no AWS credentials or local DynamoDB are needed. See
+`tests/README.md`.
 
-- Start PostgreSQL database container
-- Create virtual environment
-- Install dependencies
-- Initialize database tables
-
-### 3. Start FastAPI Application
+## Building the Lambda artifact
 
 ```bash
-# Activate virtual environment
-source venv/bin/activate
-
-# Start the application
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+scripts/build_lambda.sh
 ```
 
-### 4. Access the Application
+Installs `requirements.txt` for `manylinux2014_aarch64` / CPython 3.13, adds
+`app/`, strips caches and test packages, and writes a deterministic
+`dist/function.zip`. The handler is `app.lambda_handler.handler`; run the
+function on `python3.13`, `arm64`.
 
-- API Documentation: http://localhost:8000/docs
-- ReDoc Documentation: http://localhost:8000/redoc
-- Health Check: http://localhost:8000/health
-
-## Manual Setup
-
-If you prefer to set up manually:
-
-### 1. Start Database
+## Migrating from Postgres
 
 ```bash
-# Start PostgreSQL
-docker-compose up -d postgres
-
-# Check database health
-docker-compose exec postgres pg_isready -U portfolio_user -d portfolio_blog
+venv/bin/python scripts/migrate_postgres_to_dynamo.py "$DATABASE_URL" --dry-run
+venv/bin/python scripts/migrate_postgres_to_dynamo.py "$DATABASE_URL"
+venv/bin/python scripts/migrate_postgres_to_dynamo.py "$DATABASE_URL" --verify
 ```
 
-### 2. Setup Python Environment
-
-```bash
-# Create virtual environment
-python3 -m venv venv
-
-# Activate virtual environment
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-### 3. Initialize Database
-
-```bash
-# Apply database migrations
-python migrate.py upgrade
-
-# Or using alembic directly
-alembic upgrade head
-```
-
-### 4. Start Application
-
-```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-## Environment Variables
-
-Create a `.env` file in the backend directory with the following variables:
-
-```env
-# Database Configuration
-POSTGRES_DB=portfolio_blog
-POSTGRES_USER=portfolio_user
-POSTGRES_PASSWORD=your_secure_password
-POSTGRES_HOST=localhost
-
-# Security
-SECRET_KEY=your-secret-key-here
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30
-
-# Admin user (seeded into the DB on app startup)
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=change-me
-ADMIN_EMAIL=tyler@webbpulse.com
-
-# Application
-DEBUG=true
-LOG_SQL_QUERIES=false  # Set to true to see SQL queries in logs
-```
-
-## Database Management
-
-### Using PgAdmin
-
-1. Start pgAdmin with the tools profile:
-
-   ```bash
-   docker-compose --profile tools up -d pgadmin
-   ```
-
-2. Login with credentials from your .env file
-3. Add server connection:
-   - Host: postgres (container name)
-   - Port: 5432
-   - Database: portfolio_blog
-   - Username: portfolio_user
-   - Password: (from .env file)
-
-### Using Command Line
-
-```bash
-# Access PostgreSQL shell
-docker-compose exec postgres psql -U portfolio_user -d portfolio_blog
-
-# View database logs
-docker-compose logs postgres
-
-# Reset database
-docker-compose down -v
-docker-compose up -d postgres
-```
-
-## API Endpoints
-
-### Authentication
-
-- `POST /api/v1/auth/login` - User login
-- `POST /api/v1/auth/register` - User registration
-
-### Blog Posts
-
-- `GET /api/v1/posts` - List all posts
-- `POST /api/v1/posts` - Create new post
-- `GET /api/v1/posts/{post_id}` - Get specific post
-- `PUT /api/v1/posts/{post_id}` - Update post
-- `DELETE /api/v1/posts/{post_id}` - Delete post
-
-### Categories
-
-- `GET /api/v1/categories` - List all categories
-- `POST /api/v1/categories` - Create new category
-
-## Development
-
-### Project Structure
-
-```
-backend/
-├── app/
-│   ├── api/           # API routes and endpoints
-│   ├── core/          # Core functionality (security, email)
-│   ├── models/        # SQLAlchemy database models
-│   ├── schemas/       # Pydantic models for validation
-│   ├── utils/         # Utility functions
-│   ├── config.py      # Configuration settings
-│   ├── database.py    # Database connection and setup
-│   └── main.py        # FastAPI application
-├── tests/             # Test files
-├── docker-compose.yml # Docker services
-├── requirements.txt   # Python dependencies
-└── README.md         # This file
-```
-
-### Running Tests
-
-```bash
-# Install test dependencies
-pip install pytest pytest-asyncio httpx
-
-# Run tests
-pytest
-```
-
-### Database Migrations
-
-The application uses Alembic for database migrations. This ensures proper version control of database schema changes.
-
-#### Using the Migration Script
-
-```bash
-# Apply all pending migrations
-python migrate.py upgrade
-
-# Create a new migration (auto-generate from model changes)
-python migrate.py revision --autogenerate --message "Add new field to posts"
-
-# Create a new migration manually
-python migrate.py revision --message "Custom migration"
-
-# Show current migration revision
-python migrate.py current
-
-# Show migration history
-python migrate.py history
-
-# Downgrade to a specific revision
-python migrate.py downgrade --revision <revision_id>
-
-# Mark database as being at a specific revision
-python migrate.py stamp --revision <revision_id>
-```
-
-#### Using Alembic Directly
-
-```bash
-# Apply all pending migrations
-alembic upgrade head
-
-# Create migration
-alembic revision --autogenerate -m "Initial migration"
-
-# Show current revision
-alembic current
-
-# Show history
-alembic history
-```
-
-#### Migration Best Practices
-
-1. **Always create migrations for schema changes** - Don't modify tables directly
-2. **Test migrations** - Test both upgrade and downgrade operations
-3. **Use descriptive messages** - Make migration purpose clear
-4. **Review auto-generated migrations** - Check generated SQL before applying
-5. **Backup before major migrations** - Always backup production data
-
-## Production Deployment
-
-### Environment Variables for Production
-
-```env
-DATABASE_URL=postgresql://user:password@host:port/database
-SECRET_KEY=your-production-secret-key
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=your-production-admin-password
-ADMIN_EMAIL=tyler@webbpulse.com
-DEBUG=false
-CORS_ORIGINS=https://webbpulse.com,https://www.webbpulse.com
-```
-
-## Logging Configuration
-
-The application uses a configurable logging system to control the verbosity of logs:
-
-### Environment Variables
-
-- `LOG_SQL_QUERIES`: Set to `true` to enable SQL query logging (default: `false`)
-- `DEBUG`: Set to `true` for debug mode (default: `false`)
-
-### Log Levels
-
-- **INFO**: API requests, database connections, application events
-- **WARNING**: SQLAlchemy warnings, connection pool issues
-- **ERROR**: Database errors, authentication failures, critical issues
-
-### SQLAlchemy Logging
-
-By default, SQLAlchemy engine logs are suppressed to reduce noise. To enable SQL query logging:
-
-```env
-LOG_SQL_QUERIES=true
-```
-
-This will show:
-
-- SQL queries being executed
-- Query parameters
-- Execution time
-
-### Testing Logging
-
-You can test the logging configuration:
-
-```bash
-python test_logging.py
-```
-
-## Troubleshooting
-
-### Database Connection Issues
-
-1. Check if PostgreSQL container is running:
-
-   ```bash
-   docker-compose ps
-   ```
-
-2. Check database logs:
-
-   ```bash
-   docker-compose logs postgres
-   ```
-
-3. Test database connection:
-   ```bash
-   python -c "from app.database import test_db_connection; print(test_db_connection())"
-   ```
-
-### Permission Issues
-
-If you get permission errors:
-
-```bash
-# Make setup script executable
-chmod +x dev-setup.sh
-
-# Fix Docker permissions (if needed)
-sudo usermod -aG docker $USER
-```
-
-## Contributing
-
-1. Create a feature branch
-2. Make your changes
-3. Add tests if applicable
-4. Run linting and tests
-5. Submit a pull request
-
-## License
-
-This project is part of the Portfolio Website project.
+The script copies every row with its original id, writes the uniqueness lookup
+items and sets each counter to the highest id. It refuses to run when any target
+table already holds data, including an admin user seeded by a Lambda that served
+a request first; `--replace` purges every entity table, its lookup items and its
+counter before importing. `--dry-run` reports what the target currently holds.
+`--verify` re-reads Postgres and reports any row or field that differs in
+DynamoDB, exiting non-zero when it finds drift. It needs `DYNAMODB_TABLE_PREFIX` (and AWS
+credentials for the target account) in the environment.

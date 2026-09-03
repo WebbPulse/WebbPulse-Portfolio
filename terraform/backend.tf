@@ -1,17 +1,6 @@
-# ---------------------------------------------------------------------------
-# Backend — ECR repository + App Runner service
-#
-# Bootstrap order:
-#   1. Run `terraform apply -target=aws_ecr_repository.backend` first
-#   2. Build and push your Docker image to the ECR repo
-#      (backend/ has no Dockerfile yet — create one that runs uvicorn on :8000)
-#   3. Run full `terraform apply` to deploy App Runner
-#
-# After initial deploy, image updates are handled by CI/CD pushing to ECR
-# and triggering an App Runner deployment — Terraform ignores the image tag.
-# ---------------------------------------------------------------------------
-
 resource "aws_ecr_repository" "backend" {
+  count = local.legacy_count
+
   name                 = "${local.prefix}-backend"
   image_tag_mutability = "MUTABLE"
 
@@ -21,7 +10,9 @@ resource "aws_ecr_repository" "backend" {
 }
 
 resource "aws_ecr_lifecycle_policy" "backend" {
-  repository = aws_ecr_repository.backend.name
+  count = local.legacy_count
+
+  repository = aws_ecr_repository.backend[0].name
 
   policy = jsonencode({
     rules = [{
@@ -37,11 +28,9 @@ resource "aws_ecr_lifecycle_policy" "backend" {
   })
 }
 
-# ---------------------------------------------------------------------------
-# IAM — ECR pull role (used by App Runner control plane during builds)
-# ---------------------------------------------------------------------------
-
 resource "aws_iam_role" "apprunner_ecr_access" {
+  count = local.legacy_count
+
   name = "${local.prefix}-apprunner-ecr-access"
 
   assume_role_policy = jsonencode({
@@ -55,15 +44,15 @@ resource "aws_iam_role" "apprunner_ecr_access" {
 }
 
 resource "aws_iam_role_policy_attachment" "apprunner_ecr_access" {
-  role       = aws_iam_role.apprunner_ecr_access.name
+  count = local.legacy_count
+
+  role       = aws_iam_role.apprunner_ecr_access[0].name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess"
 }
 
-# ---------------------------------------------------------------------------
-# IAM — instance role (used by the running container to read SSM secrets)
-# ---------------------------------------------------------------------------
-
 resource "aws_iam_role" "apprunner_instance" {
+  count = local.legacy_count
+
   name = "${local.prefix}-apprunner-instance"
 
   assume_role_policy = jsonencode({
@@ -77,8 +66,10 @@ resource "aws_iam_role" "apprunner_instance" {
 }
 
 resource "aws_iam_role_policy" "apprunner_ssm" {
+  count = local.legacy_count
+
   name = "ssm-read"
-  role = aws_iam_role.apprunner_instance.id
+  role = aws_iam_role.apprunner_instance[0].id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -90,29 +81,25 @@ resource "aws_iam_role_policy" "apprunner_ssm" {
   })
 }
 
-# ---------------------------------------------------------------------------
-# App Runner service
-# App Runner uses default (AWS-managed) egress. It reaches RDS over the
-# public internet via the endpoint's DNS name; auth + SSL secure the link.
-# ---------------------------------------------------------------------------
-
 resource "aws_apprunner_service" "backend" {
+  count = local.legacy_count
+
   service_name = "${local.prefix}-backend"
 
   source_configuration {
     authentication_configuration {
-      access_role_arn = aws_iam_role.apprunner_ecr_access.arn
+      access_role_arn = aws_iam_role.apprunner_ecr_access[0].arn
     }
 
     image_repository {
-      image_identifier      = "${aws_ecr_repository.backend.repository_url}:latest"
+      image_identifier      = "${aws_ecr_repository.backend[0].repository_url}:latest"
       image_repository_type = "ECR"
 
       image_configuration {
         port = "8000"
 
         runtime_environment_secrets = {
-          DATABASE_URL   = aws_ssm_parameter.database_url.arn
+          DATABASE_URL   = aws_ssm_parameter.database_url[0].arn
           SECRET_KEY     = aws_ssm_parameter.secret_key.arn
           ADMIN_USERNAME = aws_ssm_parameter.admin_username.arn
           ADMIN_PASSWORD = aws_ssm_parameter.admin_password.arn
@@ -133,7 +120,7 @@ resource "aws_apprunner_service" "backend" {
   instance_configuration {
     cpu               = "0.25 vCPU"
     memory            = "0.5 GB"
-    instance_role_arn = aws_iam_role.apprunner_instance.arn
+    instance_role_arn = aws_iam_role.apprunner_instance[0].arn
   }
 
   # Explicit DEFAULT egress. Terraform treats this block as computed, so
@@ -155,4 +142,12 @@ resource "aws_apprunner_service" "backend" {
       source_configuration[0].image_repository[0].image_identifier,
     ]
   }
+}
+
+resource "aws_apprunner_custom_domain_association" "api" {
+  count = local.legacy_enabled && local.custom_domains_enabled ? 1 : 0
+
+  service_arn          = aws_apprunner_service.backend[0].arn
+  domain_name          = "api.webbpulse.com"
+  enable_www_subdomain = false
 }

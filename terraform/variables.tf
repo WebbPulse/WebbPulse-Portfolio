@@ -65,3 +65,25 @@ variable "route53_write_role_arn" {
   type        = string
   default     = ""
 }
+
+variable "legacy_stack_enabled" {
+  description = "Keep the RDS + App Runner stack alive alongside the Lambda + DynamoDB stack while data is migrated. Only ever true in production; set to false after the DNS cutover to destroy the legacy resources."
+  type        = bool
+  default     = true
+}
+
+variable "api_dns_target" {
+  description = "Which backend api.webbpulse.com resolves to. Flip to 'apigateway' after the data migration has been verified; 'apprunner' requires legacy_stack_enabled."
+  type        = string
+  default     = "apprunner"
+
+  validation {
+    condition     = contains(["apprunner", "apigateway"], var.api_dns_target)
+    error_message = "api_dns_target must be 'apprunner' or 'apigateway'."
+  }
+
+  validation {
+    condition     = var.api_dns_target != "apprunner" || var.legacy_stack_enabled
+    error_message = "api_dns_target 'apprunner' requires legacy_stack_enabled = true; flip DNS to 'apigateway' before disabling the legacy stack."
+  }
+}

@@ -4,7 +4,6 @@ Tests for the projects API endpoints
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy.orm import Session
 
 
 class TestProjectsAPI:
@@ -43,14 +42,14 @@ class TestProjectsAPI:
     @pytest.mark.api
     def test_get_single_project(self, client: TestClient, test_project):
         """Test getting a single project by ID"""
-        response = client.get(f"/api/v1/projects/{test_project.id}")
+        response = client.get(f"/api/v1/projects/{test_project["id"]}")
         assert response.status_code == 200
         data = response.json()
-        assert data["title"] == test_project.title
-        assert data["description"] == test_project.description
-        assert data["technologies"] == test_project.technologies
-        assert data["github_url"] == test_project.github_url
-        assert data["live_url"] == test_project.live_url
+        assert data["title"] == test_project["title"]
+        assert data["description"] == test_project["description"]
+        assert data["technologies"] == test_project["technologies"]
+        assert data["github_url"] == test_project["github_url"]
+        assert data["live_url"] == test_project["live_url"]
 
     @pytest.mark.api
     def test_get_nonexistent_project(self, client: TestClient):
@@ -60,23 +59,23 @@ class TestProjectsAPI:
         assert "Project not found" in response.json()["detail"]
 
     @pytest.mark.api
-    def test_get_inactive_project_fails(self, client: TestClient, db_session: Session):
+    def test_get_inactive_project_fails(self, client: TestClient):
         """Test that inactive projects are not accessible via public endpoint"""
         # Create an inactive project
-        from app.models import Project
+        from app.db.entities import projects
 
-        inactive_project = Project(
-            title="Inactive Project",
-            description="An inactive project",
-            technologies=["Python"],
-            github_url="https://github.com/test/inactive",
-            live_url="https://inactive-project.com",
-            is_active=False,
+        inactive_project = projects.create(
+            {
+                "title": "Inactive Project",
+                "description": "An inactive project",
+                "technologies": ["Python"],
+                "github_url": "https://github.com/test/inactive",
+                "live_url": "https://inactive-project.com",
+                "is_active": False,
+            }
         )
-        db_session.add(inactive_project)
-        db_session.commit()
 
-        response = client.get(f"/api/v1/projects/{inactive_project.id}")
+        response = client.get(f"/api/v1/projects/{inactive_project['id']}")
         assert response.status_code == 404
         assert "Project not found" in response.json()["detail"]
 
@@ -133,7 +132,7 @@ class TestProjectsAdminAPI:
             "technologies": ["Python", "FastAPI", "React", "TypeScript"],
         }
         response = client.put(
-            f"/api/v1/projects/{test_project.id}",
+            f"/api/v1/projects/{test_project["id"]}",
             json=update_data,
             headers=admin_auth_headers,
         )
@@ -151,7 +150,7 @@ class TestProjectsAdminAPI:
         """Test updating a project without admin privileges"""
         update_data = {"title": "Updated Title"}
         response = client.put(
-            f"/api/v1/projects/{test_project.id}",
+            f"/api/v1/projects/{test_project["id"]}",
             json=update_data,
             headers=auth_headers,
         )
@@ -176,13 +175,13 @@ class TestProjectsAdminAPI:
     ):
         """Test soft deleting a project as admin"""
         response = client.delete(
-            f"/api/v1/projects/{test_project.id}", headers=admin_auth_headers
+            f"/api/v1/projects/{test_project["id"]}", headers=admin_auth_headers
         )
         assert response.status_code == 200
         assert "deleted successfully" in response.json()["message"]
 
         # Verify project is no longer accessible via public endpoint
-        get_response = client.get(f"/api/v1/projects/{test_project.id}")
+        get_response = client.get(f"/api/v1/projects/{test_project["id"]}")
         assert get_response.status_code == 404
 
     @pytest.mark.api
@@ -192,7 +191,7 @@ class TestProjectsAdminAPI:
     ):
         """Test deleting a project without admin privileges"""
         response = client.delete(
-            f"/api/v1/projects/{test_project.id}", headers=auth_headers
+            f"/api/v1/projects/{test_project["id"]}", headers=auth_headers
         )
         assert response.status_code == 403
         assert "Not enough permissions" in response.json()["detail"]
@@ -256,7 +255,7 @@ class TestProjectsAPIValidation:
         assert data["title"] == project_data["title"]
         assert data["description"] == project_data["description"]
         assert data["technologies"] == []  # Should default to empty list
-        assert data["featured"] == False  # Should default to False
+        assert data["featured"] is False
 
 
 class TestProjectsAPIPerformance:
@@ -264,24 +263,21 @@ class TestProjectsAPIPerformance:
 
     @pytest.mark.api
     @pytest.mark.slow
-    def test_get_projects_large_dataset(self, client: TestClient, db_session: Session):
+    def test_get_projects_large_dataset(self, client: TestClient):
         """Test getting projects with a large dataset"""
         # Create multiple test projects
-        from app.models import Project
+        from app.db.entities import projects
 
-        projects = []
         for i in range(25):
-            project = Project(
-                title=f"Test Project {i}",
-                description=f"Description for project {i}",
-                technologies=["Python", "FastAPI"],
-                github_url=f"https://github.com/test/project-{i}",
-                featured=(i % 3 == 0),  # Every 3rd project is featured
+            projects.create(
+                {
+                    "title": f"Test Project {i}",
+                    "description": f"Description for project {i}",
+                    "technologies": ["Python", "FastAPI"],
+                    "github_url": f"https://github.com/test/project-{i}",
+                    "featured": (i % 3 == 0),
+                }
             )
-            projects.append(project)
-
-        db_session.add_all(projects)
-        db_session.commit()
 
         # Test pagination with large dataset
         response = client.get("/api/v1/projects/?skip=0&limit=10")

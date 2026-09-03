@@ -1,78 +1,57 @@
-from typing import Dict
+from fastapi import APIRouter, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy.orm import Session
-
-from ....core.rate_limiter import rate_limiter
-from ....core.security import create_access_token, verify_password, verify_token
-from ....database import get_db
-from ....models import User as UserModel
+from ....core.login_limiter import client_ip, login_limiter
+from ....core.security import (
+    create_access_token,
+    get_password_hash,
+    verify_password,
+)
+from ....db.entities import users
 from ....schemas import Token, UserLogin
 
 router = APIRouter()
-security = HTTPBearer()
+
+_DUMMY_HASH = get_password_hash("timing-equalizer")
 
 
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: Session = Depends(get_db),
-) -> UserModel:
-    """Get current authenticated user"""
-    token = credentials.credentials
-    username = verify_token(token)
-    if not username:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+def _too_many_requests(retry_after: int) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        content={
+            "detail": "Too many failed login attempts. Please try again later.",
+            "error": "Too Many Requests",
+            "retry_after": retry_after,
+        },
+        headers={"Retry-After": str(retry_after)},
+    )
 
-    user = db.query(UserModel).filter(UserModel.username == username).first()
-    if not user or not user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions"
-        )
-    return user
+
+def _unauthorized(detail: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=detail,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 @router.post("/login", response_model=Token)
-async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
-    """Admin login"""
-    user = (
-        db.query(UserModel)
-        .filter(UserModel.username == user_credentials.username)
-        .first()
-    )
-    if not user or not verify_password(user_credentials.password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+async def login(user_credentials: UserLogin, request: Request):
+    ip = client_ip(request)
+    retry_after = login_limiter.retry_after(ip)
+    if retry_after:
+        return _too_many_requests(retry_after)
 
-    access_token = create_access_token(data={"sub": user.username})
+    user = users.find_by_unique("username", user_credentials.username)
+    hashed = user["hashed_password"] if user else _DUMMY_HASH
+    if not user or not verify_password(user_credentials.password, hashed):
+        failures = login_limiter.record_failure(ip)
+        if failures >= login_limiter.max_failures:
+            return _too_many_requests(login_limiter.retry_after(ip))
+        raise _unauthorized("Incorrect username or password")
+    if not user.get("is_active", True):
+        raise _unauthorized("User account is inactive")
+
+    login_limiter.clear(ip)
+    access_token = create_access_token(data={"sub": user["username"]})
     return {"access_token": access_token, "token_type": "bearer"}
-
-
-@router.get("/rate-limit/stats", response_model=Dict)
-async def get_rate_limit_stats(current_user: UserModel = Depends(get_current_user)):
-    """Get global rate limiting statistics (admin only)"""
-    return rate_limiter.get_global_stats()
-
-
-@router.get("/rate-limit/client/{client_id}", response_model=Dict)
-async def get_client_rate_limit_stats(
-    client_id: str, current_user: UserModel = Depends(get_current_user)
-):
-    """Get rate limiting statistics for a specific client (admin only)"""
-    return rate_limiter.get_client_stats(client_id)
-
-
-@router.post("/rate-limit/client/{client_id}/reset")
-async def reset_client_rate_limit(
-    client_id: str, current_user: UserModel = Depends(get_current_user)
-):
-    """Reset rate limiting for a specific client (admin only)"""
-    rate_limiter.reset_client(client_id)
-    return {"message": f"Rate limiting reset for client: {client_id}"}

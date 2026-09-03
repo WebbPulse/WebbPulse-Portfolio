@@ -1,24 +1,13 @@
-version: "3.8"
 services:
-  portfolio-postgres:
-    image: postgres:16
-    container_name: portfolio-postgres
-    env_file:
-      - .env
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    container_name: portfolio-dynamodb
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/home/dynamodblocal/data"]
     ports:
-      - "5432:5432"
+      - "8001:8000"
     volumes:
-      - portfolio_data:/var/lib/postgresql/data
+      - portfolio_dynamodb:/home/dynamodblocal/data
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
 volumes:
-  portfolio_data:
-
-networks:
-  portfolio-network:
-    driver: bridge
+  portfolio_dynamodb:
