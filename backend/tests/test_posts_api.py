@@ -2,11 +2,8 @@
 Tests for the posts API endpoints
 """
 
-from datetime import datetime
-
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy.orm import Session
 
 
 class TestPostsAPI:
@@ -37,34 +34,34 @@ class TestPostsAPI:
         self, client: TestClient, test_post, test_category
     ):
         """Test getting posts filtered by category"""
-        response = client.get(f"/api/v1/posts/?category_slug={test_category.slug}")
+        response = client.get(f"/api/v1/posts/?category_slug={test_category["slug"]}")
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
         if data:
-            assert data[0]["category"]["slug"] == test_category.slug
+            assert data[0]["category"]["slug"] == test_category["slug"]
 
     @pytest.mark.api
     def test_get_posts_by_category_endpoint(
         self, client: TestClient, test_post, test_category
     ):
         """Test getting posts by category using dedicated endpoint"""
-        response = client.get(f"/api/v1/posts/category/{test_category.slug}")
+        response = client.get(f"/api/v1/posts/category/{test_category["slug"]}")
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
         if data:
-            assert data[0]["category"]["slug"] == test_category.slug
+            assert data[0]["category"]["slug"] == test_category["slug"]
 
     @pytest.mark.api
     def test_get_single_post(self, client: TestClient, test_post):
         """Test getting a single post by slug"""
-        response = client.get(f"/api/v1/posts/{test_post.slug}")
+        response = client.get(f"/api/v1/posts/{test_post["slug"]}")
         assert response.status_code == 200
         data = response.json()
-        assert data["title"] == test_post.title
-        assert data["slug"] == test_post.slug
-        assert data["content"] == test_post.content
+        assert data["title"] == test_post["title"]
+        assert data["slug"] == test_post["slug"]
+        assert data["content"] == test_post["content"]
 
     @pytest.mark.api
     def test_get_nonexistent_post(self, client: TestClient):
@@ -76,7 +73,7 @@ class TestPostsAPI:
     @pytest.mark.api
     def test_get_draft_post_public_fails(self, client: TestClient, test_draft_post):
         """Test that draft posts are not accessible via public endpoint"""
-        response = client.get(f"/api/v1/posts/{test_draft_post.slug}")
+        response = client.get(f"/api/v1/posts/{test_draft_post["slug"]}")
         assert response.status_code == 404
         assert "Post not found" in response.json()["detail"]
 
@@ -88,8 +85,8 @@ class TestPostsAPI:
         data = response.json()
         assert isinstance(data, list)
         assert len(data) == 1
-        assert data[0]["name"] == test_category.name
-        assert data[0]["slug"] == test_category.slug
+        assert data[0]["name"] == test_category["name"]
+        assert data[0]["slug"] == test_category["slug"]
 
 
 class TestPostsAdminAPI:
@@ -107,8 +104,8 @@ class TestPostsAdminAPI:
         assert isinstance(data, list)
         assert len(data) == 2  # Both published and draft posts
         post_slugs = [post["slug"] for post in data]
-        assert test_post.slug in post_slugs
-        assert test_draft_post.slug in post_slugs
+        assert test_post["slug"] in post_slugs
+        assert test_draft_post["slug"] in post_slugs
 
     @pytest.mark.api
     @pytest.mark.auth
@@ -131,7 +128,7 @@ class TestPostsAdminAPI:
         self, client: TestClient, admin_auth_headers, test_category, sample_post_data
     ):
         """Test creating a new post as admin"""
-        sample_post_data["category_id"] = test_category.id
+        sample_post_data["category_id"] = test_category["id"]
         response = client.post(
             "/api/v1/posts/admin", json=sample_post_data, headers=admin_auth_headers
         )
@@ -140,7 +137,7 @@ class TestPostsAdminAPI:
         assert data["title"] == sample_post_data["title"]
         assert data["slug"] == sample_post_data["slug"]
         assert data["content"] == sample_post_data["content"]
-        assert data["category_id"] == test_category.id
+        assert data["category_id"] == test_category["id"]
 
     @pytest.mark.api
     @pytest.mark.auth
@@ -150,10 +147,10 @@ class TestPostsAdminAPI:
         """Test creating a post without providing a slug (should auto-generate)"""
         post_data = {
             "title": "Auto Slug Test Post",
-            "content": "# Auto Slug Test\n\nThis post should have an auto-generated slug.",
+            "content": "# Auto Slug Test\n\nThis post gets an auto-generated slug.",
             "excerpt": "Auto slug test excerpt",
             "read_time": "5 min read",
-            "category_id": test_category.id,
+            "category_id": test_category["id"],
         }
         response = client.post(
             "/api/v1/posts/admin", json=post_data, headers=admin_auth_headers
@@ -170,11 +167,11 @@ class TestPostsAdminAPI:
         """Test creating a post with a duplicate slug"""
         post_data = {
             "title": "Different Title",
-            "slug": test_post.slug,  # Use existing slug
+            "slug": test_post["slug"],  # Use existing slug
             "content": "# Different Content",
             "excerpt": "Different excerpt",
             "read_time": "3 min read",
-            "category_id": test_category.id,
+            "category_id": test_category["id"],
         }
         response = client.post(
             "/api/v1/posts/admin", json=post_data, headers=admin_auth_headers
@@ -188,7 +185,7 @@ class TestPostsAdminAPI:
         self, client: TestClient, auth_headers, test_category, sample_post_data
     ):
         """Test creating a post without admin privileges"""
-        sample_post_data["category_id"] = test_category.id
+        sample_post_data["category_id"] = test_category["id"]
         response = client.post(
             "/api/v1/posts/admin", json=sample_post_data, headers=auth_headers
         )
@@ -205,7 +202,7 @@ class TestPostsAdminAPI:
             "excerpt": "Updated excerpt",
         }
         response = client.put(
-            f"/api/v1/posts/admin/{test_post.id}",
+            f"/api/v1/posts/admin/{test_post["id"]}",
             json=update_data,
             headers=admin_auth_headers,
         )
@@ -231,13 +228,13 @@ class TestPostsAdminAPI:
     def test_delete_post_admin(self, client: TestClient, admin_auth_headers, test_post):
         """Test deleting a post as admin"""
         response = client.delete(
-            f"/api/v1/posts/admin/{test_post.id}", headers=admin_auth_headers
+            f"/api/v1/posts/admin/{test_post["id"]}", headers=admin_auth_headers
         )
         assert response.status_code == 200
         assert "deleted successfully" in response.json()["message"]
 
         # Verify post is deleted
-        get_response = client.get(f"/api/v1/posts/{test_post.slug}")
+        get_response = client.get(f"/api/v1/posts/{test_post["slug"]}")
         assert get_response.status_code == 404
 
     @pytest.mark.api
@@ -255,14 +252,14 @@ class TestPostsAdminAPI:
     ):
         """Test publishing a draft post as admin"""
         response = client.post(
-            f"/api/v1/posts/admin/{test_draft_post.id}/publish",
+            f"/api/v1/posts/admin/{test_draft_post["id"]}/publish",
             headers=admin_auth_headers,
         )
         assert response.status_code == 200
         assert "published successfully" in response.json()["message"]
 
         # Verify post is now published
-        get_response = client.get(f"/api/v1/posts/{test_draft_post.slug}")
+        get_response = client.get(f"/api/v1/posts/{test_draft_post["slug"]}")
         assert get_response.status_code == 200
 
     @pytest.mark.api
@@ -272,7 +269,7 @@ class TestPostsAdminAPI:
     ):
         """Test publishing a post that's already published"""
         response = client.post(
-            f"/api/v1/posts/admin/{test_post.id}/publish", headers=admin_auth_headers
+            f"/api/v1/posts/admin/{test_post["id"]}/publish", headers=admin_auth_headers
         )
         assert response.status_code == 400
         assert "already published" in response.json()["detail"]
@@ -322,7 +319,7 @@ class TestCategoriesAdminAPI:
         """Test creating a category with a duplicate slug"""
         category_data = {
             "name": "Different Name",
-            "slug": test_category.slug,  # Use existing slug
+            "slug": test_category["slug"],  # Use existing slug
             "description": "Different description",
         }
         response = client.post(
@@ -342,7 +339,7 @@ class TestCategoriesAdminAPI:
             "description": "Updated category description",
         }
         response = client.put(
-            f"/api/v1/posts/categories/{test_category.id}",
+            f"/api/v1/posts/categories/{test_category["id"]}",
             json=update_data,
             headers=admin_auth_headers,
         )
@@ -358,7 +355,8 @@ class TestCategoriesAdminAPI:
     ):
         """Test deleting a category as admin"""
         response = client.delete(
-            f"/api/v1/posts/categories/{test_category.id}", headers=admin_auth_headers
+            f"/api/v1/posts/categories/{test_category["id"]}",
+            headers=admin_auth_headers,
         )
         assert response.status_code == 200
         assert "deleted successfully" in response.json()["message"]
@@ -370,7 +368,8 @@ class TestCategoriesAdminAPI:
     ):
         """Test deleting a category that has posts (should fail)"""
         response = client.delete(
-            f"/api/v1/posts/categories/{test_category.id}", headers=admin_auth_headers
+            f"/api/v1/posts/categories/{test_category["id"]}",
+            headers=admin_auth_headers,
         )
         assert response.status_code == 400
         assert "has posts" in response.json()["detail"]

@@ -2,11 +2,8 @@
 Tests for the authentication API endpoints
 """
 
-from datetime import datetime, timedelta
-
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy.orm import Session
 
 
 class TestAuthAPI:
@@ -56,26 +53,25 @@ class TestAuthAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_login_inactive_user(self, client: TestClient, db_session: Session):
+    def test_login_inactive_user(self, client: TestClient):
         """Test login with inactive user"""
         from app.core.security import get_password_hash
-        from app.models import User
+        from app.db.entities import users
 
-        inactive_user = User(
-            email="inactive@example.com",
-            username="inactiveuser",
-            hashed_password=get_password_hash("password123"),
-            is_admin=False,
-            is_active=False,
+        users.create(
+            {
+                "email": "inactive@example.com",
+                "username": "inactiveuser",
+                "hashed_password": get_password_hash("password123"),
+                "is_admin": False,
+                "is_active": False,
+            }
         )
-        db_session.add(inactive_user)
-        db_session.commit()
 
         login_data = {"username": "inactiveuser", "password": "password123"}
         response = client.post("/api/v1/admin/login", json=login_data)
-        assert response.status_code == 200  # Login should still work
-        data = response.json()
-        assert "access_token" in data
+        assert response.status_code == 401
+        assert response.json()["detail"] == "User account is inactive"
 
     @pytest.mark.api
     @pytest.mark.auth
@@ -140,7 +136,7 @@ class TestTokenValidation:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_token_with_nonexistent_user(self, client: TestClient, db_session: Session):
+    def test_token_with_nonexistent_user(self, client: TestClient):
         """Test token with user that no longer exists"""
         from app.core.security import create_access_token
 
@@ -162,38 +158,19 @@ class TestPasswordSecurity:
         from app.core.security import verify_password
 
         # Password should be hashed
-        assert test_user.hashed_password != "testpassword123"
-        assert test_user.hashed_password.startswith("$2b$")
+        assert test_user["hashed_password"] != "testpassword123"
+        assert test_user["hashed_password"].startswith("$2b$")
 
         # Should verify correctly
-        assert verify_password("testpassword123", test_user.hashed_password)
-        assert not verify_password("wrongpassword", test_user.hashed_password)
+        assert verify_password("testpassword123", test_user["hashed_password"])
+        assert not verify_password("wrongpassword", test_user["hashed_password"])
 
     @pytest.mark.unit
-    def test_password_hash_uniqueness(self, db_session: Session):
+    def test_password_hash_uniqueness(self):
         """Test that password hashes are unique for same password"""
         from app.core.security import get_password_hash
-        from app.models import User
 
-        # Create two users with same password
-        user1 = User(
-            email="user1@example.com",
-            username="user1",
-            hashed_password=get_password_hash("samepassword"),
-            is_admin=False,
-            is_active=True,
-        )
-
-        user2 = User(
-            email="user2@example.com",
-            username="user2",
-            hashed_password=get_password_hash("samepassword"),
-            is_admin=False,
-            is_active=True,
-        )
-
-        # Hashes should be different (due to salt)
-        assert user1.hashed_password != user2.hashed_password
+        assert get_password_hash("samepassword") != get_password_hash("samepassword")
 
 
 class TestAuthIntegration:

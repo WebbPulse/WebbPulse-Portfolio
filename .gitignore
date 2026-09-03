@@ -68,3 +68,6 @@ Thumbs.db
 # -----------------------------------------------------------------------------
 .claude/
 .playwright-mcp/
+backend/dist/
+backend/build/
+backend/coverage.xml

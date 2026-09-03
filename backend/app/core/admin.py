@@ -1,54 +1,56 @@
-import logging
-
 from ..config import settings
-from ..core.security import get_password_hash, verify_password
-from ..database import SessionLocal
-from ..models.user import User
+from ..db.entities import users
+from ..db.repository import UniqueViolation
+from .logging import logger
+from .security import get_password_hash, verify_password
 
-logger = logging.getLogger(__name__)
+_seeded = False
 
 
 def seed_admin_user() -> None:
-    """Ensure the admin user defined in settings exists and matches env values.
+    user = users.find_by_unique("username", settings.ADMIN_USERNAME)
+    if user is None:
+        try:
+            users.create(
+                {
+                    "username": settings.ADMIN_USERNAME,
+                    "email": settings.ADMIN_EMAIL,
+                    "hashed_password": get_password_hash(settings.ADMIN_PASSWORD),
+                    "is_admin": True,
+                    "is_active": True,
+                }
+            )
+            logger.info("Seeded admin user", username=settings.ADMIN_USERNAME)
+            return
+        except UniqueViolation:
+            user = users.find_by_unique("username", settings.ADMIN_USERNAME)
+            if user is None:
+                raise
 
-    Idempotent: creates the user on first run, then updates email/password on
-    subsequent runs only if they differ from the current values in env.
-    """
-    db = SessionLocal()
-    try:
-        user = (
-            db.query(User).filter(User.username == settings.ADMIN_USERNAME).first()
+    changes = {}
+    if user.get("email") != settings.ADMIN_EMAIL:
+        changes["email"] = settings.ADMIN_EMAIL
+    if not verify_password(settings.ADMIN_PASSWORD, user["hashed_password"]):
+        changes["hashed_password"] = get_password_hash(settings.ADMIN_PASSWORD)
+    if not user.get("is_admin"):
+        changes["is_admin"] = True
+    if not user.get("is_active", True):
+        changes["is_active"] = True
+    if changes:
+        users.update(user["id"], changes)
+        logger.info(
+            "Updated admin user from settings", username=settings.ADMIN_USERNAME
         )
 
-        if user is None:
-            user = User(
-                username=settings.ADMIN_USERNAME,
-                email=settings.ADMIN_EMAIL,
-                hashed_password=get_password_hash(settings.ADMIN_PASSWORD),
-                is_admin=True,
-                is_active=True,
-            )
-            db.add(user)
-            db.commit()
-            logger.info(f"Seeded admin user '{settings.ADMIN_USERNAME}'")
-            return
 
-        changed = False
-        if user.email != settings.ADMIN_EMAIL:
-            user.email = settings.ADMIN_EMAIL
-            changed = True
-        if not verify_password(settings.ADMIN_PASSWORD, user.hashed_password):
-            user.hashed_password = get_password_hash(settings.ADMIN_PASSWORD)
-            changed = True
-        if not user.is_admin:
-            user.is_admin = True
-            changed = True
-        if not user.is_active:
-            user.is_active = True
-            changed = True
+def ensure_admin_seeded() -> None:
+    global _seeded
+    if _seeded:
+        return
+    seed_admin_user()
+    _seeded = True
 
-        if changed:
-            db.commit()
-            logger.info(f"Updated admin user '{settings.ADMIN_USERNAME}' from env")
-    finally:
-        db.close()
+
+def reset_seed_state() -> None:
+    global _seeded
+    _seeded = False

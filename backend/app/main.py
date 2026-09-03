@@ -1,71 +1,54 @@
-import logging
-from contextlib import asynccontextmanager
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api.seo import router as seo_router
 from .api.v1.api import api_router
 from .config import settings
-from .core.admin import seed_admin_user
-from .core.rate_limiter import rate_limit_middleware, rate_limiter
-from .database import run_migrations, test_db_connection
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+from .core.logging import logger
+from .core.middleware import (
+    AdminSeedMiddleware,
+    RequestLoggingMiddleware,
+    TrailingSlashMiddleware,
 )
+from .db.entities import SITE_CONTENT_ID, site_content
 
-# Suppress verbose SQLAlchemy logs
-logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
-logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)
-logging.getLogger("sqlalchemy.dialects").setLevel(logging.WARNING)
+VERSION = "1.0.0"
 
-# Keep API logs at INFO level
-logger = logging.getLogger(__name__)
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Lifespan event handler for database initialization"""
-    # Startup
-    logger.info("Starting Portfolio Blog API...")
-
-    # Test database connection
-    if test_db_connection():
-        # Run database migrations
-        if run_migrations():
-            logger.info("Database initialized successfully")
-            seed_admin_user()
-        else:
-            logger.error("Failed to run database migrations")
-    else:
-        logger.error(
-            "Failed to connect to database. Please check your database configuration."
-        )
-
-    yield
-
-    # Shutdown (if needed)
-    logger.info("Shutting down Portfolio Blog API...")
-
-
-# Create FastAPI app
 app = FastAPI(
     title=settings.APP_NAME,
     description="Blog API for Portfolio Website",
-    version="1.0.0",
+    version=VERSION,
     docs_url="/docs",
     redoc_url="/redoc",
-    lifespan=lifespan,
+    redirect_slashes=False,
 )
 
-# Initialize rate limiter with settings
-rate_limiter.requests_per_minute = settings.RATE_LIMIT_REQUESTS_PER_MINUTE
-rate_limiter.requests_per_hour = settings.RATE_LIMIT_REQUESTS_PER_HOUR
-rate_limiter.requests_per_day = settings.RATE_LIMIT_REQUESTS_PER_DAY
+app.include_router(api_router, prefix="/api/v1")
+app.include_router(seo_router)
 
-# Add CORS middleware
+
+@app.get("/")
+async def root():
+    return {"message": "Portfolio Blog API", "version": VERSION}
+
+
+def database_status() -> str:
+    try:
+        site_content.get(SITE_CONTENT_ID)
+        return "healthy"
+    except Exception as error:
+        logger.exception("Database health check failed", error=str(error))
+        return "unhealthy"
+
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "database": database_status(), "version": VERSION}
+
+
+app.add_middleware(AdminSeedMiddleware)
+app.add_middleware(TrailingSlashMiddleware, router=app.router)
+app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -83,26 +66,5 @@ app.add_middleware(
         "Access-Control-Request-Headers",
     ],
     expose_headers=["Content-Length", "Content-Type"],
-    max_age=86400,  # Cache preflight requests for 24 hours
+    max_age=86400,
 )
-
-# Add rate limiting middleware
-app.middleware("http")(rate_limit_middleware)
-
-# Include API routes
-app.include_router(api_router, prefix="/api/v1")
-
-# SEO endpoints at the app root: /sitemap.xml and /robots.txt
-app.include_router(seo_router)
-
-
-@app.get("/")
-async def root():
-    return {"message": "Portfolio Blog API", "version": "1.0.0"}
-
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    db_status = "healthy" if test_db_connection() else "unhealthy"
-    return {"status": "healthy", "database": db_status, "version": "1.0.0"}

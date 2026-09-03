@@ -2,11 +2,10 @@
 Tests for the experience API endpoints
 """
 
-from datetime import date, datetime
+from datetime import datetime
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy.orm import Session
 
 
 class TestExperienceAPI:
@@ -35,13 +34,13 @@ class TestExperienceAPI:
     @pytest.mark.api
     def test_get_single_experience(self, client: TestClient, test_experience):
         """Test getting a single experience entry by ID"""
-        response = client.get(f"/api/v1/experience/{test_experience.id}")
+        response = client.get(f"/api/v1/experience/{test_experience["id"]}")
         assert response.status_code == 200
         data = response.json()
-        assert data["title"] == test_experience.title
-        assert data["company"] == test_experience.company
-        assert data["location"] == test_experience.location
-        assert data["technologies"] == test_experience.technologies
+        assert data["title"] == test_experience["title"]
+        assert data["company"] == test_experience["company"]
+        assert data["location"] == test_experience["location"]
+        assert data["technologies"] == test_experience["technologies"]
         # Check that end_date matches (it will be a string in the response)
         assert data["end_date"] == "2023-12-31"
 
@@ -53,29 +52,27 @@ class TestExperienceAPI:
         assert "Experience entry not found" in response.json()["detail"]
 
     @pytest.mark.api
-    def test_get_inactive_experience_fails(
-        self, client: TestClient, db_session: Session
-    ):
-        """Test that inactive experience entries are not accessible via public endpoint"""
+    def test_get_inactive_experience_fails(self, client: TestClient):
+        """Inactive experience entries are not accessible via public endpoint"""
         # Create an inactive experience entry
-        from app.models import Experience
+        from app.db.entities import experience
 
-        inactive_experience = Experience(
-            title="Inactive Position",
-            company="Inactive Company",
-            location="Inactive City, State",
-            period="Jan 2020 - Dec 2021",
-            start_date=datetime(2020, 1, 1).date(),
-            end_date=datetime(2021, 12, 31).date(),
-            description="An inactive experience entry",
-            technologies=["Python"],
-            achievements=[],
-            is_active=False,
+        inactive_experience = experience.create(
+            {
+                "title": "Inactive Position",
+                "company": "Inactive Company",
+                "location": "Inactive City, State",
+                "period": "Jan 2020 - Dec 2021",
+                "start_date": datetime(2020, 1, 1).date(),
+                "end_date": datetime(2021, 12, 31).date(),
+                "description": "An inactive experience entry",
+                "technologies": ["Python"],
+                "achievements": [],
+                "is_active": False,
+            }
         )
-        db_session.add(inactive_experience)
-        db_session.commit()
 
-        response = client.get(f"/api/v1/experience/{inactive_experience.id}")
+        response = client.get(f"/api/v1/experience/{inactive_experience['id']}")
         assert response.status_code == 404
         assert "Experience entry not found" in response.json()["detail"]
 
@@ -158,7 +155,7 @@ class TestExperienceAdminAPI:
             "technologies": ["Python", "FastAPI", "React", "TypeScript"],
         }
         response = client.put(
-            f"/api/v1/experience/{test_experience.id}",
+            f"/api/v1/experience/{test_experience["id"]}",
             json=update_data,
             headers=admin_auth_headers,
         )
@@ -176,7 +173,7 @@ class TestExperienceAdminAPI:
         """Test updating an experience entry without admin privileges"""
         update_data = {"title": "Updated Title"}
         response = client.put(
-            f"/api/v1/experience/{test_experience.id}",
+            f"/api/v1/experience/{test_experience["id"]}",
             json=update_data,
             headers=auth_headers,
         )
@@ -203,13 +200,13 @@ class TestExperienceAdminAPI:
     ):
         """Test soft deleting an experience entry as admin"""
         response = client.delete(
-            f"/api/v1/experience/{test_experience.id}", headers=admin_auth_headers
+            f"/api/v1/experience/{test_experience["id"]}", headers=admin_auth_headers
         )
         assert response.status_code == 200
         assert "deleted successfully" in response.json()["message"]
 
         # Verify experience entry is no longer accessible via public endpoint
-        get_response = client.get(f"/api/v1/experience/{test_experience.id}")
+        get_response = client.get(f"/api/v1/experience/{test_experience["id"]}")
         assert get_response.status_code == 404
 
     @pytest.mark.api
@@ -219,7 +216,7 @@ class TestExperienceAdminAPI:
     ):
         """Test deleting an experience entry without admin privileges"""
         response = client.delete(
-            f"/api/v1/experience/{test_experience.id}", headers=auth_headers
+            f"/api/v1/experience/{test_experience["id"]}", headers=auth_headers
         )
         assert response.status_code == 403
         assert "Not enough permissions" in response.json()["detail"]
@@ -318,7 +315,7 @@ class TestExperienceAPIValidation:
         # Test setting end date
         update_data = {"end_date": "2024-12-31"}
         response = client.put(
-            f"/api/v1/experience/{test_experience.id}",
+            f"/api/v1/experience/{test_experience["id"]}",
             json=update_data,
             headers=admin_auth_headers,
         )
@@ -329,7 +326,7 @@ class TestExperienceAPIValidation:
         # Test clearing end date (making it current)
         update_data = {"end_date": None}
         response = client.put(
-            f"/api/v1/experience/{test_experience.id}",
+            f"/api/v1/experience/{test_experience["id"]}",
             json=update_data,
             headers=admin_auth_headers,
         )
@@ -343,31 +340,25 @@ class TestExperienceAPIPerformance:
 
     @pytest.mark.api
     @pytest.mark.slow
-    def test_get_experience_large_dataset(
-        self, client: TestClient, db_session: Session
-    ):
+    def test_get_experience_large_dataset(self, client: TestClient):
         """Test getting experience entries with a large dataset"""
         # Create multiple test experience entries
-        from app.models import Experience
+        from app.db.entities import experience
 
-        experiences = []
         for i in range(25):
-            experience = Experience(
-                title=f"Test Position {i}",
-                company=f"Test Company {i}",
-                location=f"Test City {i}, State",
-                period=f"Jan {2020 + i} - Dec {2021 + i}",
-                start_date=datetime(2020 + i, 1, 1).date(),
-                end_date=datetime(2021 + i, 12, 31).date(),
-                description=f"Description for position {i}",
-                technologies=["Python", "FastAPI"],
-                achievements=["Achievement 1", "Achievement 2"],
-                is_active=True,
+            experience.create(
+                {
+                    "title": f"Test Position {i}",
+                    "company": f"Test Company {i}",
+                    "location": f"Test City {i}, State",
+                    "period": f"Jan {2020 + i} - Dec {2021 + i}",
+                    "start_date": datetime(2020 + i, 1, 1).date(),
+                    "end_date": datetime(2021 + i, 12, 31).date(),
+                    "description": f"Description for position {i}",
+                    "technologies": ["Python", "FastAPI"],
+                    "achievements": ["Achievement 1", "Achievement 2"],
+                }
             )
-            experiences.append(experience)
-
-        db_session.add_all(experiences)
-        db_session.commit()
 
         # Test pagination with large dataset
         response = client.get("/api/v1/experience/?skip=0&limit=10")

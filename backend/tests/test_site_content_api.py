@@ -4,8 +4,6 @@ Tests for the site content singleton API.
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
 
 
 class TestSiteContentAPI:
@@ -82,9 +80,7 @@ class TestSiteContentAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_update_site_content_no_auth(
-        self, client: TestClient, test_site_content
-    ):
+    def test_update_site_content_no_auth(self, client: TestClient, test_site_content):
         response = client.put("/api/v1/site-content/", json={"hero_title": "X"})
         assert response.status_code == 403
 
@@ -100,25 +96,3 @@ class TestSiteContentAdminAPI:
             headers=admin_auth_headers,
         )
         assert response.status_code == 500
-
-
-class TestSiteContentSingletonConstraint:
-    @pytest.mark.unit
-    def test_cannot_insert_second_row(
-        self, db_session: Session, test_site_content
-    ):
-        """The CHECK(id = 1) constraint must prevent inserting another row."""
-        from app.models import SiteContent
-
-        second = SiteContent(
-            id=2,
-            hero_title="Bad",
-            hero_subtitle="Bad",
-            hero_description="Bad",
-            about_paragraphs=[],
-            about_values=[],
-        )
-        db_session.add(second)
-        with pytest.raises(IntegrityError):
-            db_session.commit()
-        db_session.rollback()

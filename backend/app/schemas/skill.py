@@ -3,9 +3,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict
 
-SkillCategory = Literal[
-    "frontend", "backend", "devops", "cloud", "networking", "other"
-]
+SkillCategory = Literal["frontend", "backend", "devops", "cloud", "networking", "other"]
 SkillTier = Literal["core", "working", "familiar"]
 
 
