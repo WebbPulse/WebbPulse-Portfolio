@@ -30,24 +30,20 @@ npm run test:run -- --reporter=verbose path/to/test.spec.ts
 ### Backend (`backend/`)
 
 ```bash
-# Start PostgreSQL locally
+# Local DynamoDB via docker-compose, then the API against it
 docker-compose up -d
+DYNAMODB_ENDPOINT_URL=<local dynamodb url> uvicorn app.main:app --reload
 
-# Run the server
-uvicorn app.main:app --reload
-
-# Tests
+# Tests (moto-backed, no AWS or database needed)
 pytest tests/                                      # All tests
 pytest tests/test_name.py::test_function_name -v   # Single test
-python run_tests.py all                            # All tests
-python run_tests.py unit|api|integration|auth      # By category
-python run_tests.py coverage                       # With HTML coverage report
-python run_tests.py lint                           # Flake8 + Black checks
-python run_tests.py format                         # Black + isort formatting
 
-# Database migrations
-alembic revision --autogenerate -m "description"
-alembic upgrade head
+# Lint / format
+flake8 app/ tests/ --max-line-length=88 --extend-ignore=E203,W503
+black app/ tests/ && isort app/ tests/
+
+# Build the Lambda deployment package (what CI ships)
+bash scripts/build_lambda.sh                       # -> backend/dist/function.zip
 ```
 
 ## Architecture
@@ -56,41 +52,64 @@ alembic upgrade head
 
 - **Pages**: `/` (portfolio), `/blog`, `/blog/:slug`, `/admin`
 - **API layer**: All API calls go through `src/services/api.ts` (`apiService`)
-- **Dev proxy**: Vite proxies `/api/*` → `http://localhost:8000` in local dev; production uses `VITE_API_URL` env var
+- **Dev proxy**: Vite proxies `/api/*` → `http://localhost:8000` in local dev; a production build reads `VITE_API_BASE_URL` (set by `deploy-frontend.yml` from the `API_BASE_URL` environment variable) and falls back to `https://api.webbpulse.com/api/v1`
 
 ### Backend
 
-- **REST API**: All routes under `/api/v1/` prefix. OpenAPI docs at `/docs`
-- **Auth**: JWT tokens (python-jose/bcrypt). Users have an `is_admin` boolean flag
-- **Database**: PostgreSQL via SQLAlchemy 2.0 ORM + Alembic migrations. Local dev uses Docker Compose
-- **Rate limiting**: Custom middleware in `app/core/` with per-minute/hour/day limits
+- **Runtime**: one FastAPI app on a single Lambda (`webbpulse-<env>-api`, Python 3.13, arm64) via Mangum, behind an API Gateway HTTP API (`ANY /{proxy+}`). Handler is `app.lambda_handler.handler`
+- **REST API**: All routes under `/api/v1/` prefix. OpenAPI docs at `/docs`. Ids stay integers and list endpoints keep `skip`/`limit` so the frontend contract is unchanged
+- **Auth**: JWT tokens (HS256, python-jose/bcrypt). Users have an `is_admin` boolean flag. The admin user is seeded from SSM on cold start
+- **Database**: DynamoDB, one table per entity (`webbpulse-<env>-<entity>`: users, categories, posts, projects, experience, skills, education, certifications, site-content, meta). Integer ids come from counter items in `meta`; uniqueness (username, email, slug) is enforced with lookup items inside `TransactWriteItems`. `posts` has `published-index` and `category-index` GSIs
+- **Config**: env vars `DYNAMODB_TABLE_PREFIX`, `SSM_PARAMETER_PREFIX` (secret key + admin credentials are read from SSM), `ENVIRONMENT`, `CORS_ORIGINS`, `SITE_URL`, `LOG_LEVEL`; `DYNAMODB_ENDPOINT_URL` points at a local DynamoDB
+- **Rate limiting**: API Gateway stage throttling (burst 200, rate 100). There is no in-process limiter
+- **Observability**: aws-lambda-powertools logger, X-Ray active tracing, 30-day CloudWatch log groups for the function and the HTTP API access log
 
 ### Key files
 
 | File | Purpose |
 |---|---|
 | `backend/app/main.py` | FastAPI app entrypoint — CORS, middleware, lifespan hooks |
-| `backend/app/config.py` | Pydantic Settings — env vars including `DATABASE_URL` |
-| `backend/app/database.py` | SQLAlchemy engine, session factory |
+| `backend/app/lambda_handler.py` | Mangum adapter — the Lambda entrypoint |
+| `backend/app/config.py` | Pydantic Settings — env vars and SSM-backed secrets |
 | `backend/app/api/v1/` | Route handlers by resource |
+| `backend/scripts/build_lambda.sh` | Builds `dist/function.zip` for Lambda |
+| `terraform/dynamodb.tf` | Table map — attributes, GSIs, TTL, PITR per entity |
+| `terraform/lambda.tf` | Function, execution role, artifact bucket, placeholder package |
+| `terraform/apigateway.tf` | HTTP API, `$default` stage, `api.webbpulse.com` custom domain |
 | `frontend/src/services/api.ts` | Centralized API client |
 | `frontend/vite.config.ts` | Vite config with dev proxy |
 
 ### Deployment
 
-- **Infrastructure**: `terraform/` — all AWS resources are defined in code, including the App Runner service (`aws_apprunner_service.backend`), ECR repo, RDS instance, VPC, S3/CloudFront frontend and the Route 53 zone. Nothing is clicked in the console
-- **Terraform Cloud**: org `WebbPulse`, workspace `WebbPulse`, pinned in `terraform/versions.tf`. AWS credentials come from TFC dynamic provider credentials — no static keys
-- **Region**: `us-west-2` (ACM certs for CloudFront are provisioned in `us-east-1` via a second provider alias)
+- **Infrastructure**: `terraform/` — all AWS resources are defined in code: DynamoDB tables, the Lambda function and its artifact bucket, the HTTP API, S3/CloudFront frontend, the Route 53 records (written into the management-account zone through `aws.dns`) and, while it is still enabled, the legacy RDS + App Runner stack. Nothing is clicked in the console
+- **Terraform Cloud**: org `WebbPulse`, workspaces `WebbPulse-Portfolio` (production, bound to `main`) and `WebbPulse-Portfolio-staging` (bound to `staging`). AWS credentials come from TFC dynamic provider credentials — no static keys. Terraform never ships application code: the function is created with a placeholder package and `ignore_changes` on the code attributes, and CI updates the code
+- **Region**: `us-west-2` (the CloudFront cert is provisioned in `us-east-1` via a second provider alias)
+- **Cutover switches** (`terraform/variables.tf`): `legacy_stack_enabled` (default `true`, only ever effective in production) keeps RDS/App Runner alive while data is migrated; `api_dns_target` (`apprunner` | `apigateway`, default `apprunner`) picks which backend `api.webbpulse.com` resolves to. The order is: apply with defaults → run the data migration → set `api_dns_target = "apigateway"` → set `legacy_stack_enabled = false`. `apprunner` with the legacy stack disabled is rejected at plan time
+- **Custom domains** exist only when `staging_profile = "full"` and a zone id is set; otherwise CloudFront and the HTTP API serve on their default hostnames
 - **CI/CD**: GitHub Actions
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `.github/workflows/test-backend.yml` | PR to `main`, paths `backend/**` | pytest against a Postgres service container |
-| `.github/workflows/test-frontend.yml` | PR to `main`, paths `frontend/**` | Vitest + build |
-| `.github/workflows/deploy-backend.yml` | push to `main`, paths `backend/**` | builds the image, pushes to ECR, waits for any active TFC run and for App Runner to reach `RUNNING`, then `aws apprunner start-deployment` |
-| `.github/workflows/deploy-frontend.yml` | push to `main`, paths `frontend/**` | `npm run build`, waits for any active TFC run, `s3 sync --delete`, CloudFront invalidation |
+| `.github/workflows/test-backend.yml` | PR to `main`/`staging`, paths `backend/**` | pytest on moto (no database service), flake8, black, isort |
+| `.github/workflows/test-frontend.yml` | PR to `main`/`staging`, paths `frontend/**` | lint, format check, build, Vitest with coverage |
+| `.github/workflows/deploy-backend.yml` | push to `main`/`staging`, paths `backend/**` | builds `function.zip`, uploads it to the artifact bucket as `backend/<sha>.zip`, waits for any active TFC run, `aws lambda update-function-code --publish`, then curls `/health` |
+| `.github/workflows/deploy-frontend.yml` | push to `main`/`staging`, paths `frontend/**` | `npm run build` with `VITE_API_BASE_URL`, waits for any active TFC run, `s3 sync --delete`, CloudFront invalidation |
 
-Both deploy workflows run in the `production` GitHub Environment and assume `vars.AWS_DEPLOY_ROLE_ARN` via OIDC. The TFC-polling step exists to avoid `OPERATION_IN_PROGRESS` when Terraform and a deploy touch App Runner at the same time.
+Deploy workflows pick the `production` or `staging` GitHub Environment from the branch and assume `vars.AWS_DEPLOY_ROLE_ARN` via OIDC. The TFC-polling step keeps a code deploy from racing a Terraform apply that is touching the same function.
+
+Environment-scoped inputs each GitHub Environment must define:
+
+| Name | Kind | Used by |
+|---|---|---|
+| `AWS_DEPLOY_ROLE_ARN` | variable | both deploy workflows — terraform role `webbpulse-<env>-github-actions-deploy` |
+| `LAMBDA_FUNCTION_NAME` | variable | `deploy-backend.yml` (terraform output `lambda_function_name`) |
+| `LAMBDA_ARTIFACT_BUCKET` | variable | `deploy-backend.yml` (terraform output `lambda_artifact_bucket`) |
+| `API_BASE_URL` | variable | backend smoke test and the frontend build (terraform output `backend_url`, no trailing slash) |
+| `FRONTEND_S3_BUCKET` | variable | `deploy-frontend.yml` (terraform output `frontend_bucket`) |
+| `CLOUDFRONT_DISTRIBUTION_ID` | variable | `deploy-frontend.yml` (terraform output `cloudfront_distribution_id`) |
+| `TFC_API_TOKEN` | secret | both deploy workflows — HCP Terraform token for workspace polling |
+
+`ECR_REPOSITORY_NAME` and `APP_RUNNER_SERVICE_ARN` are no longer read by any workflow.
 
 ## Branching and deploys
 
@@ -107,28 +126,11 @@ feature/* ──PR──▶ staging ──PR──▶ main
 - Hotfixes branch from `main` and PR into `main`, then are immediately back-merged `main` → `staging`. Skipping the back-merge is how the branches silently diverge.
 - Both accounts are `us-west-2`. `staging` carries the same rules as `main` because a TFC workspace bound to that branch assumes an IAM role in a real AWS account — the branch is a credential, not a scratch space.
 
-**Protection is convention only.** The WebbPulse org is on GitHub Free, so every repo — public and private — runs the same configuration: no branch protection, no rulesets. The real gate is Terraform Cloud manual apply on the production workspace: a merge cannot change AWS, only an apply can. CI runs on every PR but is not blocking — you have to read it.
-
-### Current state, and what must happen before `staging` exists
-
-There is no `staging` branch here yet, no `staging` GitHub Environment (only `production`), and no staging TFC workspace — `terraform/versions.tf` hardcodes the single workspace `WebbPulse`, and `var.environment` defaults to `production`. Every workflow above triggers on `main` only.
-
-Deploy inputs currently live at **repository** scope, and repo-level variables are single-valued. A `staging` branch reading a repo-level `AWS_DEPLOY_ROLE_ARN` deploys straight into the production account. Move these to environment scope (`staging` / `production`) before creating the branch:
-
-| Name | Kind | Used by |
-|---|---|---|
-| `AWS_DEPLOY_ROLE_ARN` | variable | both deploy workflows — OIDC role, e.g. `webbpulse-production-github-actions-deploy` |
-| `ECR_REPOSITORY_NAME` | variable | `deploy-backend.yml` (terraform output, `webbpulse-production-backend`) |
-| `APP_RUNNER_SERVICE_ARN` | variable | `deploy-backend.yml` |
-| `FRONTEND_S3_BUCKET` | variable | `deploy-frontend.yml` (terraform output `frontend_bucket`) |
-| `CLOUDFRONT_DISTRIBUTION_ID` | variable | `deploy-frontend.yml` (terraform output `cloudfront_distribution_id`) |
-| `TFC_API_TOKEN` | secret | both deploy workflows — HCP Terraform token for workspace polling |
-
-The workflows' `TFC_WORKSPACE: WebbPulse` env value is also production-specific and would need to vary per environment.
+**Protection.** The WebbPulse org is on GitHub Team: `main` and `staging` are covered by repository rulesets (pull request required, force-push and deletion blocked, bypassable only by the repository admin). The real gate is still Terraform Cloud manual apply on the production workspace: a merge cannot change AWS, only an apply can. CI runs on every PR but is not blocking — you have to read it.
 
 ### A staging branch does not imply staging infrastructure
 
-The project declares a staging profile — `none`, `reduced`, or `full`. The TFC staging workspace is always wired to the staging AWS account, but it may provision nothing. Check the profile before assuming there is a staging environment to deploy to; staging is never auto-provisioned to mirror production. This project has not declared one yet.
+The project declares a staging profile — `none`, `reduced`, or `full` — through the `staging_profile` Terraform variable. The staging workspace is wired to the staging AWS account, but with profile `none` it refuses to plan and provisions nothing. `reduced` provisions Lambda + DynamoDB + HTTP API + S3/CloudFront on default AWS hostnames; `full` adds the custom domains. The legacy RDS/App Runner stack is never created in staging regardless of `legacy_stack_enabled`. Check the profile before assuming there is a staging environment to deploy to.
 
 ## Conventions
 
@@ -136,5 +138,5 @@ The project declares a staging profile — `none`, `reduced`, or `full`. The TFC
 
 ### Test markers (backend)
 
-pytest.ini defines markers: `unit`, `api`, `integration`, `auth`, `admin`. Run a category with `-m unit` etc., or use `python run_tests.py <category>`.
+pytest.ini defines markers: `unit`, `api`, `integration`, `auth`, `admin`. Run a category with `-m unit` etc.
 
