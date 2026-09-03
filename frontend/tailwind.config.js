@@ -152,14 +152,29 @@ export default {
               fontWeight: '700',
               lineHeight: '1.2',
             },
-            h1: { fontSize: '2.25rem', marginTop: '1rem', marginBottom: '0.5rem' },
-            h2: { fontSize: '1.875rem', marginTop: '0.75rem', marginBottom: '0.375rem' },
-            h3: { fontSize: '1.5rem', marginTop: '0.75rem', marginBottom: '0.375rem' },
+            h1: {
+              fontSize: '2.25rem',
+              marginTop: '1rem',
+              marginBottom: '0.5rem',
+            },
+            h2: {
+              fontSize: '1.875rem',
+              marginTop: '0.75rem',
+              marginBottom: '0.375rem',
+            },
+            h3: {
+              fontSize: '1.5rem',
+              marginTop: '0.75rem',
+              marginBottom: '0.375rem',
+            },
             'p, ul, ol': { marginTop: '0.5rem', marginBottom: '0.5rem' },
             'ul, ol': { paddingLeft: '1.625rem' },
             li: { marginTop: '0.125rem', marginBottom: '0.125rem' },
             'li > p': { marginTop: '0.25rem', marginBottom: '0.25rem' },
-            'li > ul, li > ol': { marginTop: '0.25rem', marginBottom: '0.25rem' },
+            'li > ul, li > ol': {
+              marginTop: '0.25rem',
+              marginBottom: '0.25rem',
+            },
             blockquote: {
               borderLeftColor: '#22d3ee',
               borderLeftWidth: '4px',

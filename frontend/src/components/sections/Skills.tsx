@@ -16,13 +16,14 @@ const SkillIcon: React.FC<{ icon?: string; name: string }> = ({
     const key = icon.slice(3);
     const componentName =
       'Si' + key.charAt(0).toUpperCase() + key.slice(1).toLowerCase();
-    const Logo = (SimpleIcons as Record<string, React.ComponentType<{ className?: string; 'aria-label'?: string }>>)[
-      componentName
-    ];
+    const Logo = (
+      SimpleIcons as Record<
+        string,
+        React.ComponentType<{ className?: string; 'aria-label'?: string }>
+      >
+    )[componentName];
     if (Logo) {
-      return (
-        <Logo className="w-8 h-8 text-surface-100" aria-label={name} />
-      );
+      return <Logo className="w-8 h-8 text-surface-100" aria-label={name} />;
     }
   }
   return (
