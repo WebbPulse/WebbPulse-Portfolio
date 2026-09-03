@@ -107,7 +107,7 @@ Environment-scoped inputs each GitHub Environment must define:
 | `API_BASE_URL` | variable | backend smoke test and the frontend build (terraform output `backend_url`, no trailing slash) |
 | `FRONTEND_S3_BUCKET` | variable | `deploy-frontend.yml` (terraform output `frontend_bucket`) |
 | `CLOUDFRONT_DISTRIBUTION_ID` | variable | `deploy-frontend.yml` (terraform output `cloudfront_distribution_id`) |
-| `TFC_API_TOKEN` | secret | both deploy workflows — HCP Terraform token for workspace polling |
+| `TFC_API_TOKEN` | secret | both deploy workflows — HCP Terraform token for workspace polling; optional, the wait step is skipped when it is unset |
 
 `ECR_REPOSITORY_NAME` and `APP_RUNNER_SERVICE_ARN` are no longer read by any workflow.
 
