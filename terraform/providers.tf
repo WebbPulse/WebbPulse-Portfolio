@@ -6,13 +6,6 @@ provider "aws" {
   default_tags {
     tags = local.common_tags
   }
-
-  # `awsApplication` is applied out-of-band by the myApplications tag-sync
-  # task. Without this ignore, every plan would strip the tag and fight the
-  # sync that re-adds it minutes later.
-  ignore_tags {
-    keys = ["awsApplication"]
-  }
 }
 
 # ACM certificates for CloudFront must be provisioned in us-east-1 regardless
@@ -23,10 +16,6 @@ provider "aws" {
 
   default_tags {
     tags = local.common_tags
-  }
-
-  ignore_tags {
-    keys = ["awsApplication"]
   }
 }
 
@@ -44,9 +33,5 @@ provider "aws" {
 
   default_tags {
     tags = local.common_tags
-  }
-
-  ignore_tags {
-    keys = ["awsApplication"]
   }
 }
