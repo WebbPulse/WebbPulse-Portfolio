@@ -80,7 +80,7 @@ variable "legacy_stack_enabled" {
 variable "api_dns_target" {
   description = "Which backend the api hostname resolves to. Flip to 'apigateway' after the data migration has been verified; 'apprunner' requires legacy_stack_enabled. Ignored when the legacy stack is disabled, which always targets 'apigateway'."
   type        = string
-  default     = "apprunner"
+  default     = "apigateway"
 
   validation {
     condition     = contains(["apprunner", "apigateway"], var.api_dns_target)
