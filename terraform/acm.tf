@@ -1,13 +1,14 @@
 # ---------------------------------------------------------------------------
 # ACM certificate for CloudFront alternate domain names (www + apex).
 # Must live in us-east-1 — CloudFront only accepts us-east-1 certs.
-# api.webbpulse.com uses a certificate managed by App Runner (see frontend.tf).
 # ---------------------------------------------------------------------------
 
 resource "aws_acm_certificate" "www" {
+  count = local.custom_domain_count
+
   provider                  = aws.us_east_1
-  domain_name               = "www.webbpulse.com"
-  subject_alternative_names = ["webbpulse.com"]
+  domain_name               = local.www_host
+  subject_alternative_names = [local.domain]
   validation_method         = "DNS"
 
   lifecycle {
@@ -19,14 +20,14 @@ resource "aws_route53_record" "www_cert_validation" {
   provider = aws.dns
 
   for_each = {
-    for dvo in aws_acm_certificate.www.domain_validation_options : dvo.domain_name => {
+    for dvo in(local.custom_domains_enabled ? aws_acm_certificate.www[0].domain_validation_options : []) : dvo.domain_name => {
       name   = dvo.resource_record_name
       record = dvo.resource_record_value
       type   = dvo.resource_record_type
     }
   }
 
-  zone_id         = var.route53_zone_id
+  zone_id         = local.records_zone_id
   name            = each.value.name
   type            = each.value.type
   ttl             = 60
@@ -35,7 +36,11 @@ resource "aws_route53_record" "www_cert_validation" {
 }
 
 resource "aws_acm_certificate_validation" "www" {
+  count = local.custom_domain_count
+
   provider                = aws.us_east_1
-  certificate_arn         = aws_acm_certificate.www.arn
+  certificate_arn         = aws_acm_certificate.www[0].arn
   validation_record_fqdns = [for r in aws_route53_record.www_cert_validation : r.fqdn]
+
+  depends_on = [aws_route53_record.staging_delegation]
 }

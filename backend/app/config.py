@@ -1,89 +1,94 @@
 from typing import Optional
 
-from pydantic import ConfigDict, field_validator
-from pydantic_settings import BaseSettings
+import boto3
+from pydantic import field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+SSM_SECRET_FIELDS = {
+    "SECRET_KEY": "secret-key",
+    "ADMIN_USERNAME": "admin-username",
+    "ADMIN_PASSWORD": "admin-password",
+    "ADMIN_EMAIL": "admin-email",
+}
+
+LOCALHOST_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:4000",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:4000",
+    "http://127.0.0.1:5173",
+]
+
+
+def load_ssm_parameters(prefix, names):
+    prefix = prefix.rstrip("/")
+    response = boto3.client("ssm").get_parameters(
+        Names=[f"{prefix}/{name}" for name in names], WithDecryption=True
+    )
+    return {
+        parameter["Name"].rsplit("/", 1)[1]: parameter["Value"]
+        for parameter in response["Parameters"]
+    }
 
 
 class Settings(BaseSettings):
-    # Database - Railway provides DATABASE_URL
-    DATABASE_URL: Optional[str] = None
+    ENVIRONMENT: str = "development"
+    DYNAMODB_TABLE_PREFIX: str = "webbpulse-development"
+    DYNAMODB_ENDPOINT_URL: Optional[str] = None
+    SSM_PARAMETER_PREFIX: Optional[str] = None
 
-    # PostgreSQL specific settings (for local development/docker-compose)
-    POSTGRES_DB: Optional[str] = None
-    POSTGRES_USER: Optional[str] = None
-    POSTGRES_PASSWORD: Optional[str] = None
-    POSTGRES_HOST: Optional[str] = None
-
-    # Security - Defaults for development
-    SECRET_KEY: str
+    SECRET_KEY: Optional[str] = None
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
-    # Admin user — seeded into the database on startup
-    ADMIN_USERNAME: str
-    ADMIN_PASSWORD: str
-    ADMIN_EMAIL: str
+    ADMIN_USERNAME: Optional[str] = None
+    ADMIN_PASSWORD: Optional[str] = None
+    ADMIN_EMAIL: Optional[str] = None
 
-    # Application
+    LOGIN_MAX_FAILURES: int = 10
+    LOGIN_FAILURE_WINDOW_SECONDS: int = 900
+
     APP_NAME: str = "Portfolio Blog API"
-    # Canonical public site origin, used to build sitemap/robots URLs.
     SITE_URL: str = "https://www.webbpulse.com"
     DEBUG: bool = False
-    LOG_SQL_QUERIES: bool = False  # Set to True to see SQL queries in logs
+    LOG_LEVEL: str = "INFO"
+    POWERTOOLS_SERVICE_NAME: str = "webbpulse-portfolio-api"
+    POWERTOOLS_METRICS_NAMESPACE: str = "WebbPulse/Portfolio"
     CORS_ORIGINS: str = (
-        "http://localhost:3000,http://localhost:5173,http://localhost:4000,https://webbpulse.com,https://www.webbpulse.com,http://webbpulse.com"
+        "http://localhost:3000,http://localhost:5173,http://localhost:4000,"
+        "https://webbpulse.com,https://www.webbpulse.com,http://webbpulse.com"
     )
 
-    # Rate Limiting60
-    RATE_LIMIT_REQUESTS_PER_MINUTE: int = 1000
-    RATE_LIMIT_REQUESTS_PER_HOUR: int = 10000
-    RATE_LIMIT_REQUESTS_PER_DAY: int = 100000
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @field_validator("CORS_ORIGINS")
     @classmethod
-    def parse_cors_origins(cls, v):
-        """Parse comma-separated CORS origins string into a list"""
-        if isinstance(v, str):
-            origins = [origin.strip() for origin in v.split(",") if origin.strip()]
-            # Always add localhost origins for development
-            localhost_origins = [
-                "http://localhost:3000",
-                "http://localhost:4000",
-                "http://localhost:5173",
-                "http://127.0.0.1:3000",
-                "http://127.0.0.1:4000",
-                "http://127.0.0.1:5173",
-            ]
-            origins.extend(localhost_origins)
-            return list(set(origins))  # Remove duplicates
-        return v
+    def parse_cors_origins(cls, value):
+        if isinstance(value, str):
+            origins = [origin.strip() for origin in value.split(",") if origin.strip()]
+            return sorted(set(origins + LOCALHOST_ORIGINS))
+        return value
 
-    model_config = ConfigDict(env_file=".env")
-
-    def get_database_url(self) -> str:
-        """Get database URL - prioritize DATABASE_URL (Railway)"""
-        if self.DATABASE_URL:
-            return self.DATABASE_URL
-
-        # Fall back to individual components for local development
-        if all(
-            [
-                self.POSTGRES_DB,
-                self.POSTGRES_USER,
-                self.POSTGRES_PASSWORD,
-                self.POSTGRES_HOST,
-            ]
-        ):
-            return (
-                f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
-                f"@{self.POSTGRES_HOST}:5432/{self.POSTGRES_DB}"
+    @model_validator(mode="after")
+    def resolve_secrets(self):
+        missing = [field for field in SSM_SECRET_FIELDS if getattr(self, field) is None]
+        if missing and self.SSM_PARAMETER_PREFIX:
+            loaded = load_ssm_parameters(
+                self.SSM_PARAMETER_PREFIX,
+                [SSM_SECRET_FIELDS[field] for field in missing],
             )
+            for field in missing:
+                value = loaded.get(SSM_SECRET_FIELDS[field])
+                if value is not None:
+                    setattr(self, field, value)
+            missing = [field for field in missing if getattr(self, field) is None]
+        if missing:
+            raise ValueError(
+                "Missing required settings (set them as environment variables or "
+                f"under SSM_PARAMETER_PREFIX): {', '.join(missing)}"
+            )
+        return self
 
-        raise ValueError(
-            "Database configuration error: Either DATABASE_URL must be set (Railway) "
-            "or all individual PostgreSQL components must be set (local development)"
-        )
 
-
-# Create settings instance
 settings = Settings()

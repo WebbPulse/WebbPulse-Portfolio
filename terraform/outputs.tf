@@ -9,13 +9,18 @@ output "aws_region" {
 }
 
 output "webbpulse_zone_id" {
-  description = "Route53 hosted zone ID for webbpulse.com"
+  description = "Route53 hosted zone ID of the parent zone (webbpulse.com)"
   value       = var.route53_zone_id
 }
 
+output "staging_zone_name_servers" {
+  description = "Name servers of the staging child zone, null in production or when custom domains are disabled"
+  value       = one(aws_route53_zone.staging[*].name_servers)
+}
+
 output "frontend_url" {
-  description = "CloudFront URL for the frontend"
-  value       = "https://www.webbpulse.com"
+  description = "Public frontend URL"
+  value       = local.frontend_url
 }
 
 output "cloudfront_distribution_id" {
@@ -29,16 +34,41 @@ output "frontend_bucket" {
 }
 
 output "backend_url" {
-  description = "Public API URL (App Runner custom domain)"
-  value       = "https://api.webbpulse.com"
+  description = "Public API base URL (custom domain when enabled, otherwise the HTTP API endpoint)"
+  value       = local.api_url
+}
+
+output "api_gateway_url" {
+  description = "Default HTTP API endpoint for the Lambda backend"
+  value       = aws_apigatewayv2_api.backend.api_endpoint
+}
+
+output "api_custom_domain" {
+  description = "Regional target hostname of the API Gateway custom domain, null when custom domains are disabled"
+  value       = one(aws_apigatewayv2_domain_name.api[*].domain_name_configuration[0].target_domain_name)
+}
+
+output "lambda_function_name" {
+  description = "Lambda function name — CI/CD updates its code after each backend push"
+  value       = aws_lambda_function.api.function_name
+}
+
+output "lambda_artifact_bucket" {
+  description = "S3 bucket CI/CD uploads Lambda deployment packages to"
+  value       = aws_s3_bucket.lambda_artifacts.bucket
+}
+
+output "dynamodb_table_names" {
+  description = "DynamoDB table names keyed by entity"
+  value       = { for k, t in aws_dynamodb_table.this : k => t.name }
 }
 
 output "ecr_repository_url" {
-  description = "ECR repository URL — push Docker images here before first App Runner deploy"
-  value       = aws_ecr_repository.backend.repository_url
+  description = "Legacy ECR repository URL, null once the legacy stack is disabled"
+  value       = one(aws_ecr_repository.backend[*].repository_url)
 }
 
 output "db_endpoint" {
-  description = "RDS endpoint (host:port) — publicly reachable, SSL required"
-  value       = aws_db_instance.main.endpoint
+  description = "Legacy RDS endpoint (host:port), null once the legacy stack is disabled"
+  value       = one(aws_db_instance.main[*].endpoint)
 }

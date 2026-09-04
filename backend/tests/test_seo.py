@@ -30,5 +30,5 @@ def test_sitemap_includes_published_excludes_draft(client, test_post, test_draft
     r = client.get("/sitemap.xml")
     assert r.status_code == 200
     body = r.text
-    assert f"/blog/{test_post.slug}</loc>" in body
-    assert f"/blog/{test_draft_post.slug}" not in body
+    assert f"/blog/{test_post["slug"]}</loc>" in body
+    assert f"/blog/{test_draft_post["slug"]}" not in body

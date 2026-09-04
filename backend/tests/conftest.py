@@ -1,343 +1,257 @@
-"""
-Pytest configuration and fixtures for the Portfolio Blog API tests
-"""
-
-import asyncio
 import os
-import sys
-from datetime import datetime, timedelta, timezone
-from typing import AsyncGenerator, Generator
+from datetime import date, datetime, timezone
 
-import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
-
-# Set testing environment variable
-os.environ["TESTING"] = "true"
-
-
-# Register custom pytest marks
-def pytest_configure(config):
-    """Register custom pytest marks."""
-    config.addinivalue_line("markers", "unit: Unit tests")
-    config.addinivalue_line("markers", "integration: Integration tests")
-    config.addinivalue_line("markers", "api: API endpoint tests")
-    config.addinivalue_line("markers", "auth: Authentication tests")
-    config.addinivalue_line("markers", "slow: Slow running tests")
-    config.addinivalue_line("markers", "admin: Admin functionality tests")
-
-
-# Add the app directory to the Python path
-sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-
-from app.config import settings
-from app.core.security import create_access_token, get_password_hash
-from app.database import Base, get_db
-from app.main import app
-from app.models import (
-    Category,
-    Certification,
-    Education,
-    Experience,
-    Post,
-    Project,
-    SiteContent,
-    Skill,
-    User,
+os.environ.update(
+    {
+        "TESTING": "1",
+        "AWS_DEFAULT_REGION": "us-west-2",
+        "AWS_ACCESS_KEY_ID": "testing",
+        "AWS_SECRET_ACCESS_KEY": "testing",
+        "AWS_SECURITY_TOKEN": "testing",
+        "AWS_SESSION_TOKEN": "testing",
+        "SECRET_KEY": "test-secret-key",
+        "ADMIN_USERNAME": "test-admin",
+        "ADMIN_PASSWORD": "test-admin-password",
+        "ADMIN_EMAIL": "test-admin@example.com",
+        "DYNAMODB_TABLE_PREFIX": "webbpulse-test",
+        "ENVIRONMENT": "test",
+        "LOG_LEVEL": "WARNING",
+    }
 )
+os.environ.pop("SSM_PARAMETER_PREFIX", None)
+os.environ.pop("DYNAMODB_ENDPOINT_URL", None)
 
-# Test database configuration
-TEST_DATABASE_URL = "sqlite:///./test.db"
+import boto3  # noqa: E402
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+from moto import mock_aws  # noqa: E402
 
-# Create test database engine
-test_engine = create_engine(
-    TEST_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-
-# Create test session factory
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
-
-
-@pytest.fixture(scope="session")
-def event_loop():
-    """Create an instance of the default event loop for the test session."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+from app.config import settings  # noqa: E402
+from app.core import admin, site_content  # noqa: E402
+from app.core.security import create_access_token, get_password_hash  # noqa: E402
+from app.db import client as db_client  # noqa: E402
+from app.db import entities  # noqa: E402
+from app.db.tables import ENTITIES, META, TTL_ATTRIBUTE, table_definition  # noqa: E402
 
 
-@pytest.fixture(scope="function")
-def db_session() -> Generator[Session, None, None]:
-    """Create a fresh database session for each test."""
-    # Create all tables
-    Base.metadata.create_all(bind=test_engine)
-
-    # Create session
-    session = TestingSessionLocal()
-    try:
-        yield session
-    finally:
-        session.close()
-        # Drop all tables after test
-        Base.metadata.drop_all(bind=test_engine)
+def create_all_tables(prefix: str = settings.DYNAMODB_TABLE_PREFIX):
+    resource = boto3.resource("dynamodb", region_name="us-west-2")
+    for entity in ENTITIES + (META,):
+        definition = table_definition(prefix, entity)
+        resource.create_table(**definition)
+    resource.meta.client.update_time_to_live(
+        TableName=f"{prefix}-{META}",
+        TimeToLiveSpecification={"Enabled": True, "AttributeName": TTL_ATTRIBUTE},
+    )
 
 
-@pytest.fixture(scope="function")
-def client(db_session: Session) -> Generator[TestClient, None, None]:
-    """Create a test client with a fresh database session."""
+def reset_seed_state():
+    admin.reset_seed_state()
+    site_content.reset_seed_state()
 
-    def override_get_db():
-        try:
-            yield db_session
-        except Exception:
-            db_session.rollback()
-            raise
-        finally:
-            pass  # Don't close the session here as it's managed by the fixture
 
-    app.dependency_overrides[get_db] = override_get_db
+@pytest.fixture(autouse=True)
+def aws_tables():
+    with mock_aws():
+        db_client.reset()
+        reset_seed_state()
+        create_all_tables()
+        yield
+        db_client.reset()
+        reset_seed_state()
+
+
+@pytest.fixture
+def client():
+    from app.main import app
+
     with TestClient(app) as test_client:
         yield test_client
-    app.dependency_overrides.clear()
 
 
 @pytest.fixture
-def test_user(db_session: Session) -> User:
-    """Create a test user."""
-    user = User(
-        email="test@example.com",
-        username="testuser",
-        hashed_password=get_password_hash("testpassword123"),
-        is_admin=False,
-        is_active=True,
+def test_user():
+    return entities.users.create(
+        {
+            "email": "test@example.com",
+            "username": "testuser",
+            "hashed_password": get_password_hash("testpassword123"),
+            "is_admin": False,
+            "is_active": True,
+        }
     )
-    db_session.add(user)
-    db_session.commit()
-    db_session.refresh(user)
-    return user
 
 
 @pytest.fixture
-def test_admin_user(db_session: Session) -> User:
-    """Create a test admin user."""
-    admin_user = User(
-        email="admin@example.com",
-        username="adminuser",
-        hashed_password=get_password_hash("adminpassword123"),
-        is_admin=True,
-        is_active=True,
+def test_admin_user():
+    return entities.users.create(
+        {
+            "email": "admin@example.com",
+            "username": "adminuser",
+            "hashed_password": get_password_hash("adminpassword123"),
+            "is_admin": True,
+            "is_active": True,
+        }
     )
-    db_session.add(admin_user)
-    db_session.commit()
-    db_session.refresh(admin_user)
-    return admin_user
 
 
 @pytest.fixture
-def test_category(db_session: Session) -> Category:
-    """Create a test category."""
-    category = Category(
-        name="Test Category",
-        slug="test-category",
-        description="A test category for blog posts",
+def test_category():
+    return entities.categories.create(
+        {
+            "name": "Test Category",
+            "slug": "test-category",
+            "description": "A test category",
+        }
     )
-    db_session.add(category)
-    db_session.commit()
-    db_session.refresh(category)
-    return category
 
 
 @pytest.fixture
-def test_post(db_session: Session, test_user: User, test_category: Category) -> Post:
-    """Create a test post."""
-    post = Post(
-        title="Test Post",
-        slug="test-post",
-        content="# Test Post\n\nThis is a test post content.",
-        excerpt="A test post excerpt",
-        read_time="5 min read",
-        author_id=test_user.id,
-        category_id=test_category.id,
-        published_at=datetime.now(timezone.utc),
+def test_post(test_user, test_category):
+    return entities.posts.create(
+        {
+            "title": "Test Post",
+            "slug": "test-post",
+            "content": "# Test Post\n\nThis is test content.",
+            "excerpt": "A test post excerpt",
+            "read_time": "5 min read",
+            "published_at": datetime.now(timezone.utc),
+            "author_id": test_user["id"],
+            "category_id": test_category["id"],
+        }
     )
-    db_session.add(post)
-    db_session.commit()
-    db_session.refresh(post)
-    return post
 
 
 @pytest.fixture
-def test_draft_post(
-    db_session: Session, test_user: User, test_category: Category
-) -> Post:
-    """Create a test draft post (unpublished)."""
-    post = Post(
-        title="Test Draft Post",
-        slug="test-draft-post",
-        content="# Test Draft Post\n\nThis is a test draft post content.",
-        excerpt="A test draft post excerpt",
-        read_time="3 min read",
-        author_id=test_user.id,
-        category_id=test_category.id,
-        published_at=None,  # Unpublished
+def test_draft_post(test_user, test_category):
+    return entities.posts.create(
+        {
+            "title": "Test Draft Post",
+            "slug": "test-draft-post",
+            "content": "# Draft\n\nThis is a draft.",
+            "excerpt": "A draft post excerpt",
+            "read_time": "3 min read",
+            "published_at": None,
+            "author_id": test_user["id"],
+            "category_id": test_category["id"],
+        }
     )
-    db_session.add(post)
-    db_session.commit()
-    db_session.refresh(post)
-    return post
 
 
 @pytest.fixture
-def test_project(db_session: Session) -> Project:
-    """Create a test project."""
-    project = Project(
-        title="Test Project",
-        description="A test project description",
-        technologies=["Python", "FastAPI", "React"],
-        github_url="https://github.com/test/project",
-        live_url="https://test-project.com",
-        image="https://example.com/image.jpg",
-        featured=True,
+def test_project():
+    return entities.projects.create(
+        {
+            "title": "Test Project",
+            "description": "A test project description",
+            "technologies": ["Python", "FastAPI", "React"],
+            "github_url": "https://github.com/test/project",
+            "live_url": "https://test-project.com",
+            "image": "https://example.com/image.jpg",
+            "featured": True,
+        }
     )
-    db_session.add(project)
-    db_session.commit()
-    db_session.refresh(project)
-    return project
 
 
 @pytest.fixture
-def test_experience(db_session: Session) -> Experience:
-    """Create a test experience entry."""
-    experience = Experience(
-        title="Test Position",
-        company="Test Company",
-        location="Test City, Test State",
-        period="Jan 2022 - Dec 2023",
-        start_date=datetime(2022, 1, 1).date(),
-        end_date=datetime(2023, 12, 31).date(),
-        description="A test job description",
-        technologies=["Python", "SQL", "AWS"],
-        achievements=["Achievement 1", "Achievement 2"],
-        is_active=True,
+def test_experience():
+    return entities.experience.create(
+        {
+            "title": "Test Position",
+            "company": "Test Company",
+            "location": "Test City, Test State",
+            "period": "Jan 2022 - Dec 2023",
+            "start_date": date(2022, 1, 1),
+            "end_date": date(2023, 12, 31),
+            "description": "A test job description",
+            "technologies": ["Python", "SQL", "AWS"],
+            "achievements": ["Achievement 1", "Achievement 2"],
+        }
     )
-    db_session.add(experience)
-    db_session.commit()
-    db_session.refresh(experience)
-    return experience
 
 
 @pytest.fixture
-def test_education(db_session: Session) -> Education:
-    """Create a test education entry."""
-    entry = Education(
-        degree="Test Degree",
-        school="Test University",
-        location="Test City, ST",
-        period="Aug 2018 - May 2022",
-        start_date=datetime(2018, 8, 1).date(),
-        end_date=datetime(2022, 5, 31).date(),
-        description="A test education description",
-        order=10,
-        is_active=True,
+def test_education():
+    return entities.education.create(
+        {
+            "degree": "Test Degree",
+            "school": "Test University",
+            "location": "Test City, ST",
+            "period": "Aug 2018 - May 2022",
+            "start_date": date(2018, 8, 1),
+            "end_date": date(2022, 5, 31),
+            "description": "Test description",
+            "order": 10,
+        }
     )
-    db_session.add(entry)
-    db_session.commit()
-    db_session.refresh(entry)
-    return entry
 
 
 @pytest.fixture
-def test_certification(db_session: Session) -> Certification:
-    """Create a test certification."""
-    entry = Certification(
-        name="Test Cert",
-        issuer="Test Issuer",
-        issued_date=datetime(2023, 1, 1).date(),
-        credential_url="https://example.com/cred",
-        order=10,
-        is_active=True,
+def test_certification():
+    return entities.certifications.create(
+        {
+            "name": "Test Cert",
+            "issuer": "Test Issuer",
+            "issued_date": date(2023, 1, 1),
+            "credential_url": "https://example.com/cred/test",
+            "order": 10,
+        }
     )
-    db_session.add(entry)
-    db_session.commit()
-    db_session.refresh(entry)
-    return entry
 
 
 @pytest.fixture
-def test_site_content(db_session: Session) -> SiteContent:
-    """Create the singleton site content row used by tests.
-
-    The migration that seeds this row is skipped under SQLite test setup
-    (create_all is used instead of running migrations), so each test that
-    needs site content seeds it via this fixture.
-    """
-    content = SiteContent(
-        id=1,
-        hero_title="Hi, I'm Test",
-        hero_subtitle="Test Subtitle",
-        hero_description="Test description",
-        about_paragraphs=["Paragraph one.", "Paragraph two."],
-        about_values=[
-            {"title": "Test Value", "description": "Why it matters", "icon": "✨"},
-        ],
-        profile_image_url="/headshot.jpg",
-        resume_url=None,
-        email="test@example.com",
-        github_url="https://github.com/test",
-        linkedin_url="https://linkedin.com/in/test",
-        footer_tagline="Test tagline",
+def test_site_content():
+    return entities.site_content.create(
+        {
+            "hero_title": "Hi, I'm Test",
+            "hero_subtitle": "Test Subtitle",
+            "hero_description": "Test description",
+            "about_paragraphs": ["Paragraph one", "Paragraph two"],
+            "about_values": [
+                {
+                    "title": "Test Value",
+                    "description": "Test value description",
+                    "icon": "star",
+                }
+            ],
+        },
+        item_id=entities.SITE_CONTENT_ID,
     )
-    db_session.add(content)
-    db_session.commit()
-    db_session.refresh(content)
-    return content
 
 
 @pytest.fixture
-def test_skill(db_session: Session) -> Skill:
-    """Create a test skill."""
-    skill = Skill(
-        name="Test Skill",
-        category="frontend",
-        tier="working",
-        icon="🧪",
-        order=10,
-        is_active=True,
+def test_skill():
+    return entities.skills.create(
+        {
+            "name": "Test Skill",
+            "category": "frontend",
+            "tier": "working",
+            "icon": "🧪",
+            "order": 10,
+        }
     )
-    db_session.add(skill)
-    db_session.commit()
-    db_session.refresh(skill)
-    return skill
 
 
 @pytest.fixture
-def auth_headers(test_user: User) -> dict:
-    """Create authentication headers for a test user."""
-    access_token = create_access_token(data={"sub": test_user.username})
-    return {"Authorization": f"Bearer {access_token}"}
+def auth_headers(test_user):
+    return {
+        "Authorization": f"Bearer {create_access_token({'sub': test_user['username']})}"
+    }
 
 
 @pytest.fixture
-def admin_auth_headers(test_admin_user: User) -> dict:
-    """Create authentication headers for a test admin user."""
-    access_token = create_access_token(data={"sub": test_admin_user.username})
-    return {"Authorization": f"Bearer {access_token}"}
+def admin_auth_headers(test_admin_user):
+    token = create_access_token({"sub": test_admin_user["username"]})
+    return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.fixture
-def invalid_auth_headers() -> dict:
-    """Create invalid authentication headers."""
+def invalid_auth_headers():
     return {"Authorization": "Bearer invalid_token"}
 
 
-# Test data fixtures
 @pytest.fixture
-def sample_post_data() -> dict:
-    """Sample post data for testing."""
+def sample_post_data():
     return {
         "title": "Sample Post",
         "slug": "sample-post",
@@ -349,8 +263,7 @@ def sample_post_data() -> dict:
 
 
 @pytest.fixture
-def sample_category_data() -> dict:
-    """Sample category data for testing."""
+def sample_category_data():
     return {
         "name": "Sample Category",
         "slug": "sample-category",
@@ -359,8 +272,7 @@ def sample_category_data() -> dict:
 
 
 @pytest.fixture
-def sample_project_data() -> dict:
-    """Sample project data for testing."""
+def sample_project_data():
     return {
         "title": "Sample Project",
         "description": "A sample project description",
@@ -373,8 +285,7 @@ def sample_project_data() -> dict:
 
 
 @pytest.fixture
-def sample_experience_data() -> dict:
-    """Sample experience data for testing."""
+def sample_experience_data():
     return {
         "title": "Sample Position",
         "company": "Sample Company",
@@ -389,8 +300,7 @@ def sample_experience_data() -> dict:
 
 
 @pytest.fixture
-def sample_skill_data() -> dict:
-    """Sample skill data for testing."""
+def sample_skill_data():
     return {
         "name": "Sample Skill",
         "category": "backend",
@@ -401,8 +311,7 @@ def sample_skill_data() -> dict:
 
 
 @pytest.fixture
-def sample_education_data() -> dict:
-    """Sample education data for testing."""
+def sample_education_data():
     return {
         "degree": "Sample Degree",
         "school": "Sample University",
@@ -416,8 +325,7 @@ def sample_education_data() -> dict:
 
 
 @pytest.fixture
-def sample_certification_data() -> dict:
-    """Sample certification data for testing."""
+def sample_certification_data():
     return {
         "name": "Sample Certification",
         "issuer": "Sample Issuer",

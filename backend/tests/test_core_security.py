@@ -2,14 +2,17 @@
 Unit tests for the core security module
 """
 
-from datetime import datetime, timedelta
-from unittest.mock import patch
+from datetime import timedelta
 
 import pytest
 
 from app.config import settings
-from app.core.security import (create_access_token, get_password_hash,
-                               verify_password, verify_token)
+from app.core.security import (
+    create_access_token,
+    get_password_hash,
+    verify_password,
+    verify_token,
+)
 
 
 class TestPasswordSecurity:
@@ -153,7 +156,10 @@ class TestTokenSecurity:
         """Test token verification with wrong algorithm"""
         # This would require creating a token with different algorithm
         # For now, we'll test with a completely invalid token
-        invalid_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0dXNlciJ9.invalid_signature"
+        invalid_token = (
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+            "eyJzdWIiOiJ0ZXN0dXNlciJ9.invalid_signature"
+        )
         username = verify_token(invalid_token)
         assert username is None
 

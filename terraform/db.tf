@@ -1,18 +1,20 @@
-# ---------------------------------------------------------------------------
-# RDS PostgreSQL — db.t4g.micro, private subnets, no public access
-# ---------------------------------------------------------------------------
-
 resource "random_password" "db" {
+  count = local.legacy_count
+
   length  = 32
   special = false # avoid chars that need URL-encoding in the connection string
 }
 
 resource "aws_db_subnet_group" "main" {
+  count = local.legacy_count
+
   name       = local.prefix
-  subnet_ids = [aws_subnet.public_a.id, aws_subnet.public_b.id]
+  subnet_ids = [aws_subnet.public_a[0].id, aws_subnet.public_b[0].id]
 }
 
 resource "aws_db_instance" "main" {
+  count = local.legacy_count
+
   identifier = local.prefix
 
   engine         = "postgres"
@@ -21,15 +23,15 @@ resource "aws_db_instance" "main" {
 
   db_name  = var.db_name
   username = var.db_username
-  password = random_password.db.result
+  password = random_password.db[0].result
 
   storage_type          = "gp3"
   allocated_storage     = 20
   max_allocated_storage = 100
   storage_encrypted     = true
 
-  db_subnet_group_name   = aws_db_subnet_group.main.name
-  vpc_security_group_ids = [aws_security_group.rds.id]
+  db_subnet_group_name   = aws_db_subnet_group.main[0].name
+  vpc_security_group_ids = [aws_security_group.rds[0].id]
   publicly_accessible    = true
 
   # Required so the subnet-group change + publicly_accessible flip are applied
@@ -46,14 +48,12 @@ resource "aws_db_instance" "main" {
   }
 }
 
-# ---------------------------------------------------------------------------
-# SSM parameters — secrets injected into App Runner at runtime
-# ---------------------------------------------------------------------------
-
 resource "aws_ssm_parameter" "database_url" {
+  count = local.legacy_count
+
   name  = "/${local.prefix}/database-url"
   type  = "SecureString"
-  value = "postgresql://${var.db_username}:${random_password.db.result}@${aws_db_instance.main.endpoint}/${var.db_name}"
+  value = "postgresql://${var.db_username}:${random_password.db[0].result}@${aws_db_instance.main[0].endpoint}/${var.db_name}"
 }
 
 resource "aws_ssm_parameter" "secret_key" {

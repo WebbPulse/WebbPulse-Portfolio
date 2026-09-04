@@ -4,7 +4,6 @@ Tests for the skills API endpoints
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy.orm import Session
 
 
 class TestSkillsAPI:
@@ -23,18 +22,19 @@ class TestSkillsAPI:
         assert data[0]["tier"] == "working"
 
     @pytest.mark.api
-    def test_get_skills_ordering(self, client: TestClient, db_session: Session):
+    def test_get_skills_ordering(self, client: TestClient):
         """Skills should be ordered by (order asc, name asc)."""
-        from app.models import Skill
+        from app.db.entities import skills
 
-        db_session.add_all(
-            [
-                Skill(name="Zeta", category="frontend", tier="working", order=10),
-                Skill(name="Alpha", category="frontend", tier="working", order=20),
-                Skill(name="Beta", category="frontend", tier="working", order=10),
-            ]
-        )
-        db_session.commit()
+        for name, order in (("Zeta", 10), ("Alpha", 20), ("Beta", 10)):
+            skills.create(
+                {
+                    "name": name,
+                    "category": "frontend",
+                    "tier": "working",
+                    "order": order,
+                }
+            )
 
         response = client.get("/api/v1/skills/")
         assert response.status_code == 200
@@ -45,11 +45,11 @@ class TestSkillsAPI:
     @pytest.mark.api
     def test_get_single_skill(self, client: TestClient, test_skill):
         """Test getting a single skill by ID"""
-        response = client.get(f"/api/v1/skills/{test_skill.id}")
+        response = client.get(f"/api/v1/skills/{test_skill["id"]}")
         assert response.status_code == 200
         data = response.json()
-        assert data["name"] == test_skill.name
-        assert data["category"] == test_skill.category
+        assert data["name"] == test_skill["name"]
+        assert data["category"] == test_skill["category"]
 
     @pytest.mark.api
     def test_get_nonexistent_skill(self, client: TestClient):
@@ -58,19 +58,19 @@ class TestSkillsAPI:
         assert "Skill not found" in response.json()["detail"]
 
     @pytest.mark.api
-    def test_inactive_skill_hidden(self, client: TestClient, db_session: Session):
-        from app.models import Skill
+    def test_inactive_skill_hidden(self, client: TestClient):
+        from app.db.entities import skills
 
-        inactive = Skill(
-            name="Hidden",
-            category="frontend",
-            tier="working",
-            order=10,
-            is_active=False,
+        inactive = skills.create(
+            {
+                "name": "Hidden",
+                "category": "frontend",
+                "tier": "working",
+                "order": 10,
+                "is_active": False,
+            }
         )
-        db_session.add(inactive)
-        db_session.commit()
-        response = client.get(f"/api/v1/skills/{inactive.id}")
+        response = client.get(f"/api/v1/skills/{inactive['id']}")
         assert response.status_code == 404
 
 
@@ -123,9 +123,7 @@ class TestSkillsAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_create_skill_invalid_tier(
-        self, client: TestClient, admin_auth_headers
-    ):
+    def test_create_skill_invalid_tier(self, client: TestClient, admin_auth_headers):
         response = client.post(
             "/api/v1/skills/",
             json={"name": "Bad", "category": "frontend", "tier": "expert"},
@@ -139,7 +137,7 @@ class TestSkillsAdminAPI:
         self, client: TestClient, admin_auth_headers, test_skill
     ):
         response = client.put(
-            f"/api/v1/skills/{test_skill.id}",
+            f"/api/v1/skills/{test_skill["id"]}",
             json={"name": "Renamed", "tier": "core"},
             headers=admin_auth_headers,
         )
@@ -156,7 +154,7 @@ class TestSkillsAdminAPI:
         self, client: TestClient, auth_headers, test_skill
     ):
         response = client.put(
-            f"/api/v1/skills/{test_skill.id}",
+            f"/api/v1/skills/{test_skill["id"]}",
             json={"name": "X"},
             headers=auth_headers,
         )
@@ -178,13 +176,13 @@ class TestSkillsAdminAPI:
         self, client: TestClient, admin_auth_headers, test_skill
     ):
         response = client.delete(
-            f"/api/v1/skills/{test_skill.id}", headers=admin_auth_headers
+            f"/api/v1/skills/{test_skill["id"]}", headers=admin_auth_headers
         )
         assert response.status_code == 200
         assert "deleted successfully" in response.json()["message"]
 
         # Soft delete: GET returns 404
-        get_response = client.get(f"/api/v1/skills/{test_skill.id}")
+        get_response = client.get(f"/api/v1/skills/{test_skill["id"]}")
         assert get_response.status_code == 404
 
     @pytest.mark.api
@@ -193,7 +191,7 @@ class TestSkillsAdminAPI:
         self, client: TestClient, auth_headers, test_skill
     ):
         response = client.delete(
-            f"/api/v1/skills/{test_skill.id}", headers=auth_headers
+            f"/api/v1/skills/{test_skill["id"]}", headers=auth_headers
         )
         assert response.status_code == 403
 
