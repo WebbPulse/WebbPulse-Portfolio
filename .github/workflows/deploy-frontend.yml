@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.ref_name == 'main' || vars.FRONTEND_S3_BUCKET != ''
+    if: github.ref_name == 'main' || vars.STAGING_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
 

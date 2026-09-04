@@ -109,6 +109,8 @@ Environment-scoped inputs each GitHub Environment must define:
 | `CLOUDFRONT_DISTRIBUTION_ID` | variable | `deploy-frontend.yml` (terraform output `cloudfront_distribution_id`) |
 | `TFC_API_TOKEN` | secret | both deploy workflows — HCP Terraform token for workspace polling; optional, the wait step is skipped when it is unset |
 
+Deploys on `staging` are gated by the repository-level variable `STAGING_DEPLOY_ENABLED` (`true` once the staging workspace has applied and the Environment variables above exist). It has to be repository-scoped because a job-level `if` is evaluated before the job's Environment is selected, so Environment variables are invisible there.
+
 `ECR_REPOSITORY_NAME` and `APP_RUNNER_SERVICE_ARN` are no longer read by any workflow.
 
 ## Branching and deploys
