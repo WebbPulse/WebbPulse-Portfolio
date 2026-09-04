@@ -6,8 +6,8 @@ from .api.v1.api import api_router
 from .config import settings
 from .core.logging import logger
 from .core.middleware import (
-    AdminSeedMiddleware,
     RequestLoggingMiddleware,
+    SeedMiddleware,
     TrailingSlashMiddleware,
 )
 from .db.entities import SITE_CONTENT_ID, site_content
@@ -49,7 +49,7 @@ async def health_check(response: Response):
     return {"status": "healthy", "database": database, "version": VERSION}
 
 
-app.add_middleware(AdminSeedMiddleware)
+app.add_middleware(SeedMiddleware)
 app.add_middleware(TrailingSlashMiddleware, router=app.router)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(

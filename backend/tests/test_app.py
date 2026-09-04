@@ -23,6 +23,7 @@ def test_health(client: TestClient):
 
 @pytest.mark.api
 def test_health_reports_unhealthy_database(client: TestClient, monkeypatch):
+    client.get("/")
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "broken")
     db_client.dynamodb_resource().meta.client.delete_table(
         TableName="webbpulse-test-site-content"
