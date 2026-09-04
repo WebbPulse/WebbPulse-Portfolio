@@ -1,7 +1,7 @@
 # ---------------------------------------------------------------------------
 # Frontend — private S3 bucket served via CloudFront
 #
-# webbpulse.com and www.webbpulse.com both point at this distribution.
+# The apex and www hostnames both point at this distribution.
 # A CloudFront Function 301-redirects the bare apex to www.
 # 403/404 from S3 → index.html for client-side React Router.
 #
@@ -53,7 +53,7 @@ resource "aws_cloudfront_distribution" "frontend" {
   enabled             = true
   is_ipv6_enabled     = true
   default_root_object = "index.html"
-  aliases             = local.custom_domains_enabled ? ["www.webbpulse.com", "webbpulse.com"] : []
+  aliases             = local.custom_domains_enabled ? [local.www_host, local.domain] : []
   price_class         = "PriceClass_100" # US + Europe + Canada — cheapest tier
 
   origin {
@@ -130,13 +130,13 @@ resource "aws_cloudfront_function" "apex_redirect" {
       const host = event.request.headers.host
         ? event.request.headers.host.value
         : "";
-      if (host === "webbpulse.com") {
+      if (host === "${local.domain}") {
         return {
           statusCode: 301,
           statusDescription: "Moved Permanently",
           headers: {
             location: {
-              value: "https://www.webbpulse.com" + event.request.uri,
+              value: "https://${local.www_host}" + event.request.uri,
             },
           },
         };

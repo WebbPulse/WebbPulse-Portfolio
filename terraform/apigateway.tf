@@ -65,7 +65,7 @@ resource "aws_lambda_permission" "apigateway" {
 resource "aws_acm_certificate" "api" {
   count = local.custom_domain_count
 
-  domain_name       = "api.webbpulse.com"
+  domain_name       = local.api_host
   validation_method = "DNS"
 
   lifecycle {
@@ -84,7 +84,7 @@ resource "aws_route53_record" "api_cert_validation" {
     }
   }
 
-  zone_id         = var.route53_zone_id
+  zone_id         = local.records_zone_id
   name            = each.value.name
   type            = each.value.type
   ttl             = 60
@@ -97,12 +97,14 @@ resource "aws_acm_certificate_validation" "api" {
 
   certificate_arn         = aws_acm_certificate.api[0].arn
   validation_record_fqdns = [for r in aws_route53_record.api_cert_validation : r.fqdn]
+
+  depends_on = [aws_route53_record.staging_delegation]
 }
 
 resource "aws_apigatewayv2_domain_name" "api" {
   count = local.custom_domain_count
 
-  domain_name = "api.webbpulse.com"
+  domain_name = local.api_host
 
   domain_name_configuration {
     certificate_arn = aws_acm_certificate_validation.api[0].certificate_arn

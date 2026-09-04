@@ -7,8 +7,8 @@ resource "aws_acm_certificate" "www" {
   count = local.custom_domain_count
 
   provider                  = aws.us_east_1
-  domain_name               = "www.webbpulse.com"
-  subject_alternative_names = ["webbpulse.com"]
+  domain_name               = local.www_host
+  subject_alternative_names = [local.domain]
   validation_method         = "DNS"
 
   lifecycle {
@@ -27,7 +27,7 @@ resource "aws_route53_record" "www_cert_validation" {
     }
   }
 
-  zone_id         = var.route53_zone_id
+  zone_id         = local.records_zone_id
   name            = each.value.name
   type            = each.value.type
   ttl             = 60
@@ -41,4 +41,6 @@ resource "aws_acm_certificate_validation" "www" {
   provider                = aws.us_east_1
   certificate_arn         = aws_acm_certificate.www[0].arn
   validation_record_fqdns = [for r in aws_route53_record.www_cert_validation : r.fqdn]
+
+  depends_on = [aws_route53_record.staging_delegation]
 }

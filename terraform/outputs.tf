@@ -9,8 +9,13 @@ output "aws_region" {
 }
 
 output "webbpulse_zone_id" {
-  description = "Route53 hosted zone ID for webbpulse.com"
+  description = "Route53 hosted zone ID of the parent zone (webbpulse.com)"
   value       = var.route53_zone_id
+}
+
+output "staging_zone_name_servers" {
+  description = "Name servers of the staging child zone, null in production or when custom domains are disabled"
+  value       = one(aws_route53_zone.staging[*].name_servers)
 }
 
 output "frontend_url" {
