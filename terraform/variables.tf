@@ -50,7 +50,7 @@ variable "staging_profile" {
 }
 
 variable "route53_zone_id" {
-  description = "Route53 hosted zone ID for webbpulse.com. Owned by the WebbPulse-Organization bootstrap workspace and delivered here as a workspace variable."
+  description = "Route53 hosted zone ID of the parent zone (webbpulse.com), owned by another account and delivered here as a workspace variable. Production writes its workload records into it; staging writes only the NS delegation for its child zone into it."
   type        = string
   default     = null
 
@@ -61,9 +61,14 @@ variable "route53_zone_id" {
 }
 
 variable "route53_write_role_arn" {
-  description = "IAM role ARN assumed to write records into the webbpulse.com hosted zone, which is owned by another account. Delivered here as a workspace variable. Empty means write with the run role directly."
+  description = "IAM role ARN in the management account assumed to write into the parent zone (route53_zone_id). In production it is the writer role for the workload records; in staging it is the delegation role allowed only the NS record for the child zone. Delivered here as a workspace variable. Empty means write with the run role directly."
   type        = string
   default     = ""
+
+  validation {
+    condition     = var.environment != "staging" || var.staging_profile != "full" || var.route53_write_role_arn != ""
+    error_message = "route53_write_role_arn must be set when environment is 'staging' and staging_profile is 'full': the staging child zone is delegated from the parent zone through that role."
+  }
 }
 
 variable "legacy_stack_enabled" {
@@ -73,7 +78,7 @@ variable "legacy_stack_enabled" {
 }
 
 variable "api_dns_target" {
-  description = "Which backend api.webbpulse.com resolves to. Flip to 'apigateway' after the data migration has been verified; 'apprunner' requires legacy_stack_enabled."
+  description = "Which backend the api hostname resolves to. Flip to 'apigateway' after the data migration has been verified; 'apprunner' requires legacy_stack_enabled. Ignored when the legacy stack is disabled, which always targets 'apigateway'."
   type        = string
   default     = "apprunner"
 

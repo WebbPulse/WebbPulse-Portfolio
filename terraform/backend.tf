@@ -108,7 +108,7 @@ resource "aws_apprunner_service" "backend" {
 
         runtime_environment_variables = {
           ENVIRONMENT  = var.environment
-          CORS_ORIGINS = "https://www.webbpulse.com,https://webbpulse.com"
+          CORS_ORIGINS = local.cors_origins
         }
       }
     }
@@ -148,6 +148,6 @@ resource "aws_apprunner_custom_domain_association" "api" {
   count = local.legacy_enabled && local.custom_domains_enabled ? 1 : 0
 
   service_arn          = aws_apprunner_service.backend[0].arn
-  domain_name          = "api.webbpulse.com"
+  domain_name          = local.api_host
   enable_www_subdomain = false
 }
