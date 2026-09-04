@@ -4,6 +4,7 @@ from starlette.routing import Match
 
 from .admin import ensure_admin_seeded
 from .logging import logger
+from .site_content import ensure_site_content_seeded
 
 
 class TrailingSlashMiddleware:
@@ -28,13 +29,14 @@ class TrailingSlashMiddleware:
         await self.app(scope, receive, send)
 
 
-class AdminSeedMiddleware:
+class SeedMiddleware:
     def __init__(self, app):
         self.app = app
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "http":
             ensure_admin_seeded()
+            ensure_site_content_seeded()
         await self.app(scope, receive, send)
 
 
