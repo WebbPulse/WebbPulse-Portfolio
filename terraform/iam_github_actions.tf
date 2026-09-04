@@ -39,73 +39,44 @@ resource "aws_iam_role" "github_actions_deploy" {
 }
 
 locals {
-  github_actions_legacy_statements = local.legacy_enabled ? [
+  github_actions_statements = [
+    {
+      Effect = "Allow"
+      Action = [
+        "lambda:UpdateFunctionCode",
+        "lambda:GetFunction",
+        "lambda:GetFunctionConfiguration",
+        "lambda:PublishVersion",
+      ]
+      Resource = aws_lambda_function.api.arn
+    },
     {
       Effect   = "Allow"
-      Action   = ["ecr:GetAuthorizationToken"]
-      Resource = "*"
+      Action   = ["s3:PutObject", "s3:GetObject", "s3:ListBucket"]
+      Resource = [aws_s3_bucket.lambda_artifacts.arn, "${aws_s3_bucket.lambda_artifacts.arn}/*"]
     },
     {
       Effect = "Allow"
       Action = [
-        "ecr:BatchCheckLayerAvailability",
-        "ecr:CompleteLayerUpload",
-        "ecr:InitiateLayerUpload",
-        "ecr:PutImage",
-        "ecr:UploadLayerPart",
-        "ecr:BatchGetImage",
-        "ecr:GetDownloadUrlForLayer",
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:DeleteObject",
+        "s3:ListBucket",
       ]
-      Resource = one(aws_ecr_repository.backend[*].arn)
+      Resource = [
+        aws_s3_bucket.frontend.arn,
+        "${aws_s3_bucket.frontend.arn}/*",
+      ]
     },
     {
-      Effect   = "Allow"
-      Action   = ["apprunner:StartDeployment", "apprunner:DescribeService"]
-      Resource = one(aws_apprunner_service.backend[*].arn)
+      Effect = "Allow"
+      Action = [
+        "cloudfront:CreateInvalidation",
+        "cloudfront:GetInvalidation",
+      ]
+      Resource = aws_cloudfront_distribution.frontend.arn
     },
-  ] : []
-
-  github_actions_statements = concat(
-    local.github_actions_legacy_statements,
-    [
-      {
-        Effect = "Allow"
-        Action = [
-          "lambda:UpdateFunctionCode",
-          "lambda:GetFunction",
-          "lambda:GetFunctionConfiguration",
-          "lambda:PublishVersion",
-        ]
-        Resource = aws_lambda_function.api.arn
-      },
-      {
-        Effect   = "Allow"
-        Action   = ["s3:PutObject", "s3:GetObject", "s3:ListBucket"]
-        Resource = [aws_s3_bucket.lambda_artifacts.arn, "${aws_s3_bucket.lambda_artifacts.arn}/*"]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:PutObject",
-          "s3:GetObject",
-          "s3:DeleteObject",
-          "s3:ListBucket",
-        ]
-        Resource = [
-          aws_s3_bucket.frontend.arn,
-          "${aws_s3_bucket.frontend.arn}/*",
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "cloudfront:CreateInvalidation",
-          "cloudfront:GetInvalidation",
-        ]
-        Resource = aws_cloudfront_distribution.frontend.arn
-      },
-    ],
-  )
+  ]
 }
 
 resource "aws_iam_role_policy" "github_actions_deploy" {
