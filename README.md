@@ -2,7 +2,7 @@
 
 A full-stack personal portfolio and blog. Every section — projects, experience, skills, blog, and site copy — is driven from the API through an admin panel rather than hardcoded.
 
-**Stack:** FastAPI (Python 3.11) · React (TypeScript) · PostgreSQL · AWS (Terraform)
+**Stack:** FastAPI (Python 3.13) on AWS Lambda · React (TypeScript) · DynamoDB · AWS (Terraform)
 
 **License:** MIT
 
@@ -11,7 +11,7 @@ A full-stack personal portfolio and blog. Every section — projects, experience
 ## Structure
 
 ```
-backend/    FastAPI app, SQLAlchemy models, Alembic migrations
+backend/    FastAPI app, DynamoDB repositories, Lambda handler
 frontend/   React + Vite + Tailwind CSS
 terraform/  AWS infrastructure
 docs/        Static assets (resume, etc.)
@@ -21,30 +21,28 @@ docs/        Static assets (resume, etc.)
 
 ## Development
 
-**Prerequisites:** Python 3.11, Node 18+, Docker (for local PostgreSQL)
+**Prerequisites:** Python 3.13, Node 18+, Docker (for DynamoDB Local)
 
 ### Backend
 
 ```bash
 cd backend
-docker-compose up -d              # start PostgreSQL
+docker compose up -d              # start DynamoDB Local on :8001
+export DYNAMODB_ENDPOINT_URL=http://localhost:8001
+python scripts/create_local_tables.py
 uvicorn app.main:app --reload     # http://localhost:8000 (docs at /docs)
 ```
 
 ```bash
-# Migrations (always autogenerate, never write manually)
-alembic revision --autogenerate -m "description"
-alembic upgrade head
-
-# Tests
-pytest tests/                     # all
-python run_tests.py unit          # by category: unit | api | integration | auth
-python run_tests.py coverage      # HTML coverage report
+# Tests (moto-backed, no database needed)
+pytest tests/
 
 # Linting
-python run_tests.py lint          # flake8 + black
-python run_tests.py format        # black + isort
+flake8 app/ tests/ --max-line-length=88 --extend-ignore=E203,W503
+black --check app/ tests/ && isort --check-only app/ tests/
 ```
+
+See `backend/README.md` for configuration, the data model, and the Lambda build.
 
 ### Frontend
 

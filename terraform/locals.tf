@@ -12,8 +12,6 @@ locals {
     ManagedBy   = "terraform"
   }
 
-  legacy_enabled         = var.legacy_stack_enabled && var.environment == "production"
-  legacy_count           = local.legacy_enabled ? 1 : 0
   custom_domains_enabled = var.staging_profile == "full" && var.route53_zone_id != null
   custom_domain_count    = local.custom_domains_enabled ? 1 : 0
 

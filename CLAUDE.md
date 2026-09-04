@@ -81,10 +81,9 @@ bash scripts/build_lambda.sh                       # -> backend/dist/function.zi
 
 ### Deployment
 
-- **Infrastructure**: `terraform/` — all AWS resources are defined in code: DynamoDB tables, the Lambda function and its artifact bucket, the HTTP API, S3/CloudFront frontend, the Route 53 records (written into the management-account zone through `aws.dns`) and, while it is still enabled, the legacy RDS + App Runner stack. Nothing is clicked in the console
+- **Infrastructure**: `terraform/` — all AWS resources are defined in code: DynamoDB tables, the Lambda function and its artifact bucket, the HTTP API, S3/CloudFront frontend, and the Route 53 records (written into the management-account zone through `aws.dns`). Nothing is clicked in the console
 - **Terraform Cloud**: org `WebbPulse`, workspaces `WebbPulse-Portfolio` (production, bound to `main`) and `WebbPulse-Portfolio-staging` (bound to `staging`). AWS credentials come from TFC dynamic provider credentials — no static keys. Terraform never ships application code: the function is created with a placeholder package and `ignore_changes` on the code attributes, and CI updates the code
 - **Region**: `us-west-2` (the CloudFront cert is provisioned in `us-east-1` via a second provider alias)
-- **Cutover switches** (`terraform/variables.tf`): `legacy_stack_enabled` (default `true`, only ever effective in production) keeps RDS/App Runner alive while data is migrated; `api_dns_target` (`apprunner` | `apigateway`, default `apprunner`) picks which backend `api.webbpulse.com` resolves to. The order is: apply with defaults → run the data migration → set `api_dns_target = "apigateway"` → set `legacy_stack_enabled = false`. `apprunner` with the legacy stack disabled is rejected at plan time
 - **Custom domains** exist only when `staging_profile = "full"` and a zone id is set; otherwise CloudFront and the HTTP API serve on their default hostnames
 - **CI/CD**: GitHub Actions
 
@@ -111,8 +110,6 @@ Environment-scoped inputs each GitHub Environment must define:
 
 Deploys on `staging` are gated by the repository-level variable `STAGING_DEPLOY_ENABLED` (`true` once the staging workspace has applied and the Environment variables above exist). It has to be repository-scoped because a job-level `if` is evaluated before the job's Environment is selected, so Environment variables are invisible there.
 
-`ECR_REPOSITORY_NAME` and `APP_RUNNER_SERVICE_ARN` are no longer read by any workflow.
-
 ## Branching and deploys
 
 ```
@@ -132,7 +129,7 @@ feature/* ──PR──▶ staging ──PR──▶ main
 
 ### A staging branch does not imply staging infrastructure
 
-The project declares a staging profile — `none`, `reduced`, or `full` — through the `staging_profile` Terraform variable. The staging workspace is wired to the staging AWS account, but with profile `none` it refuses to plan and provisions nothing. `reduced` provisions Lambda + DynamoDB + HTTP API + S3/CloudFront on default AWS hostnames; `full` adds the custom domains. The legacy RDS/App Runner stack is never created in staging regardless of `legacy_stack_enabled`. Check the profile before assuming there is a staging environment to deploy to.
+The project declares a staging profile — `none`, `reduced`, or `full` — through the `staging_profile` Terraform variable. The staging workspace is wired to the staging AWS account, but with profile `none` it refuses to plan and provisions nothing. `reduced` provisions Lambda + DynamoDB + HTTP API + S3/CloudFront on default AWS hostnames; `full` adds the custom domains. Check the profile before assuming there is a staging environment to deploy to.
 
 ## Conventions
 

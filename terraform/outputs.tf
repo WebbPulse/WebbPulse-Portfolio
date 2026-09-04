@@ -62,13 +62,3 @@ output "dynamodb_table_names" {
   description = "DynamoDB table names keyed by entity"
   value       = { for k, t in aws_dynamodb_table.this : k => t.name }
 }
-
-output "ecr_repository_url" {
-  description = "Legacy ECR repository URL, null once the legacy stack is disabled"
-  value       = one(aws_ecr_repository.backend[*].repository_url)
-}
-
-output "db_endpoint" {
-  description = "Legacy RDS endpoint (host:port), null once the legacy stack is disabled"
-  value       = one(aws_db_instance.main[*].endpoint)
-}
