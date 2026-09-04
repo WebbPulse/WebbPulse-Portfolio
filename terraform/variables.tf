@@ -4,24 +4,6 @@ variable "aws_region" {
   default     = "us-west-2"
 }
 
-variable "db_instance_class" {
-  description = "RDS instance type"
-  type        = string
-  default     = "db.t4g.micro"
-}
-
-variable "db_name" {
-  description = "PostgreSQL database name"
-  type        = string
-  default     = "webbpulse"
-}
-
-variable "db_username" {
-  description = "PostgreSQL master username"
-  type        = string
-  default     = "webbpulse"
-}
-
 variable "environment" {
   description = "Deployment environment (production, staging)"
   type        = string
@@ -68,27 +50,5 @@ variable "route53_write_role_arn" {
   validation {
     condition     = var.environment != "staging" || var.staging_profile != "full" || var.route53_write_role_arn != ""
     error_message = "route53_write_role_arn must be set when environment is 'staging' and staging_profile is 'full': the staging child zone is delegated from the parent zone through that role."
-  }
-}
-
-variable "legacy_stack_enabled" {
-  description = "Keep the RDS + App Runner stack alive alongside the Lambda + DynamoDB stack while data is migrated. Only ever true in production; set to false after the DNS cutover to destroy the legacy resources."
-  type        = bool
-  default     = true
-}
-
-variable "api_dns_target" {
-  description = "Which backend the api hostname resolves to. Flip to 'apigateway' after the data migration has been verified; 'apprunner' requires legacy_stack_enabled. Ignored when the legacy stack is disabled, which always targets 'apigateway'."
-  type        = string
-  default     = "apigateway"
-
-  validation {
-    condition     = contains(["apprunner", "apigateway"], var.api_dns_target)
-    error_message = "api_dns_target must be 'apprunner' or 'apigateway'."
-  }
-
-  validation {
-    condition     = var.api_dns_target != "apprunner" || var.legacy_stack_enabled
-    error_message = "api_dns_target 'apprunner' requires legacy_stack_enabled = true; flip DNS to 'apigateway' before disabling the legacy stack."
   }
 }

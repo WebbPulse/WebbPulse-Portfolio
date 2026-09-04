@@ -134,4 +134,5 @@ a request first; `--replace` purges every entity table, its lookup items and its
 counter before importing. `--dry-run` reports what the target currently holds.
 `--verify` re-reads Postgres and reports any row or field that differs in
 DynamoDB, exiting non-zero when it finds drift. It needs `DYNAMODB_TABLE_PREFIX` (and AWS
-credentials for the target account) in the environment.
+credentials for the target account) in the environment, plus `psycopg2-binary`, which
+is installed by `requirements-dev.txt` only and is not part of the Lambda package.
