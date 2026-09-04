@@ -30,7 +30,7 @@ resource "aws_iam_role" "github_actions_deploy" {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
           }
           StringLike = {
-            "token.actions.githubusercontent.com:sub" = "repo:WebbPulse/WebbPulse-Portfolio:*"
+            "token.actions.githubusercontent.com:sub" = "repo:WebbPulse@185014056/WebbPulse-Portfolio@1029410045:*"
           }
         }
       }
