@@ -1,3 +1,5 @@
+import json
+
 import boto3
 import pytest
 from pydantic import ValidationError
@@ -5,16 +7,27 @@ from pydantic import ValidationError
 from app import secrets as app_secrets
 from app.config import Settings
 
+FULL_PAYLOAD = {
+    "SECRET_KEY": "sm-secret",
+    "ADMIN_USERNAME": "sm-admin",
+    "ADMIN_PASSWORD": "sm-password",
+    "ADMIN_EMAIL": "sm@example.com",
+}
 
-def create_secrets(prefix, values):
+MISSING_SECRET_ARN = (
+    "arn:aws:secretsmanager:us-west-2:123456789012:secret:webbpulse-test/missing-AbCdEf"
+)
+
+
+def create_app_secret(name, payload):
+    """Create the single JSON secret and return its ARN.
+
+    payload is written as-is when it is already a string, so a test can store a
+    body that is not a JSON object.
+    """
     client = boto3.client("secretsmanager", region_name="us-west-2")
-    for name, value in values.items():
-        client.create_secret(Name=f"{prefix}/{name}", SecretString=value)
-
-
-def create_secret_without_value(prefix, name):
-    client = boto3.client("secretsmanager", region_name="us-west-2")
-    client.create_secret(Name=f"{prefix}/{name}")
+    body = payload if isinstance(payload, str) else json.dumps(payload)
+    return client.create_secret(Name=name, SecretString=body)["ARN"]
 
 
 @pytest.fixture(autouse=True)
@@ -33,16 +46,8 @@ def clear_secret_env(monkeypatch):
 
 @pytest.mark.unit
 def test_secrets_resolve_from_secrets_manager(clear_secret_env, monkeypatch):
-    create_secrets(
-        "webbpulse/test",
-        {
-            "secret-key": "sm-secret",
-            "admin-username": "sm-admin",
-            "admin-password": "sm-password",
-            "admin-email": "sm@example.com",
-        },
-    )
-    monkeypatch.setenv("SECRETS_PREFIX", "webbpulse/test")
+    arn = create_app_secret("webbpulse-test/app", FULL_PAYLOAD)
+    monkeypatch.setenv("APP_SECRETS_ARN", arn)
     settings = Settings(_env_file=None)
     assert settings.SECRET_KEY == "sm-secret"
     assert settings.ADMIN_USERNAME == "sm-admin"
@@ -52,8 +57,8 @@ def test_secrets_resolve_from_secrets_manager(clear_secret_env, monkeypatch):
 
 @pytest.mark.unit
 def test_environment_overrides_secrets_manager(clear_secret_env, monkeypatch):
-    create_secrets("webbpulse/override", {"secret-key": "sm-secret"})
-    monkeypatch.setenv("SECRETS_PREFIX", "webbpulse/override")
+    arn = create_app_secret("webbpulse-override/app", FULL_PAYLOAD)
+    monkeypatch.setenv("APP_SECRETS_ARN", arn)
     monkeypatch.setenv("SECRET_KEY", "env-secret")
     monkeypatch.setenv("ADMIN_USERNAME", "env-admin")
     monkeypatch.setenv("ADMIN_PASSWORD", "env-password")
@@ -63,25 +68,41 @@ def test_environment_overrides_secrets_manager(clear_secret_env, monkeypatch):
 
 
 @pytest.mark.unit
-def test_missing_secrets_fail_fast(clear_secret_env, monkeypatch):
-    """Secrets that exist but have no value yet fail as missing settings, with
-    every unset field named."""
-    for key in ("secret-key", "admin-username", "admin-password", "admin-email"):
-        create_secret_without_value("webbpulse/empty", key)
-    monkeypatch.setenv("SECRETS_PREFIX", "webbpulse/empty")
-    with pytest.raises(ValidationError) as excinfo:
-        Settings(_env_file=None)
-    message = str(excinfo.value)
-    assert "SECRET_KEY" in message and "ADMIN_EMAIL" in message
+def test_environment_fills_only_the_keys_the_secret_omits(
+    clear_secret_env, monkeypatch
+):
+    """Env wins per field, so a blob that carries only some keys is topped up
+    from the environment rather than being all-or-nothing."""
+    arn = create_app_secret("webbpulse-partial/app", {"SECRET_KEY": "sm-secret"})
+    monkeypatch.setenv("APP_SECRETS_ARN", arn)
+    monkeypatch.setenv("ADMIN_USERNAME", "env-admin")
+    monkeypatch.setenv("ADMIN_PASSWORD", "env-password")
+    monkeypatch.setenv("ADMIN_EMAIL", "env@example.com")
+    settings = Settings(_env_file=None)
+    assert settings.SECRET_KEY == "sm-secret"
+    assert settings.ADMIN_USERNAME == "env-admin"
 
 
 @pytest.mark.unit
-def test_wrong_prefix_raises_rather_than_reporting_missing(
+def test_missing_keys_fail_fast(clear_secret_env, monkeypatch):
+    """A blob missing keys fails as missing settings, with every unset field
+    named."""
+    arn = create_app_secret("webbpulse-empty/app", {"SECRET_KEY": "sm-secret"})
+    monkeypatch.setenv("APP_SECRETS_ARN", arn)
+    with pytest.raises(ValidationError) as excinfo:
+        Settings(_env_file=None)
+    message = str(excinfo.value)
+    assert "ADMIN_USERNAME" in message and "ADMIN_EMAIL" in message
+    assert "SECRET_KEY" not in message
+
+
+@pytest.mark.unit
+def test_unreadable_secret_raises_rather_than_reporting_missing(
     clear_secret_env, monkeypatch
 ):
-    """A prefix pointing at secrets that do not exist is a misconfiguration and
+    """An ARN pointing at a secret that is not there is a misconfiguration and
     must surface as itself, not as a vague 'missing setting'."""
-    monkeypatch.setenv("SECRETS_PREFIX", "webbpulse/nonexistent")
+    monkeypatch.setenv("APP_SECRETS_ARN", MISSING_SECRET_ARN)
     with pytest.raises(Exception) as excinfo:
         Settings(_env_file=None)
     raised = f"{type(excinfo.value).__name__} {excinfo.value}"
@@ -89,65 +110,48 @@ def test_wrong_prefix_raises_rather_than_reporting_missing(
 
 
 @pytest.mark.unit
-def test_missing_secrets_without_prefix_fail_fast(clear_secret_env, monkeypatch):
-    monkeypatch.delenv("SECRETS_PREFIX", raising=False)
+def test_missing_secrets_without_arn_fail_fast(clear_secret_env, monkeypatch):
+    monkeypatch.delenv("APP_SECRETS_ARN", raising=False)
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
 
 
 @pytest.mark.unit
-def test_load_secrets_skips_a_secret_with_no_value():
-    """A secret that exists but is not yet populated is skipped, so the caller
-    can report that field as missing. Unlike SSM get_parameters, Secrets
-    Manager has no partial response, so this is the only 'not found' that is
-    tolerated."""
-    create_secrets("webbpulse/partial", {"secret-key": "x"})
-    create_secret_without_value("webbpulse/partial", "admin-email")
-    found = app_secrets.load_secrets("webbpulse/partial", ["secret-key", "admin-email"])
-    assert found == {"secret-key": "x"}
+def test_non_object_payload_is_rejected():
+    arn = create_app_secret("webbpulse-list/app", json.dumps(["not", "a", "dict"]))
+    with pytest.raises(ValueError):
+        app_secrets.load_app_secrets(arn)
 
 
 @pytest.mark.unit
-def test_secret_without_a_version_reads_as_absent():
-    """Between the apply that creates a secret and the copy that fills it, the
-    secret exists with no version. That reads as absent, not as an error."""
-    create_secret_without_value("webbpulse/novalue", "admin-email")
-    found = app_secrets.load_secrets("webbpulse/novalue", ["admin-email"])
-    assert found == {}
+def test_invalid_json_payload_is_rejected():
+    arn = create_app_secret("webbpulse-garbage/app", "not json at all")
+    with pytest.raises(ValueError):
+        app_secrets.load_app_secrets(arn)
 
 
 @pytest.mark.unit
-def test_nonexistent_secret_raises():
-    """A secret that is not there at all must not be swallowed into a confusing
-    'missing setting' error."""
-    with pytest.raises(Exception):
-        app_secrets.load_secret("webbpulse/does-not-exist/secret-key")
+def test_non_string_values_are_json_encoded_and_nulls_dropped():
+    arn = create_app_secret(
+        "webbpulse-types/app",
+        {"SECRET_KEY": "x", "ADMIN_EMAIL": None, "RETRIES": 3},
+    )
+    assert app_secrets.load_app_secrets(arn) == {"SECRET_KEY": "x", "RETRIES": "3"}
 
 
 @pytest.mark.unit
 def test_values_are_cached_per_execution_environment():
-    create_secrets("webbpulse/cached", {"secret-key": "first"})
-    name = app_secrets.secret_name("webbpulse/cached", "secret-key")
-    assert app_secrets.load_secret(name) == "first"
+    arn = create_app_secret("webbpulse-cached/app", {"SECRET_KEY": "first"})
+    assert app_secrets.load_app_secrets(arn)["SECRET_KEY"] == "first"
 
     boto3.client("secretsmanager", region_name="us-west-2").put_secret_value(
-        SecretId=name, SecretString="second"
+        SecretId=arn, SecretString=json.dumps({"SECRET_KEY": "second"})
     )
     # Still the cached value: a warm invocation makes no further call.
-    assert app_secrets.load_secret(name) == "first"
+    assert app_secrets.load_app_secrets(arn)["SECRET_KEY"] == "first"
 
     app_secrets.reset_cache()
-    assert app_secrets.load_secret(name) == "second"
-
-
-@pytest.mark.unit
-def test_secret_name_joins_prefix_and_key():
-    assert app_secrets.secret_name("webbpulse-staging", "secret-key") == (
-        "webbpulse-staging/secret-key"
-    )
-    assert app_secrets.secret_name("webbpulse-staging/", "secret-key") == (
-        "webbpulse-staging/secret-key"
-    )
+    assert app_secrets.load_app_secrets(arn)["SECRET_KEY"] == "second"
 
 
 @pytest.mark.unit
