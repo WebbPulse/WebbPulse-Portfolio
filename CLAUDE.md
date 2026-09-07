@@ -60,7 +60,7 @@ bash scripts/build_lambda.sh                       # -> backend/dist/function.zi
 - **REST API**: All routes under `/api/v1/` prefix. OpenAPI docs at `/docs`. Ids stay integers and list endpoints keep `skip`/`limit` so the frontend contract is unchanged
 - **Auth**: JWT tokens (HS256, python-jose/bcrypt). Users have an `is_admin` boolean flag. The admin user is seeded from SSM on cold start
 - **Database**: DynamoDB, one table per entity (`webbpulse-<env>-<entity>`: users, categories, posts, projects, experience, skills, education, certifications, site-content, meta). Integer ids come from counter items in `meta`; uniqueness (username, email, slug) is enforced with lookup items inside `TransactWriteItems`. `posts` has `published-index` and `category-index` GSIs
-- **Config**: env vars `DYNAMODB_TABLE_PREFIX`, `SSM_PARAMETER_PREFIX` (secret key + admin credentials are read from SSM), `ENVIRONMENT`, `CORS_ORIGINS`, `SITE_URL`, `LOG_LEVEL`; `DYNAMODB_ENDPOINT_URL` points at a local DynamoDB
+- **Config**: env vars `DYNAMODB_TABLE_PREFIX`, `SECRETS_PREFIX` (secret key + admin credentials are read from Secrets Manager), `ENVIRONMENT`, `CORS_ORIGINS`, `SITE_URL`, `LOG_LEVEL`; `DYNAMODB_ENDPOINT_URL` points at a local DynamoDB
 - **Rate limiting**: API Gateway stage throttling (burst 200, rate 100). There is no in-process limiter
 - **Observability**: aws-lambda-powertools logger, X-Ray active tracing, 30-day CloudWatch log groups for the function and the HTTP API access log
 

@@ -1,10 +1,14 @@
 from typing import Optional
 
-import boto3
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-SSM_SECRET_FIELDS = {
+from app.secrets import load_secrets
+
+# Settings field to the short key of the Secrets Manager secret holding it. The
+# key is the last segment of the secret name, so SECRET_KEY comes from
+# <SECRETS_PREFIX>/secret-key.
+SECRET_FIELDS = {
     "SECRET_KEY": "secret-key",
     "ADMIN_USERNAME": "admin-username",
     "ADMIN_PASSWORD": "admin-password",
@@ -21,22 +25,11 @@ LOCALHOST_ORIGINS = [
 ]
 
 
-def load_ssm_parameters(prefix, names):
-    prefix = prefix.rstrip("/")
-    response = boto3.client("ssm").get_parameters(
-        Names=[f"{prefix}/{name}" for name in names], WithDecryption=True
-    )
-    return {
-        parameter["Name"].rsplit("/", 1)[1]: parameter["Value"]
-        for parameter in response["Parameters"]
-    }
-
-
 class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     DYNAMODB_TABLE_PREFIX: str = "webbpulse-development"
     DYNAMODB_ENDPOINT_URL: Optional[str] = None
-    SSM_PARAMETER_PREFIX: Optional[str] = None
+    SECRETS_PREFIX: Optional[str] = None
 
     SECRET_KEY: Optional[str] = None
     ALGORITHM: str = "HS256"
@@ -72,21 +65,27 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def resolve_secrets(self):
-        missing = [field for field in SSM_SECRET_FIELDS if getattr(self, field) is None]
-        if missing and self.SSM_PARAMETER_PREFIX:
-            loaded = load_ssm_parameters(
-                self.SSM_PARAMETER_PREFIX,
-                [SSM_SECRET_FIELDS[field] for field in missing],
+        """Fill any secret not already set from the environment.
+
+        An environment variable still wins, which keeps local development and
+        the test suite free of AWS. Everything else is read from Secrets
+        Manager once per execution environment and cached there.
+        """
+        missing = [field for field in SECRET_FIELDS if getattr(self, field) is None]
+        if missing and self.SECRETS_PREFIX:
+            loaded = load_secrets(
+                self.SECRETS_PREFIX,
+                [SECRET_FIELDS[field] for field in missing],
             )
             for field in missing:
-                value = loaded.get(SSM_SECRET_FIELDS[field])
+                value = loaded.get(SECRET_FIELDS[field])
                 if value is not None:
                     setattr(self, field, value)
             missing = [field for field in missing if getattr(self, field) is None]
         if missing:
             raise ValueError(
                 "Missing required settings (set them as environment variables or "
-                f"under SSM_PARAMETER_PREFIX): {', '.join(missing)}"
+                f"as secrets under SECRETS_PREFIX): {', '.join(missing)}"
             )
         return self
 

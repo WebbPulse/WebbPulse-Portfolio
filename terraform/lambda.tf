@@ -1,7 +1,12 @@
 locals {
   lambda_function_name = "${local.prefix}-api"
-  lambda_table_arns    = module.dynamodb.table_arns_list
-  lambda_index_arns    = [for arn in module.dynamodb.table_arns_list : "${arn}/index/*"]
+
+  # Every secret is named "<prefix>/<key>", so the prefix is any secret's name
+  # with its key stripped. Derived from the module output rather than from
+  # local.prefix directly, so a rename of the secrets reaches the function.
+  app_secrets_prefix = trimsuffix(module.app_secrets.names["secret-key"], "/secret-key")
+  lambda_table_arns  = module.dynamodb.table_arns_list
+  lambda_index_arns  = [for arn in module.dynamodb.table_arns_list : "${arn}/index/*"]
 }
 
 # ---------------------------------------------------------------------------
@@ -114,8 +119,12 @@ module "lambda_api" {
   }
 
   environment_variables = {
-    DYNAMODB_TABLE_PREFIX        = local.prefix
-    SSM_PARAMETER_PREFIX         = "/${local.prefix}"
+    DYNAMODB_TABLE_PREFIX = local.prefix
+    # The backend builds each secret's name as <SECRETS_PREFIX>/<key>. Taken
+    # from the module's own output rather than rebuilt from local.prefix, so
+    # the function depends on the secrets existing and the two cannot drift to
+    # different names.
+    SECRETS_PREFIX               = local.app_secrets_prefix
     ENVIRONMENT                  = var.environment
     CORS_ORIGINS                 = local.cors_origins
     SITE_URL                     = local.frontend_url
