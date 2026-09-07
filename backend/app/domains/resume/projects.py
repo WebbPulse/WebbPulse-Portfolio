@@ -2,10 +2,10 @@ from typing import List
 
 from fastapi import Query
 
-from ....db import ordering
-from ....db.entities import SITE_CONTENT_ID, projects, site_content
-from ....schemas import Project, ProjectCreate, ProjectList, ProjectUpdate
-from ..crud_router import CrudConfig, build_crud_router
+from ...db import ordering
+from .crud_router import CrudConfig, build_crud_router
+from .repository import SITE_CONTENT_ID, projects, site_content
+from .schemas import Project, ProjectCreate, ProjectList, ProjectUpdate
 
 router = build_crud_router(
     CrudConfig(

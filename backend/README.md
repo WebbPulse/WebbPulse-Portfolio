@@ -8,30 +8,48 @@ unchanged from the previous Postgres deployment; only the runtime moved.
 
 ```
 app/
-├── main.py                 FastAPI app, CORS, middleware, /health
+├── main.py                 FastAPI app, CORS, middleware
 ├── lambda_handler.py       Lambda entrypoint: app.lambda_handler.handler
 ├── config.py               Settings (env vars, the APP_SECRETS_ARN JSON secret)
-├── api/
-│   ├── seo.py              /sitemap.xml and /robots.txt
-│   └── v1/
-│       ├── api.py          Router wiring under /api/v1
-│       ├── crud_router.py  Factory for the soft-deleted CRUD resources
-│       └── endpoints/      posts, admin, projects, experience, skills,
-│                           education, certifications, site_content
-├── core/
+├── version.py              The version reported by OpenAPI, / and /health
+├── api/v1/api.py           The composition root: mounts every domain under /api/v1
+├── domains/                One package per domain, no imports between them
+│   ├── content/            posts, categories, the site-content singleton
+│   │   ├── router.py       The domain's routers, prefixes and tags
+│   │   ├── posts.py        Posts and categories route handlers
+│   │   ├── site_content.py Singleton get and admin update
+│   │   ├── service.py      Site-content seeding
+│   │   ├── defaults.py     The literal default hero, about and values copy
+│   │   ├── repository.py   The tables this domain touches
+│   │   └── schemas/        Pydantic models: category, post, site_content
+│   ├── resume/             projects, experience, skills, education, certifications
+│   │   ├── router.py       The domain's routers, prefixes and tags
+│   │   ├── crud_router.py  Factory for the soft-deleted CRUD resources
+│   │   ├── projects.py     CRUD plus the featured_only and sort-mode list
+│   │   ├── repository.py   The tables this domain touches
+│   │   └── schemas/        Pydantic models, one per resource
+│   ├── identity/           POST /api/v1/admin/login, the only signing-key user
+│   │   ├── router.py       Login: limiter, timing equaliser, token mint
+│   │   ├── service.py      Admin user seeding and reconciliation from settings
+│   │   ├── repository.py   users
+│   │   └── schemas/        Pydantic models: user, token
+│   └── public/             /, /health, /sitemap.xml, /robots.txt
+│       ├── router.py       The unauthenticated, unprefixed surface
+│       ├── seo.py          /sitemap.xml and /robots.txt
+│       ├── service.py      database_status() for the health check
+│       └── repository.py   Read-only: posts and site-content
+├── core/                   Cross-cutting, shared by every domain
 │   ├── security.py         bcrypt, JWT, get_current_user, require_admin
-│   ├── admin.py            Admin user seeding from settings
 │   ├── login_limiter.py    Login brute-force limiter backed by DynamoDB
-│   ├── middleware.py       Trailing-slash, admin-seed, request logging
+│   ├── middleware.py       Trailing-slash, seeding, request logging
 │   └── logging.py          Powertools logger
-├── db/
-│   ├── tables.py           Canonical table and index definitions
-│   ├── client.py           boto3 resource/client factories
-│   ├── serializer.py       Python <-> DynamoDB value encoding
-│   ├── repository.py       Generic repository (counters, uniqueness, soft delete)
-│   ├── ordering.py         In-memory sort orders matching the old SQL queries
-│   └── entities.py         Repository instances per table
-└── schemas/                Pydantic request/response models
+└── db/                     Shared datastore layer
+    ├── tables.py           Canonical table and index definitions
+    ├── client.py           boto3 resource/client factories
+    ├── serializer.py       Python <-> DynamoDB value encoding
+    ├── repository.py       Generic repository (counters, uniqueness, soft delete)
+    ├── ordering.py         In-memory sort orders matching the old SQL queries
+    └── entities.py         Repository instances per table
 scripts/
 ├── create_local_tables.py  Create the tables against DynamoDB Local
 ├── migrate_postgres_to_dynamo.py  One-time Postgres -> DynamoDB copy

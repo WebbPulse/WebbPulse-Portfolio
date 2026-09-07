@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 
-from ....core.security import get_current_user, require_admin
-from ....db.entities import SITE_CONTENT_ID, site_content
-from ....schemas import SiteContent, SiteContentUpdate
+from ...core.security import get_current_user, require_admin
+from .repository import SITE_CONTENT_ID, site_content
+from .schemas import SiteContent, SiteContentUpdate
 
 router = APIRouter()
 

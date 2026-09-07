@@ -1,7 +1,7 @@
-from ....db import ordering
-from ....db.entities import skills
-from ....schemas import Skill, SkillCreate, SkillList, SkillUpdate
-from ..crud_router import CrudConfig, build_crud_router
+from ...db import ordering
+from .crud_router import CrudConfig, build_crud_router
+from .repository import skills
+from .schemas import Skill, SkillCreate, SkillList, SkillUpdate
 
 router = build_crud_router(
     CrudConfig(

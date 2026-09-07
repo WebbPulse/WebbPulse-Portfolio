@@ -1,8 +1,8 @@
 from botocore.exceptions import ClientError
 
-from ..db.entities import SITE_CONTENT_ID, site_content
-from .logging import logger
-from .site_content_defaults import SITE_CONTENT_DEFAULTS
+from ...core.logging import logger
+from .defaults import SITE_CONTENT_DEFAULTS
+from .repository import SITE_CONTENT_ID, site_content
 
 _seeded = False
 

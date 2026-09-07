@@ -1,7 +1,7 @@
-from ....db import ordering
-from ....db.entities import education
-from ....schemas import Education, EducationCreate, EducationList, EducationUpdate
-from ..crud_router import CrudConfig, build_crud_router
+from ...db import ordering
+from .crud_router import CrudConfig, build_crud_router
+from .repository import education
+from .schemas import Education, EducationCreate, EducationList, EducationUpdate
 
 router = build_crud_router(
     CrudConfig(

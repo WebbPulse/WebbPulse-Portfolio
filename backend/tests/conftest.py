@@ -27,7 +27,6 @@ from fastapi.testclient import TestClient  # noqa: E402
 from moto import mock_aws  # noqa: E402
 
 from app.config import settings  # noqa: E402
-from app.core import admin, site_content  # noqa: E402
 from app.core.security import create_access_token, get_password_hash  # noqa: E402
 from app.db import client as db_client  # noqa: E402
 from app.db import entities  # noqa: E402
@@ -39,6 +38,8 @@ from app.db.tables import (  # noqa: E402
     TTL_ATTRIBUTE,
     table_definition,
 )
+from app.domains.content import service as site_content  # noqa: E402
+from app.domains.identity import service as admin  # noqa: E402
 
 
 def create_all_tables(prefix: str = settings.DYNAMODB_TABLE_PREFIX):
