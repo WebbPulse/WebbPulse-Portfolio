@@ -116,7 +116,11 @@ module "github_actions_role" {
   ]
 
   policy_statements = concat([
-    # Lambda: point the function at the freshly uploaded zip
+    # Lambda: point a function at freshly published code. The monolith still
+    # takes a zip from the artifacts bucket below; the four domain functions
+    # take an image tag the container build has already pushed to ECR. Both
+    # deploys are the same UpdateFunctionCode call, so this is one statement
+    # over five function ARNs rather than two statements.
     {
       actions = [
         "lambda:UpdateFunctionCode",
@@ -124,7 +128,10 @@ module "github_actions_role" {
         "lambda:GetFunctionConfiguration",
         "lambda:PublishVersion",
       ]
-      resources = [module.lambda_api.function_arn]
+      resources = concat(
+        [module.lambda_api.function_arn],
+        [for name in sort(keys(local.lambda_domains)) : module.lambda_domain[name].function_arn],
+      )
     },
     # S3: upload the Lambda deployment package
     {

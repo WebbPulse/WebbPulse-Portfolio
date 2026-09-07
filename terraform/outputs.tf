@@ -82,3 +82,13 @@ output "github_actions_ci_role_arn" {
   description = "ARN of the read-only CodeArtifact role pull request CI assumes. Set it as the CI_AWS_ROLE_ARN repository variable (staging value only, since pull request checks run against staging)."
   value       = module.github_actions_ci_role.role_arn
 }
+
+output "domain_lambda_function_names" {
+  description = "Per-domain Lambda function name keyed by domain, for the function-image map the image deploy step passes to UpdateFunctionCode. The monolith is not in here; it keeps its own lambda_function_name output while it still serves the default route."
+  value       = { for name, fn in module.lambda_domain : name => fn.function_name }
+}
+
+output "domain_lambda_log_group_names" {
+  description = "Per-domain CloudWatch log group name keyed by domain. The application errors metric filters read it, and a responder tailing one domain does not have to guess the group from the function name."
+  value       = { for name, fn in module.lambda_domain : name => fn.log_group_name }
+}
