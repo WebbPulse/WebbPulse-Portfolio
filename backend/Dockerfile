@@ -45,6 +45,14 @@ ARG BASE_IMAGE=432410731887.dkr.ecr.us-west-2.amazonaws.com/webbpulse/python-lam
 # ---------------------------------------------------------------------------
 FROM ${BASE_IMAGE} AS builder
 
+# The base image drops to the unprivileged `app` user (uid 1000), which is right
+# for the runtime stage but wrong here: BuildKit mounts secrets root-owned with
+# mode 0400, so `cat /run/secrets/codeartifact_token` fails with "Permission
+# denied" as `app`, and pip cannot create /deps at the filesystem root either.
+# Nothing from this stage's filesystem survives except what the runtime stage
+# copies out of /deps, so running the build as root widens nothing at runtime.
+USER root
+
 WORKDIR /build
 
 # Only requirements.txt, so a change to app/ does not invalidate the dependency
