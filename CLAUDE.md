@@ -71,7 +71,9 @@ bash scripts/build_lambda.sh                       # -> backend/dist/function.zi
 | `backend/app/main.py` | FastAPI app entrypoint — CORS, middleware, lifespan hooks |
 | `backend/app/lambda_handler.py` | Mangum adapter — the Lambda entrypoint |
 | `backend/app/config.py` | Pydantic Settings, env vars and the `APP_SECRETS_ARN` JSON secret |
-| `backend/app/api/v1/` | Route handlers by resource |
+| `backend/app/api/v1/api.py` | The composition root: mounts every domain under `/api/v1` |
+| `backend/app/domains/` | One package per domain (content, resume, identity, public); no imports between them |
+| `backend/app/core/`, `backend/app/db/` | Cross-cutting code every domain shares: settings, auth, limiter, logging, DynamoDB |
 | `backend/scripts/build_lambda.sh` | Builds `dist/function.zip` for Lambda |
 | `terraform/dynamodb.tf` | Table map — attributes, GSIs, TTL, PITR per entity |
 | `terraform/lambda.tf` | Function, execution role, artifact bucket, placeholder package |

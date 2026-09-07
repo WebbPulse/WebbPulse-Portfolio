@@ -1,14 +1,14 @@
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 
-from ....core.login_limiter import client_ip, login_limiter
-from ....core.security import (
+from ...core.login_limiter import client_ip, login_limiter
+from ...core.security import (
     create_access_token,
     get_password_hash,
     verify_password,
 )
-from ....db.entities import users
-from ....schemas import Token, UserLogin
+from .repository import users
+from .schemas import Token, UserLogin
 
 router = APIRouter()
 

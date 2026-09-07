@@ -1,12 +1,12 @@
-from ....db import ordering
-from ....db.entities import certifications
-from ....schemas import (
+from ...db import ordering
+from .crud_router import CrudConfig, build_crud_router
+from .repository import certifications
+from .schemas import (
     Certification,
     CertificationCreate,
     CertificationList,
     CertificationUpdate,
 )
-from ..crud_router import CrudConfig, build_crud_router
 
 router = build_crud_router(
     CrudConfig(

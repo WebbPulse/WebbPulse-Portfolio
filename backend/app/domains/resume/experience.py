@@ -1,7 +1,7 @@
-from ....db import ordering
-from ....db.entities import experience
-from ....schemas import Experience, ExperienceCreate, ExperienceList, ExperienceUpdate
-from ..crud_router import CrudConfig, build_crud_router
+from ...db import ordering
+from .crud_router import CrudConfig, build_crud_router
+from .repository import experience
+from .schemas import Experience, ExperienceCreate, ExperienceList, ExperienceUpdate
 
 router = build_crud_router(
     CrudConfig(

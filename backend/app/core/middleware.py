@@ -2,9 +2,9 @@ import time
 
 from starlette.routing import Match
 
-from .admin import ensure_admin_seeded
+from ..domains.content.service import ensure_site_content_seeded
+from ..domains.identity.service import ensure_admin_seeded
 from .logging import logger
-from .site_content import ensure_site_content_seeded
 
 
 class TrailingSlashMiddleware:

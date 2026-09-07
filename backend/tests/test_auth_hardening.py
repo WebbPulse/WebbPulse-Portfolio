@@ -8,12 +8,16 @@ from fastapi.testclient import TestClient
 
 from app.config import settings
 from app.core import login_limiter as limiter_module
-from app.core.admin import ensure_admin_seeded, reset_seed_state, seed_admin_user
 from app.core.login_limiter import REQUEST_CONTEXT_HEADER, client_ip
 from app.core.security import create_access_token, get_password_hash, verify_password
 from app.db import client as db_client
 from app.db import entities
 from app.db.tables import META, RATE_LIMIT_TTL_ATTRIBUTE, RATE_LIMITS
+from app.domains.identity.service import (
+    ensure_admin_seeded,
+    reset_seed_state,
+    seed_admin_user,
+)
 
 LOGIN = "/api/v1/admin/login"
 PROTECTED = "/api/v1/posts/admin"

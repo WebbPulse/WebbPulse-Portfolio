@@ -4,14 +4,14 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from slugify import slugify
 
-from ....core.security import get_current_user, require_admin
-from ....db import ordering
-from ....db.entities import categories, posts
-from ....db.repository import UniqueViolation
-from ....schemas import Category as CategorySchema
-from ....schemas import CategoryCreate, CategoryUpdate
-from ....schemas import Post as PostSchema
-from ....schemas import PostCreate, PostList, PostUpdate
+from ...core.security import get_current_user, require_admin
+from ...db import ordering
+from ...db.repository import UniqueViolation
+from .repository import categories, posts
+from .schemas import Category as CategorySchema
+from .schemas import CategoryCreate, CategoryUpdate
+from .schemas import Post as PostSchema
+from .schemas import PostCreate, PostList, PostUpdate
 
 router = APIRouter()
 
