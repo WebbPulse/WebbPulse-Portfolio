@@ -184,6 +184,11 @@ resource "aws_iam_role_policy" "lambda_api" {
         Action   = ["ssm:GetParameter", "ssm:GetParameters"]
         Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/${local.prefix}/*"
       },
+      # Read access to the Secrets Manager secrets the backend moves onto. The
+      # grant lands before the backend reads them so the switch in the next
+      # change is a deploy rather than a deploy plus an apply. The SSM statement
+      # above stays until the backend has stopped reading parameters.
+      module.app_secrets.read_policy_statement,
       {
         Effect   = "Allow"
         Action   = "kms:Decrypt"
