@@ -5,11 +5,12 @@
 # A CloudFront Function 301-redirects the bare apex to www.
 # 403/404 from S3 → index.html for client-side React Router.
 #
-# The frontend calls the API host directly — there is no proxying through
-# CloudFront. The one exception is the staging access gate: when it is on,
-# /api/* is proxied to the API host with an origin-verify header, /_auth/* goes
-# to the gate's login Lambda, and every behavior requires signed cookies. All
-# of that is gated on local.staging_gate_enabled (see staging_access_gate.tf).
+# The frontend calls the API host directly, on every environment, so there is
+# no proxying through CloudFront. The staging access gate adds only the sign-in
+# wall: /_auth/* goes to the gate's login Lambda and the page behaviors require
+# the gate's signed cookies. The API host checks the same cookies itself, in
+# its own authorizer. All of it is gated on local.staging_gate_enabled (see
+# staging_access_gate.tf) so production plans a no-op.
 # ---------------------------------------------------------------------------
 
 resource "aws_s3_bucket" "frontend" {
@@ -82,28 +83,6 @@ resource "aws_cloudfront_distribution" "frontend" {
     }
   }
 
-  # Staging access gate: the API host, reached only with the origin-verify header
-  # the HTTP API authorizer checks.
-  dynamic "origin" {
-    for_each = local.staging_gate_enabled ? ["api"] : []
-    content {
-      domain_name = local.api_host
-      origin_id   = origin.value
-
-      custom_origin_config {
-        http_port              = 80
-        https_port             = 443
-        origin_protocol_policy = "https-only"
-        origin_ssl_protocols   = ["TLSv1.2"]
-      }
-
-      custom_header {
-        name  = module.staging_access_gate[0].origin_verify_header_name
-        value = module.staging_access_gate[0].origin_verify_header_value
-      }
-    }
-  }
-
   default_cache_behavior {
     target_origin_id       = "s3-frontend"
     viewer_protocol_policy = "redirect-to-https"
@@ -146,27 +125,6 @@ resource "aws_cloudfront_distribution" "frontend" {
       cached_methods           = ["GET", "HEAD"]
       cache_policy_id          = module.staging_access_gate[0].cache_policy_id_caching_disabled
       origin_request_policy_id = module.staging_access_gate[0].origin_request_policy_id_all_viewer_except_host_header
-
-      function_association {
-        event_type   = "viewer-request"
-        function_arn = module.staging_access_gate[0].viewer_request_function_arn
-      }
-    }
-  }
-
-  # Staging access gate: /api/* is proxied to the API host behind the signed
-  # cookies, so the browser calls the API on the site origin.
-  dynamic "ordered_cache_behavior" {
-    for_each = local.staging_gate_enabled ? ["api"] : []
-    content {
-      path_pattern             = module.staging_access_gate[0].api_path_pattern
-      target_origin_id         = ordered_cache_behavior.value
-      viewer_protocol_policy   = "https-only"
-      allowed_methods          = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
-      cached_methods           = ["GET", "HEAD"]
-      cache_policy_id          = module.staging_access_gate[0].cache_policy_id_caching_disabled
-      origin_request_policy_id = module.staging_access_gate[0].origin_request_policy_id_all_viewer_except_host_header
-      trusted_key_groups       = module.staging_access_gate[*].key_group_id
 
       function_association {
         event_type   = "viewer-request"

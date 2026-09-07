@@ -39,7 +39,7 @@ output "backend_url" {
 }
 
 output "frontend_api_base_url" {
-  description = "Base URL the frontend build must call (the API_BASE_URL GitHub environment variable). The site origin when the staging access gate is on, so API calls carry the signed cookies; otherwise the API base URL."
+  description = "Base URL the frontend build must call (the API_BASE_URL GitHub environment variable). Always the API host; behind the staging access gate the browser sends the gate's signed cookies to it directly."
   value       = local.frontend_api_url
 }
 
