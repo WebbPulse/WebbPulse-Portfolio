@@ -2,8 +2,11 @@
 # HTTP API in front of the Lambda backend.
 #
 # Behind the staging access gate the API is reachable only through its custom
-# domain, where the origin-verify authorizer applies; both inputs are gated on
-# local.staging_gate_enabled so production plans a no-op.
+# domain, where the gate's authorizer applies. The browser calls it directly at
+# api.staging.webbpulse.com and the authorizer checks the gate's signed cookies,
+# an origin-verify header (pipelines, health checks), or lets an OPTIONS
+# preflight through. Both inputs are gated on local.staging_gate_enabled so
+# production plans a no-op.
 #
 # The certificate lives in acm.tf and the api.<domain> alias record in
 # route53.tf, because production writes DNS through aws.dns.
