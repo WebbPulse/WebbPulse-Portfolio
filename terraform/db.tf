@@ -62,10 +62,11 @@ module "app_secrets" {
     }
 
     # Superseded by "app" above. Kept until the backend reads the JSON blob, then
-    # removed. The value stays as it is: secret-key no longer generates here, it
-    # takes the same generator's result, so the stored string does not change.
+    # removed. Description left exactly as it is so this change does not touch the
+    # secret at all: it no longer generates here, it takes the same generator's
+    # result, so the stored string does not change either.
     "secret-key" = {
-      description = "JWT signing key for the FastAPI backend. Superseded by the app secret."
+      description = "JWT signing key for the FastAPI backend"
       value       = random_password.secret_key.result
     }
 
