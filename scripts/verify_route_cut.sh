@@ -96,17 +96,46 @@ esac
 # terraform/apigateway.tf's routes map for that domain, or this script will
 # correctly report it as still on the monolith.
 #
-# Only `public` is cut today. The other three are filled in by cuts 2 through 4
-# and are listed as empty so the script fails loudly with "no paths" instead of
-# silently passing on an empty loop.
+# `public` and `resume` are cut today. The other two are filled in by cuts 3 and
+# 4 and are listed as empty so the script fails loudly with "no paths" instead
+# of silently passing on an empty loop.
 case "$DOMAIN" in
 public)
   PATHS=(/health / /sitemap.xml /robots.txt)
   ;;
 resume)
-  # Cut 2. Two keys per collection, so both the bare collection and an item
-  # path are worth probing once the routes exist.
-  PATHS=()
+  # Cut 2. Three keys per collection in the routes map, and the two probed here
+  # are the two that are easy to get wrong.
+  #
+  # The collection path this application serves carries a trailing slash, and
+  # AWS does not document whether "ANY /api/v1/projects" or
+  # "ANY /api/v1/projects/{proxy+}" matches it: nothing says a trailing slash is
+  # normalised before route selection, and nothing says a greedy variable can
+  # capture an empty remainder. The routes map therefore carries an explicit
+  # "ANY /api/v1/projects/" key, and this is the probe that proves it works
+  # against the real gateway rather than against a reading of the docs.
+  #
+  # The bare form is probed too. It is what the frontend's getProjects(true)
+  # actually requests: it emits /projects?featured_only=true/, whose path
+  # component is the bare collection with the slash inside the query string.
+  #
+  # Item paths are deliberately not probed. Ids come from the COUNTER#
+  # allocator in backend/app/db/repository.py, so they differ between staging
+  # and production and no literal id is safe to hard code here. The
+  # {proxy+} key that serves them is exercised by the deploy workflow's own
+  # requests instead. GET only: every other method on these prefixes writes.
+  PATHS=(
+    /api/v1/projects/
+    /api/v1/projects
+    /api/v1/experience/
+    /api/v1/experience
+    /api/v1/skills/
+    /api/v1/skills
+    /api/v1/education/
+    /api/v1/education
+    /api/v1/certifications/
+    /api/v1/certifications
+  )
   ;;
 content)
   # Cut 3.

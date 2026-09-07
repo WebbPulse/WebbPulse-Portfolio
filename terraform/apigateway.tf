@@ -24,8 +24,22 @@ locals {
   # every_integration_is_routed check fails the plan on an integration no route
   # can reach, so this list and the routes map below move together.
   #
-  # Cut 1 is `public`. Cuts 2 through 4 append resume, content and identity.
-  routed_lambda_domains = ["public"]
+  # Cut 1 is `public`, cut 2 is `resume`. Cuts 3 and 4 append content and
+  # identity.
+  routed_lambda_domains = ["public", "resume"]
+
+  # The five collections the `resume` domain owns. Every one of them is built by
+  # build_crud_router in backend/app/domains/resume/crud_router.py and so serves
+  # exactly the same five operations, which is why the route keys below are
+  # generated from this list rather than written out twenty-five times. The
+  # names are the router prefixes in backend/app/domains/resume/router.py.
+  resume_collections = [
+    "projects",
+    "experience",
+    "skills",
+    "education",
+    "certifications",
+  ]
 }
 
 module "api" {
@@ -41,8 +55,8 @@ module "api" {
   #
   # Only the domains that have a route are reachable. The module's
   # every_integration_is_routed check refuses an integration nothing can reach,
-  # so the three domains still waiting for their cut are deliberately not listed
-  # yet: they arrive with their routes in cuts 2 through 4.
+  # so the two domains still waiting for their cut are deliberately not listed
+  # yet: they arrive with their routes in cuts 3 and 4.
   integrations = merge(
     {
       legacy = {
@@ -66,17 +80,70 @@ module "api" {
   # a rollback is deleting the routes entry again.
   default_integration = "legacy"
 
-  # `public`'s four routes, all literal, all unauthenticated in the application
-  # and none of them writing. No authorization_type is set on any of them, which
-  # means the module's own choice, CUSTOM whenever authorizer_id is set, so each
-  # one stays behind the staging access gate exactly as $default does. Setting
-  # NONE here would punch a hole straight past the gate.
-  routes = {
-    "GET /health"      = { integration = "public" }
-    "GET /"            = { integration = "public" }
-    "GET /sitemap.xml" = { integration = "public" }
-    "GET /robots.txt"  = { integration = "public" }
-  }
+  # No authorization_type is set on any entry below, which means the module's
+  # own choice, CUSTOM whenever authorizer_id is set, so every one of them stays
+  # behind the staging access gate exactly as $default does. Setting NONE on any
+  # of them, including on a read-only GET to make a probe simpler, would punch a
+  # hole straight past the gate.
+  routes = merge(
+    # Cut 1. `public`'s four routes, all literal, all unauthenticated in the
+    # application and none of them writing.
+    {
+      "GET /health"      = { integration = "public" }
+      "GET /"            = { integration = "public" }
+      "GET /sitemap.xml" = { integration = "public" }
+      "GET /robots.txt"  = { integration = "public" }
+    },
+
+    # Cut 2. `resume`: five collections, five operations each, 25 application
+    # routes. Three keys per collection rather than section 3.5's two, and the
+    # third one is there because AWS does not document what happens without it.
+    #
+    # The collection path this application actually serves carries a trailing
+    # slash. build_crud_router declares `GET /`, `POST /` and the item routes
+    # `GET|PUT|DELETE /{item_id}`, mounted under `/api/v1/<collection>`, so the
+    # real paths are `/api/v1/projects/` and `/api/v1/projects/123`. Section
+    # 3.5's snippet gives each collection only `ANY /api/v1/projects` and
+    # `ANY /api/v1/projects/{proxy+}`, and whether either of those matches
+    # `/api/v1/projects/` is genuinely unspecified:
+    #
+    #   - The routing doc's precedence list (full match, then greedy variable,
+    #     then $default) has no trailing-slash or empty-remainder example, and
+    #     nothing in the HTTP API documentation says whether a trailing slash is
+    #     normalised away before route selection.
+    #   - Whether `{proxy+}` can capture an empty remainder is likewise
+    #     undocumented for HTTP APIs. The v1 REST API doc describes
+    #     `/parent/{proxy+}` as standing for `/parent/*`, which reads as
+    #     requiring a non-empty remainder, but that sentence is not restated for
+    #     v2 and carrying it across is an inference.
+    #
+    # So the behaviour is not something to depend on in either direction. A full
+    # match takes documented priority over a greedy one, which makes the literal
+    # `ANY /api/v1/projects/` key safe to add and removes the ambiguity: the
+    # collection GET the site's front page depends on lands on `resume` whatever
+    # API Gateway does with the slash. Without it, the failure mode is the quiet
+    # one, a cut that applies cleanly while its collection reads keep being
+    # answered by the monolith through $default.
+    #
+    # The bare key is not redundant either: the frontend's getProjects(true)
+    # emits `/projects?featured_only=true/`, whose path component is the bare
+    # `/api/v1/projects` with the slash inside the query string
+    # (frontend/src/services/api.ts), and TrailingSlashMiddleware is what makes
+    # that reach the handler once the request arrives.
+    #
+    # ANY rather than a method per route. The 25 routes are five methods across
+    # five collections and the domain owns every method on its prefixes, so ANY
+    # names them in three keys instead of fifteen and cannot drift when a sixth
+    # operation is added to build_crud_router. It also keeps an unsupported
+    # method answering from the domain's own 405 rather than from the monolith.
+    merge([
+      for collection in local.resume_collections : {
+        "ANY /api/v1/${collection}"          = { integration = "resume" }
+        "ANY /api/v1/${collection}/"         = { integration = "resume" }
+        "ANY /api/v1/${collection}/{proxy+}" = { integration = "resume" }
+      }
+    ]...),
+  )
 
   throttling_burst_limit = 200
   throttling_rate_limit  = 100
