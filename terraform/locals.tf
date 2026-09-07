@@ -22,7 +22,7 @@ locals {
   workload_dns_role_arn = var.environment == "production" ? var.route53_write_role_arn : ""
   records_zone_id       = var.environment == "production" ? var.route53_zone_id : module.staging_dns.zone_id
 
-  frontend_url = local.custom_domains_enabled ? "https://${local.www_host}" : "https://${aws_cloudfront_distribution.frontend.domain_name}"
+  frontend_url = module.frontend.frontend_url
   api_url      = module.api.api_url
   cors_origins = local.custom_domains_enabled ? "https://${local.www_host},https://${local.domain}" : local.frontend_url
 
@@ -35,9 +35,4 @@ locals {
   # the browser sends the signed cookies to https://api.staging.webbpulse.com itself, because they
   # are scoped to the staging apex, and the API's own authorizer checks them.
   frontend_api_url = local.api_url
-
-  # viewer-request function on the default cache behavior: the gate's function (which runs the
-  # apex redirect first) when the gate is on, otherwise the plain apex redirect when custom
-  # domains are on, otherwise nothing.
-  default_viewer_request_function_arns = local.staging_gate_enabled ? tolist(module.staging_access_gate[*].viewer_request_function_arn) : tolist(aws_cloudfront_function.apex_redirect[*].arn)
 }
