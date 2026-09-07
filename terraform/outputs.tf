@@ -38,6 +38,11 @@ output "backend_url" {
   value       = local.api_url
 }
 
+output "frontend_api_base_url" {
+  description = "Base URL the frontend build must call (the API_BASE_URL GitHub environment variable). The site origin when the staging access gate is on, so API calls carry the signed cookies; otherwise the API base URL."
+  value       = local.frontend_api_url
+}
+
 output "api_gateway_url" {
   description = "Default HTTP API endpoint for the Lambda backend"
   value       = aws_apigatewayv2_api.backend.api_endpoint
@@ -61,4 +66,14 @@ output "lambda_artifact_bucket" {
 output "dynamodb_table_names" {
   description = "DynamoDB table names keyed by entity"
   value       = { for k, t in aws_dynamodb_table.this : k => t.name }
+}
+
+output "staging_access_gate_hosted_ui" {
+  description = "Cognito hosted UI base URL of the staging access gate, null when the gate is off"
+  value       = one(module.staging_access_gate[*].hosted_ui_domain)
+}
+
+output "staging_access_gate_user_pool_id" {
+  description = "Cognito user pool id of the staging access gate, null when the gate is off"
+  value       = one(module.staging_access_gate[*].user_pool_id)
 }

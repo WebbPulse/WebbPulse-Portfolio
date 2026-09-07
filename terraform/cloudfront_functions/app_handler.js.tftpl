@@ -1,0 +1,23 @@
+// Application viewer-request logic for the frontend distribution. Rendered by Terraform.
+//
+// Redirects the bare apex (${domain}) to the www host with a 301, keeping the path and dropping
+// the query string, exactly as the original inline apex redirect did. Every other request passes
+// through unchanged. The staging access gate runs this before its own session check; without the
+// gate, aws_cloudfront_function.apex_redirect wraps it directly.
+function appHandler(event) {
+  const host = event.request.headers.host
+    ? event.request.headers.host.value
+    : "";
+  if (host === "${domain}") {
+    return {
+      statusCode: 301,
+      statusDescription: "Moved Permanently",
+      headers: {
+        location: {
+          value: "https://${www_host}" + event.request.uri,
+        },
+      },
+    };
+  }
+  return event.request;
+}

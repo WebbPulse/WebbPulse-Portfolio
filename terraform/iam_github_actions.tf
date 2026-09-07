@@ -39,7 +39,25 @@ resource "aws_iam_role" "github_actions_deploy" {
 }
 
 locals {
-  github_actions_statements = [
+  # Behind the staging access gate the backend smoke test calls the API host
+  # directly and needs the origin-verify header value from SSM.
+  github_actions_gate_statements = [for statement in [
+    {
+      Effect   = "Allow"
+      Action   = "ssm:GetParameter"
+      Resource = one(module.staging_access_gate[*].origin_verify_ssm_parameter_arn)
+    },
+    {
+      Effect   = "Allow"
+      Action   = "kms:Decrypt"
+      Resource = data.aws_kms_alias.ssm.target_key_arn
+      Condition = {
+        StringEquals = { "kms:ViaService" = "ssm.${var.aws_region}.amazonaws.com" }
+      }
+    },
+  ] : statement if local.staging_gate_enabled]
+
+  github_actions_statements = concat([
     {
       Effect = "Allow"
       Action = [
@@ -76,7 +94,7 @@ locals {
       ]
       Resource = aws_cloudfront_distribution.frontend.arn
     },
-  ]
+  ], local.github_actions_gate_statements)
 }
 
 resource "aws_iam_role_policy" "github_actions_deploy" {

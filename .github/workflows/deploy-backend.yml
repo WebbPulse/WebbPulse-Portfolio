@@ -103,12 +103,28 @@ jobs:
             --output table
           aws lambda wait function-updated-v2 --function-name "$LAMBDA_FUNCTION_NAME"
 
+      # On staging the health check calls the API host directly: /health sits outside
+      # /api/, so it is not reachable through the site origin, and behind the staging
+      # access gate the API host only answers requests carrying the origin-verify
+      # header, which the deploy role reads from SSM at run time.
       - name: Smoke test
         env:
-          API_BASE_URL: ${{ vars.API_BASE_URL }}
+          API_BASE_URL: ${{ github.ref_name == 'staging' && 'https://api.staging.webbpulse.com' || vars.API_BASE_URL }}
+          ORIGIN_VERIFY_PARAMETER: ${{ github.ref_name == 'staging' && '/webbpulse-staging/access-gate/origin-verify' || '' }}
         run: |
+          CURL_HEADERS=()
+          if [ -n "$ORIGIN_VERIFY_PARAMETER" ]; then
+            if VALUE=$(aws ssm get-parameter --with-decryption --name "$ORIGIN_VERIFY_PARAMETER" \
+                --query Parameter.Value --output text 2>/dev/null) && [ -n "$VALUE" ]; then
+              echo "::add-mask::$VALUE"
+              CURL_HEADERS=(-H "x-origin-verify: $VALUE")
+              echo "Using the staging access gate origin-verify header."
+            else
+              echo "No origin-verify parameter found; calling the API host without the header."
+            fi
+          fi
           for i in $(seq 1 10); do
-            BODY=$(curl -sS --max-time 20 -w '\n%{http_code}' "$API_BASE_URL/health" || true)
+            BODY=$(curl -sS --max-time 20 -w '\n%{http_code}' "${CURL_HEADERS[@]}" "$API_BASE_URL/health" || true)
             CODE=$(echo "$BODY" | tail -n1)
             BODY=$(echo "$BODY" | sed '$d')
             echo "  Attempt $i/10 — HTTP $CODE $BODY"
