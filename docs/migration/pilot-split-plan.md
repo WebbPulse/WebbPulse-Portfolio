@@ -1272,3 +1272,118 @@ Only the ones where a real judgement call exists and the answer changes the plan
    is the recommendation; it is listed here because it is the one domain-count
    decision that could reasonably go the other way, and PR 16 is the last moment
    to change it cheaply.
+
+## PR 4 notes
+
+What PR 4 built, and the four places it changed a fact this document asserted.
+Everything not listed here held.
+
+### Root A composes with `include_router`, not `mount_all`
+
+Section 2 sketches root A as
+`mount_all({"/api/v1/posts": posts_app, "/api/v1/projects": projects_app, ...})`.
+That does not work here, for two reasons that were verified rather than
+reasoned about:
+
+- **Starlette strips a mount path.** `mount_all` fits when a domain's routers
+  carry no prefix of their own and the mount path supplies it. Portfolio's carry
+  theirs: `content` declares `/posts` and `/site-content`, `resume` declares
+  five collection prefixes. One domain is therefore not one path, and mounting a
+  router that already declares `/api/v1/posts` at the mount path `/api/v1/posts`
+  404s everything, because the sub-application then sees
+  `/api/v1/posts/api/v1/posts/...`.
+- **A mounted sub-application contributes nothing to the parent's OpenAPI
+  document.** The parent reports an empty `paths` map, which would take the
+  monolith's published contract with it.
+
+So the per-domain applications keep `router_prefix="/api/v1"`, which is what
+makes each one's route set a literal subset of the monolith's, and both roots
+include the same routers directly. `app/composition/app.py` carries the same
+note at the point of use, and `tests/entrypoints/test_route_split.py` asserts
+the two roots agree.
+
+`mount_all` stays the right tool for a service whose domain routers are prefix
+free. It is the shape, not the function, that does not fit Portfolio.
+
+### Secrets stopped failing at import and started failing at use
+
+The settings class ended in a validator that raised when `SECRET_KEY`,
+`ADMIN_USERNAME`, `ADMIN_PASSWORD` or `ADMIN_EMAIL` was unset, and the module
+ended in a bare `settings = Settings()`. Together those made importing anything
+under `app/` fail without secrets, which the split cannot have: `public` is the
+one function with no `secretsmanager:GetSecretValue` at all, so an import-time
+read would fail it on every cold start before any route was reached.
+
+The four are ordinary optional fields now, filled from the `APP_SECRETS_ARN`
+blob on first read, and a domain that needs one calls
+`settings.require_secrets(...)` and gets the same message the validator raised.
+`Domain.requires_secrets` on the descriptor records which domain needs what, and
+`public` names none, which is the least-privilege claim the split rests on.
+
+### `identity` mounts at `/api/v1/admin`, and the prefix lives on the descriptor
+
+`domains/identity/router.py` declares a bare `POST /login`. The `/admin` prefix
+and the `admin` tag were left on the composition root by PR 3, so both roots have
+to supply them. `create_app` takes a single `router_prefix` and no tags at all,
+so routers are included by an explicit `include_router` loop after `create_app`
+returns, with the prefix and tags read off `Domain`. That is what keeps the
+operation ids and tags in a domain application identical to the monolith's
+rather than merely similar.
+
+### `public` keeps the database-reading `/health`; the other three get the shared one
+
+`create_app` adds a liveness-only `GET /health` that does no I/O, which is what
+`AWS_LWA_READINESS_CHECK_PATH` should point at: the adapter polls it on every
+cold start, and a check that reads DynamoDB fails the function to start whenever
+the table is briefly unavailable. Portfolio's own `/health` reads the
+site-content singleton to report `database`, and the existing deploy smoke test
+asserts on that field, so it has to survive. It stays on `public`, whose
+application therefore sets `include_health=False`, and the other three get the
+shared route. Section 6's first cut routes `GET /health` to `public`, which is
+what keeps that smoke test meaningful.
+
+### CI: PR 8's first item, pulled forward
+
+`test-backend.yml` is now a caller of `python-ci.yml@v1`. That is PR 8's item on
+the table in section 8, moved here because PR 4 is the change that makes it
+necessary: `requirements.txt` pins `webbpulse`, which exists only in
+CodeArtifact, and the old hand-written job could not install it. The alternative
+was a hand-rolled login step that PR 8 would then delete.
+
+Two things travelled with it:
+
+- **Lint converged on ruff**, as section 4 anticipated. `pyproject.toml`
+  configures `E`, `F` and `I`, which is the surface flake8 and isort already
+  covered, and `.flake8` is gone. `B` and `UP` were deliberately left off:
+  enabling them flags 196 findings across the existing tree, and `B008` flags
+  FastAPI's own `Depends()` idiom on every route signature. `ruff format`
+  reformatted 10 files, all of it nested-quote normalisation inside f-strings
+  that black wrote differently.
+- **The CI role moved to a repository variable.** `AWS_DEPLOY_ROLE_ARN` lives in
+  the `staging` GitHub Environment, whose deployment branch policy admits only
+  the `staging` branch, so a pull request job cannot read it. `CI_AWS_ROLE_ARN`
+  and `CODEARTIFACT_DOMAIN_OWNER` are repository scoped, for the same reason
+  `STAGING_DEPLOY_ENABLED` is. `CI_AWS_ROLE_ARN` names the same staging role and
+  is used only to mint a read-only CodeArtifact token.
+
+`deploy-backend.yml` needed the same access and got it differently: its AWS
+credentials step already existed but ran *after* `build_lambda.sh`, which was
+fine while every dependency came from PyPI. The credentials step and a
+`codeartifact login` now run before the build. The build script itself is
+unchanged.
+
+### Note for PR 5
+
+The base image is
+
+```
+432410731887.dkr.ecr.us-west-2.amazonaws.com/webbpulse/python-lambda-base@sha256:b5298b4b773ad6c9e311057cf5d43f37ceb98f0367347d714c6817f250a5cef7
+```
+
+Python 3.13 slim, Lambda Web Adapter 1.0.1 already at `/opt/extensions`, both
+`amd64` and `arm64`, and no application dependencies. Pin it by digest, not by
+tag. PR 4 deliberately writes no Dockerfile.
+
+The CodeArtifact token that the image build needs must be a BuildKit secret
+mount, `--mount=type=secret,id=codeartifact_token`. Not a build argument and not
+an `ENV`: both persist in `docker history` for anyone who can pull the image.

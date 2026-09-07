@@ -279,3 +279,40 @@ def test_route_count_matches_the_domain_map():
     }
     assert counts == {"content": 14, "resume": 25, "identity": 1, "public": 4}
     assert content  # the prefixes above actually matched something
+
+
+def test_the_split_serves_this_exact_contract():
+    """The monolith's pinned document, reassembled from the four domain apps.
+
+    The table above pins what the monolith publishes. This asserts the four
+    per-domain applications together publish the same operations, with the same
+    ids and the same tags, so the contract survives the moment API Gateway stops
+    routing a prefix to the monolith.
+
+    Order is not asserted here and is not a property of the split: each domain
+    application declares its own document, and no client sees the four
+    concatenated. What has to hold is the set, which is what this checks.
+    `tests/entrypoints/test_route_split.py` carries the per-domain subset,
+    disjointness and count assertions.
+    """
+    from app.composition.wiring import DOMAIN_NAMES, build_domain_app
+
+    union = set()
+    for name in DOMAIN_NAMES:
+        document = build_domain_app(name).openapi()
+        for path, item in document["paths"].items():
+            for method, operation in item.items():
+                union.add(
+                    (
+                        method.upper(),
+                        path,
+                        operation["operationId"],
+                        tuple(operation.get("tags", ())),
+                    )
+                )
+
+    expected = {
+        (method, path, operation_id, tuple(tags))
+        for method, path, operation_id, tags in EXPECTED_OPERATIONS
+    }
+    assert union == expected

@@ -37,14 +37,33 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Build Lambda package
-        run: bash backend/scripts/build_lambda.sh
-
+      # Moved above the build. `requirements.txt` now pins `webbpulse`, which is
+      # published only to CodeArtifact, so `build_lambda.sh` cannot resolve its
+      # dependencies without a token. The build used to run first, when
+      # everything came from PyPI and nothing before the upload needed AWS.
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
+
+      # Writes the CodeArtifact index URL into pip.conf, so it has to run before
+      # the build and not merely before the install inside it. The role needs
+      # both codeartifact:GetAuthorizationToken and sts:GetServiceBearerToken;
+      # without the second, this fails with a denial that names no CodeArtifact
+      # action at all.
+      - name: Log in to CodeArtifact for pip
+        env:
+          CODEARTIFACT_DOMAIN_OWNER: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
+        run: |
+          aws codeartifact login \
+            --tool pip \
+            --domain webbpulse \
+            --domain-owner "$CODEARTIFACT_DOMAIN_OWNER" \
+            --repository python
+
+      - name: Build Lambda package
+        run: bash backend/scripts/build_lambda.sh
 
       - name: Upload artifact
         env:

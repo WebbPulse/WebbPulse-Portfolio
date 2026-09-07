@@ -1,3 +1,14 @@
+# The shared package. It lives only in CodeArtifact (domain `webbpulse`,
+# repository `python`, us-west-2), not on PyPI, so anything that installs this
+# file needs a CodeArtifact token: CI gets one through the org reusable
+# workflow, and `deploy-backend.yml` logs in before it builds.
+#
+# Extras, and why each one: `fastapi` for `create_app` and `run_uvicorn`,
+# `dynamodb` for the secret loader and the repository base, `otel` for
+# `configure_tracing`. `testing` is a dev dependency and is in
+# requirements-dev.txt.
+webbpulse[fastapi,dynamodb,otel]==0.1.0
+
 fastapi==0.115.12
 mangum==0.19.0
 aws-lambda-powertools==3.15.1
@@ -8,3 +19,4 @@ python-jose[cryptography]==3.5.0
 bcrypt==4.3.0
 python-slugify==8.0.4
 email-validator==2.2.0
+uvicorn[standard]==0.34.0
