@@ -61,6 +61,23 @@ npm run test:run
 
 `terraform/` is applied by HCP Terraform: the `WebbPulse-Portfolio` workspace tracks `main` (production) and `WebbPulse-Portfolio-staging` tracks `staging`. Work lands on `staging` first, then a PR from `staging` into `main`.
 
+### Shared platform modules
+
+Parts of the stack come from `app.terraform.io/WebbPulse/platform-modules/aws`, the private registry copy of [WebbPulse/terraform-aws-platform-modules](https://github.com/WebbPulse/terraform-aws-platform-modules):
+
+| Module | What it owns here |
+| --- | --- |
+| `staging-dns` | The `staging.webbpulse.com` child zone and its NS delegation in the parent zone; a no-op in production (`route53.tf`) |
+| `http-api` | The HTTP API, `$default` stage, Lambda integration and permission, routes, access log group, custom domain and API mapping (`apigateway.tf`) |
+| `staging-access-gate` | Cognito, the login Lambda, the signed-cookie key group, the viewer-request function, the origin-verify secret and the HTTP API authorizer (`staging_access_gate.tf`) |
+
+The ACM certificates and their validation records (`acm.tf`) and the `www`, apex and `api` alias records (`route53.tf`) stay hand-written because a Terraform module has one `aws` provider and production writes DNS cross-account through the `aws.dns` alias. They point at module outputs.
+
+Two of the registry modules do not fit this stack yet and their resources stay hand-written:
+
+- `spa-frontend` (`frontend.tf`) applies its `cache_mode` to the `/index.html` SPA-shell behavior as well as the default behavior. This distribution serves the shell from the managed CachingOptimized policy while the default behavior uses legacy forwarded values, and the module has no input for that split, so adopting it would rewrite the live behavior.
+- `github-actions-role` (`iam_github_actions.tf`) validates `policy_statements` with `coalesce(s.sid, "")`, which errors on any statement without a `sid`. None of the statements here carry one, and adding sids would change the rendered policy document.
+
 ### Staging access gate
 
 Staging sits behind the shared `staging-access-gate` module (`app.terraform.io/WebbPulse/platform-modules/aws//modules/staging-access-gate`) when the workspace variables `staging_access_gate = true` and `staging_access_users = [<emails>]` are set. WebbPulse-Platform sets them on the staging workspace only; production never receives them, so its plan is a no-op.

@@ -183,9 +183,15 @@ class ApiService {
         Object.assign(headers, options.headers);
       }
 
+      // credentials: 'include' so the browser attaches cookies scoped to the
+      // domain the API is served from. Production does not use cookies, but the
+      // staging access gate does: its CloudFront signed cookies are set on the
+      // staging apex, so a same-site request from the www host to the API host
+      // carries them and the API's authorizer accepts the call.
       const response = await fetch(url, {
         ...options,
         headers,
+        credentials: 'include',
       });
 
       if (!response.ok) {
