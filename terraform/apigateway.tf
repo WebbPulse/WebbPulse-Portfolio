@@ -1,132 +1,46 @@
-resource "aws_apigatewayv2_api" "backend" {
-  name          = "${local.prefix}-api"
-  protocol_type = "HTTP"
+# ---------------------------------------------------------------------------
+# HTTP API in front of the Lambda backend.
+#
+# Behind the staging access gate the API is reachable only through its custom
+# domain, where the origin-verify authorizer applies; both inputs are gated on
+# local.staging_gate_enabled so production plans a no-op.
+#
+# The certificate lives in acm.tf and the api.<domain> alias record in
+# route53.tf, because production writes DNS through aws.dns.
+# ---------------------------------------------------------------------------
 
-  # Behind the staging access gate the API is reachable only through its custom
-  # domain, where the origin-verify authorizer applies.
+module "api" {
+  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/http-api"
+  version = "~> 1.3"
+
+  name = "${local.prefix}-api"
+
+  lambda_invoke_arn    = aws_lambda_function.api.invoke_arn
+  lambda_function_name = aws_lambda_function.api.function_name
+
+  route_keys                     = ["ANY /{proxy+}", "ANY /"]
+  throttling_burst_limit         = 200
+  throttling_rate_limit          = 100
+  access_log_retention_days      = 30
+  lambda_permission_statement_id = "AllowAPIGatewayInvoke"
+
+  access_log_format = {
+    requestId               = "$context.requestId"
+    ip                      = "$context.identity.sourceIp"
+    requestTime             = "$context.requestTime"
+    httpMethod              = "$context.httpMethod"
+    routeKey                = "$context.routeKey"
+    path                    = "$context.path"
+    status                  = "$context.status"
+    responseLength          = "$context.responseLength"
+    integrationErrorMessage = "$context.integrationErrorMessage"
+    integrationLatency      = "$context.integrationLatency"
+  }
+
   disable_execute_api_endpoint = local.staging_gate_enabled
-}
+  authorizer_id                = local.staging_gate_enabled ? one(module.staging_access_gate[*].http_api_authorizer_id) : null
 
-resource "aws_apigatewayv2_integration" "lambda" {
-  api_id                 = aws_apigatewayv2_api.backend.id
-  integration_type       = "AWS_PROXY"
-  integration_uri        = aws_lambda_function.api.invoke_arn
-  payload_format_version = "2.0"
-}
-
-resource "aws_apigatewayv2_route" "proxy" {
-  api_id    = aws_apigatewayv2_api.backend.id
-  route_key = "ANY /{proxy+}"
-  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
-
-  authorization_type = local.staging_gate_enabled ? "CUSTOM" : "NONE"
-  authorizer_id      = local.staging_gate_enabled ? one(module.staging_access_gate[*].http_api_authorizer_id) : null
-}
-
-resource "aws_apigatewayv2_route" "root" {
-  api_id    = aws_apigatewayv2_api.backend.id
-  route_key = "ANY /"
-  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
-
-  authorization_type = local.staging_gate_enabled ? "CUSTOM" : "NONE"
-  authorizer_id      = local.staging_gate_enabled ? one(module.staging_access_gate[*].http_api_authorizer_id) : null
-}
-
-resource "aws_cloudwatch_log_group" "apigateway_access" {
-  name              = "/aws/apigateway/${local.prefix}-api"
-  retention_in_days = 30
-}
-
-resource "aws_apigatewayv2_stage" "default" {
-  api_id      = aws_apigatewayv2_api.backend.id
-  name        = "$default"
-  auto_deploy = true
-
-  default_route_settings {
-    throttling_burst_limit = 200
-    throttling_rate_limit  = 100
-  }
-
-  access_log_settings {
-    destination_arn = aws_cloudwatch_log_group.apigateway_access.arn
-    format = jsonencode({
-      requestId               = "$context.requestId"
-      ip                      = "$context.identity.sourceIp"
-      requestTime             = "$context.requestTime"
-      httpMethod              = "$context.httpMethod"
-      routeKey                = "$context.routeKey"
-      path                    = "$context.path"
-      status                  = "$context.status"
-      responseLength          = "$context.responseLength"
-      integrationErrorMessage = "$context.integrationErrorMessage"
-      integrationLatency      = "$context.integrationLatency"
-    })
-  }
-}
-
-resource "aws_lambda_permission" "apigateway" {
-  statement_id  = "AllowAPIGatewayInvoke"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.api.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_apigatewayv2_api.backend.execution_arn}/*/*"
-}
-
-resource "aws_acm_certificate" "api" {
-  count = local.custom_domain_count
-
-  domain_name       = local.api_host
-  validation_method = "DNS"
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
-resource "aws_route53_record" "api_cert_validation" {
-  provider = aws.dns
-
-  for_each = {
-    for dvo in(local.custom_domains_enabled ? aws_acm_certificate.api[0].domain_validation_options : []) : dvo.domain_name => {
-      name   = dvo.resource_record_name
-      record = dvo.resource_record_value
-      type   = dvo.resource_record_type
-    }
-  }
-
-  zone_id         = local.records_zone_id
-  name            = each.value.name
-  type            = each.value.type
-  ttl             = 60
-  records         = [each.value.record]
-  allow_overwrite = true
-}
-
-resource "aws_acm_certificate_validation" "api" {
-  count = local.custom_domain_count
-
-  certificate_arn         = aws_acm_certificate.api[0].arn
-  validation_record_fqdns = [for r in aws_route53_record.api_cert_validation : r.fqdn]
-
-  depends_on = [aws_route53_record.staging_delegation]
-}
-
-resource "aws_apigatewayv2_domain_name" "api" {
-  count = local.custom_domain_count
-
-  domain_name = local.api_host
-
-  domain_name_configuration {
-    certificate_arn = aws_acm_certificate_validation.api[0].certificate_arn
-    endpoint_type   = "REGIONAL"
-    security_policy = "TLS_1_2"
-  }
-}
-
-resource "aws_apigatewayv2_api_mapping" "api" {
-  count = local.custom_domain_count
-
-  api_id      = aws_apigatewayv2_api.backend.id
-  domain_name = aws_apigatewayv2_domain_name.api[0].id
-  stage       = aws_apigatewayv2_stage.default.id
+  domain_name     = local.custom_domains_enabled ? local.api_host : null
+  certificate_arn = local.custom_domains_enabled ? aws_acm_certificate_validation.api[0].certificate_arn : null
+  # zone_id stays null: production writes api.webbpulse.com cross-account through aws.dns.
 }

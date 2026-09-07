@@ -2,23 +2,26 @@
 # validating resolvers to SERVFAIL (breaking TXT, e.g. DKIM). Enable signing
 # in the zone before associating delegation signers at the registrar.
 
-resource "aws_route53_zone" "staging" {
-  count = var.environment != "production" && local.custom_domains_enabled ? 1 : 0
+# The staging child zone and its NS delegation in the parent zone. Production
+# serves the apex from a zone the management account owns, so the module is a
+# no-op there.
+module "staging_dns" {
+  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/staging-dns"
+  version = "~> 1.3"
 
-  name = local.domain
+  providers = {
+    aws        = aws
+    aws.parent = aws.parent_dns
+  }
+
+  enabled        = var.environment != "production" && local.custom_domains_enabled
+  zone_name      = local.domain
+  parent_zone_id = var.route53_zone_id
 }
 
-resource "aws_route53_record" "staging_delegation" {
-  count    = var.environment != "production" && local.custom_domains_enabled ? 1 : 0
-  provider = aws.parent_dns
-
-  zone_id = var.route53_zone_id
-  name    = local.domain
-  type    = "NS"
-  ttl     = 300
-  records = aws_route53_zone.staging[0].name_servers
-}
-
+# The workload records stay here rather than inside spa-frontend and http-api:
+# production writes them cross-account through aws.dns, and a module has one
+# aws provider, the one that owns the bucket, the distribution and the API.
 resource "aws_route53_record" "www" {
   count    = local.custom_domain_count
   provider = aws.dns
@@ -28,8 +31,8 @@ resource "aws_route53_record" "www" {
   type    = "A"
 
   alias {
-    name                   = aws_cloudfront_distribution.frontend.domain_name
-    zone_id                = aws_cloudfront_distribution.frontend.hosted_zone_id
+    name                   = module.frontend.distribution_domain_name
+    zone_id                = module.frontend.distribution_hosted_zone_id
     evaluate_target_health = false
   }
 }
@@ -43,8 +46,8 @@ resource "aws_route53_record" "apex_a" {
   type    = "A"
 
   alias {
-    name                   = aws_cloudfront_distribution.frontend.domain_name
-    zone_id                = aws_cloudfront_distribution.frontend.hosted_zone_id
+    name                   = module.frontend.distribution_domain_name
+    zone_id                = module.frontend.distribution_hosted_zone_id
     evaluate_target_health = false
   }
 }
@@ -58,8 +61,8 @@ resource "aws_route53_record" "api" {
   type    = "A"
 
   alias {
-    name                   = aws_apigatewayv2_domain_name.api[0].domain_name_configuration[0].target_domain_name
-    zone_id                = aws_apigatewayv2_domain_name.api[0].domain_name_configuration[0].hosted_zone_id
+    name                   = module.api.custom_domain_target_domain_name
+    zone_id                = module.api.custom_domain_hosted_zone_id
     evaluate_target_health = false
   }
 }

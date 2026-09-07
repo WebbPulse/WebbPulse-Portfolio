@@ -61,6 +61,20 @@ npm run test:run
 
 `terraform/` is applied by HCP Terraform: the `WebbPulse-Portfolio` workspace tracks `main` (production) and `WebbPulse-Portfolio-staging` tracks `staging`. Work lands on `staging` first, then a PR from `staging` into `main`.
 
+### Shared platform modules
+
+Most of the stack comes from `app.terraform.io/WebbPulse/platform-modules/aws`, the private registry copy of [WebbPulse/terraform-aws-platform-modules](https://github.com/WebbPulse/terraform-aws-platform-modules):
+
+| Module | What it owns here |
+| --- | --- |
+| `github-actions-role` | The OIDC provider, the deploy role and its inline `deploy-permissions` policy (`iam_github_actions.tf`) |
+| `staging-dns` | The `staging.webbpulse.com` child zone and its NS delegation in the parent zone; a no-op in production (`route53.tf`) |
+| `http-api` | The HTTP API, `$default` stage, Lambda integration and permission, routes, access log group, custom domain and API mapping (`apigateway.tf`) |
+| `spa-frontend` | The frontend bucket, its public access block and policy, the origin access control and the CloudFront distribution, including all staging access gate wiring (`frontend.tf`) |
+| `staging-access-gate` | Cognito, the login Lambda, the signed-cookie key group, the viewer-request function, the origin-verify secret and the HTTP API authorizer (`staging_access_gate.tf`) |
+
+Four things stay hand-written in this repository because a Terraform module has one `aws` provider and production writes DNS cross-account through the `aws.dns` alias: the ACM certificates and their validation records (`acm.tf`), and the `www`, apex and `api` alias records (`route53.tf`). They point at module outputs.
+
 ### Staging access gate
 
 Staging sits behind the shared `staging-access-gate` module (`app.terraform.io/WebbPulse/platform-modules/aws//modules/staging-access-gate`) when the workspace variables `staging_access_gate = true` and `staging_access_users = [<emails>]` are set. WebbPulse-Platform sets them on the staging workspace only; production never receives them, so its plan is a no-op.
