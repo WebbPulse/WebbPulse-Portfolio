@@ -77,3 +77,8 @@ output "staging_access_gate_user_pool_id" {
   description = "Cognito user pool id of the staging access gate, null when the gate is off"
   value       = one(module.staging_access_gate[*].user_pool_id)
 }
+
+output "github_actions_ci_role_arn" {
+  description = "ARN of the read-only CodeArtifact role pull request CI assumes. Set it as the CI_AWS_ROLE_ARN repository variable (staging value only, since pull request checks run against staging)."
+  value       = module.github_actions_ci_role.role_arn
+}
