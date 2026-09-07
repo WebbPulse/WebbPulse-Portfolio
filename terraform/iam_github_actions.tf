@@ -32,6 +32,71 @@ locals {
   ] : statement if local.staging_gate_enabled]
 }
 
+locals {
+  # The shared registry lives in the Artifacts account, in this region. Written out rather than
+  # read from the Artifacts workspace's remote state on purpose: a remote state data source would
+  # make every plan here depend on that workspace being readable and on its last apply having
+  # succeeded, to learn a handful of ARNs that a fixed account id and a fixed name already
+  # determine. The statement shapes below are copied from the Artifacts root's own
+  # codeartifact_consumer_policy_statements and consumer_policy_json outputs, which are the
+  # authoritative description of what a consumer attaches on its side.
+  artifacts_account_id = "432410731887"
+
+  codeartifact_domain_arn = "arn:aws:codeartifact:${var.aws_region}:${local.artifacts_account_id}:domain/webbpulse"
+
+  # ReadFromRepository is all-or-nothing per repository, so the read grant names every repository in
+  # the domain rather than trying to narrow to the one holding the webbpulse package. shared is the
+  # fan-in CI actually points pip at; the four behind it are what shared resolves through.
+  codeartifact_repository_arns = [
+    for name in ["npm", "npm-store", "pypi-store", "python", "shared"] :
+    "arn:aws:codeartifact:${var.aws_region}:${local.artifacts_account_id}:repository/webbpulse/${name}"
+  ]
+
+  # The base layer every domain image is built FROM, pulled cross account at build time.
+  shared_base_image_repository_arn = "arn:aws:ecr:${var.aws_region}:${local.artifacts_account_id}:repository/webbpulse/python-lambda-base"
+
+  # Reading the shared webbpulse package during the container build. Three separate statements
+  # because the three actions take three different resources: GetAuthorizationToken is domain
+  # level, the read actions are per repository, and sts:GetServiceBearerToken has no resource of
+  # its own at all. The last is the one most often missed: it lives in the caller's own identity
+  # policy, and without it get-authorization-token fails with a denial that names no CodeArtifact
+  # action. Its condition pins it to CodeArtifact so the grant cannot mint a bearer token for
+  # another service.
+  github_actions_codeartifact_statements = [
+    {
+      sid       = "CodeArtifactToken"
+      actions   = ["codeartifact:GetAuthorizationToken"]
+      resources = [local.codeartifact_domain_arn]
+    },
+    {
+      sid = "CodeArtifactRead"
+      actions = [
+        "codeartifact:DescribePackageVersion",
+        "codeartifact:DescribeRepository",
+        "codeartifact:GetPackageVersionAsset",
+        "codeartifact:GetPackageVersionReadme",
+        "codeartifact:GetRepositoryEndpoint",
+        "codeartifact:ListPackageVersionAssets",
+        "codeartifact:ListPackageVersionDependencies",
+        "codeartifact:ListPackageVersions",
+        "codeartifact:ListPackages",
+        "codeartifact:ReadFromRepository",
+      ]
+      resources = local.codeartifact_repository_arns
+    },
+    {
+      sid       = "CodeArtifactBearerToken"
+      actions   = ["sts:GetServiceBearerToken"]
+      resources = ["*"]
+      condition = {
+        StringEquals = {
+          "sts:AWSServiceName" = ["codeartifact.amazonaws.com"]
+        }
+      }
+    },
+  ]
+}
+
 module "github_actions_role" {
   source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/github-actions-role"
   version = "~> 1.1"
@@ -76,5 +141,45 @@ module "github_actions_role" {
       ]
       resources = [module.frontend.distribution_arn]
     },
-  ], local.github_actions_gate_statements)
+    # ECR: authenticate to this account's registry. GetAuthorizationToken is a
+    # registry level action that takes no resource of its own, which is why it
+    # is a statement on "*" rather than folded into the push grant below.
+    {
+      sid       = "EcrAuth"
+      actions   = ["ecr:GetAuthorizationToken"]
+      resources = ["*"]
+    },
+    # ECR: push a domain image, and read back the manifest the build workflow
+    # asserts on. Get and SetRepositoryPolicy are here so that creating a
+    # container image function can write Lambda's own
+    # LambdaECRImageRetrievalPolicy statement onto the repository, which is
+    # what keeps the image pullable when Lambda re-fetches it later.
+    {
+      sid = "EcrPushDomainImages"
+      actions = [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:InitiateLayerUpload",
+        "ecr:UploadLayerPart",
+        "ecr:CompleteLayerUpload",
+        "ecr:PutImage",
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:GetRepositoryPolicy",
+        "ecr:SetRepositoryPolicy",
+      ]
+      resources = module.registry.repository_arns_list
+    },
+    # ECR: pull the shared base image the domain Dockerfiles build FROM. It
+    # lives in the Artifacts account, which grants the other half on the
+    # repository itself.
+    {
+      sid = "SharedBaseImagePull"
+      actions = [
+        "ecr:BatchGetImage",
+        "ecr:DescribeImages",
+        "ecr:GetDownloadUrlForLayer",
+      ]
+      resources = [local.shared_base_image_repository_arn]
+    },
+  ], local.github_actions_codeartifact_statements, local.github_actions_gate_statements)
 }
