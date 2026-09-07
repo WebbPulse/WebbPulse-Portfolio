@@ -1,3 +1,17 @@
+# Deploy Backend: the monolith zip deploy, plus the per-domain container image
+# build that PR 10 will deploy from.
+#
+# Two independent jobs. `deploy` is the existing zip pipeline for the monolith
+# and is unchanged: it still builds `function.zip`, waits on HCP Terraform, calls
+# `update-function-code` and smoke tests `/health`. `build-images` is new, builds
+# the four domain images and pushes them to this environment's ECR repositories,
+# and updates no function at all. Nothing depends on anything, on purpose: the
+# monolith is what serves traffic until PR 10 moves a route, so an image build
+# that fails must never hold back or roll back the deploy that does.
+#
+# `build-images` is the plan's section 4 "Per-domain jobs", minus the deploy half.
+# The first run on staging should leave four images in ECR and change no
+# behaviour anywhere.
 name: Deploy Backend
 
 on:
@@ -17,6 +31,138 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The four domain images. Matrix over the domains rather than four copies of
+  # one job, `fail-fast: false` so one domain's failure still tells us about the
+  # other three: at this stage the point of the job is the information, since
+  # nothing consumes the images yet.
+  #
+  # Runs in the same GitHub Environment as `deploy`, which is what makes
+  # `vars.AWS_DEPLOY_ROLE_ARN` resolve at all. That role's trust policy is now
+  # `environment:staging` / `environment:production` rather than a branch or a
+  # wildcard subject, so a job without the `environment:` key gets a token whose
+  # `sub` claim the role refuses. It already carries the three grants this needs:
+  # ECR push to the four domain repositories, ECR pull on the shared base image
+  # repository in the Artifacts account, and CodeArtifact read.
+  #
+  # Gated on `BACKEND_IMAGE_BUILD_ENABLED` as well as the existing deploy gate.
+  # `container-image.yml@v1` cannot build this Dockerfile yet: it has no BuildKit
+  # secret input for the CodeArtifact token, no CodeArtifact login, and its ECR
+  # login covers only the caller's own account, so the shared base image in the
+  # Artifacts account cannot be pulled. All three are recorded in
+  # `docs/migration/container-image-workflow-gaps.md` and all three belong in the
+  # org workflow rather than in a fork of it here.
+  #
+  # The variable exists so that landing the caller does not turn every staging
+  # deploy red while that work happens. Set it to "true" once the org workflow
+  # ships the three inputs, and this job starts building without another change
+  # to this file.
+  build-images:
+    if: >-
+      (github.ref_name == 'main' || vars.STAGING_DEPLOY_ENABLED == 'true')
+      && vars.BACKEND_IMAGE_BUILD_ENABLED == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        domain: [content, resume, identity, public]
+    # A called workflow cannot hold permissions wider than the caller's grant,
+    # and a job level block replaces rather than merges with the top level one,
+    # so both are named here even though the top level block already says this.
+    # Getting it wrong fails the run before any step, with an error naming the
+    # permission rather than the credential.
+    permissions:
+      contents: read
+      id-token: write
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    uses: WebbPulse/.github/.github/workflows/container-image.yml@v1
+    with:
+      # Repository names come from `terraform/ecr.tf`: `name_prefix` is
+      # `webbpulse-<environment>` and the four map keys are the domains, so the
+      # repository is `webbpulse-<env>/<domain>`. The registry host is not
+      # spelled here at all. The reusable workflow logs in with
+      # `amazon-ecr-login`, which resolves the caller's own account, so the
+      # account id stays out of the repository and staging and production do not
+      # drift apart.
+      ecr-repository: webbpulse-${{ github.ref_name == 'main' && 'production' || 'staging' }}/${{ matrix.domain }}
+      aws-region: us-west-2
+      context: backend
+      dockerfile: backend/Dockerfile
+      # Single platform, matching `terraform/lambda.tf`. Lambda rejects an OCI
+      # image index, and the reusable workflow disables provenance and SBOM
+      # attestations for the same reason.
+      platform: linux/arm64
+      # `READINESS_PROTOCOL` is passed explicitly rather than derived, because a
+      # reusable workflow has no way to branch a build arg on a matrix value the
+      # way `scripts/build_image.sh` branches on its argument. `public` is the
+      # one domain whose only `GET /health` reads DynamoDB, so the adapter must
+      # not poll a route for it. The Dockerfile rejects the wrong pairing, so a
+      # mistake here fails the build rather than shipping an image that only
+      # fails later on a cold start that races an unavailable table.
+      build-args: |
+        DOMAIN=${{ matrix.domain }}
+        READINESS_PROTOCOL=${{ matrix.domain == 'public' && 'tcp' || 'http' }}
+    secrets:
+      role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+
+  # The digest pinned URIs, collected into the one JSON object PR 10 hands to
+  # `lambda-image-deploy.yml` as `function-image-map`. It is written to the job
+  # summary rather than passed anywhere, because nothing consumes it yet; making
+  # it visible now is what lets PR 10 be a small change instead of a leap.
+  #
+  # Keyed by function name, `webbpulse-<env>-<domain>`, matching
+  # `terraform/lambda.tf`'s naming. `always()` so a partial matrix still reports
+  # the domains that did build.
+  image-map:
+    needs: build-images
+    if: always() && needs.build-images.result != 'skipped'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # A matrix of reusable workflow calls collapses to a single `needs` entry
+      # whose `outputs` hold only the last job to finish, so the four URIs cannot
+      # be read back from `needs`. Rebuilding them from the digest is not
+      # possible either. Until the map is actually consumed, the tag is the
+      # stable identifier: it is `sha-<full sha>` for every domain, it is
+      # immutable, and `PR 10` resolves it to a digest at deploy time.
+      - name: Write the image map to the summary
+        env:
+          ENVIRONMENT: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+          RESULT: ${{ needs.build-images.result }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## Domain images"
+            echo
+            echo "Matrix result: \`${RESULT}\`. Tag: \`sha-${GITHUB_SHA}\`."
+            echo
+            echo "The map PR 10 passes to \`lambda-image-deploy.yml\` as"
+            echo "\`function-image-map\`, once the functions exist:"
+            echo
+            echo '```json'
+            python3 - <<'EOF'
+          import json, os
+
+          env = os.environ["ENVIRONMENT"]
+          sha = os.environ["GITHUB_SHA"]
+          domains = ["content", "resume", "identity", "public"]
+          print(
+              json.dumps(
+                  {
+                      f"webbpulse-{env}-{d}": f"webbpulse-{env}/{d}:sha-{sha}"
+                      for d in domains
+                  },
+                  indent=2,
+              )
+          )
+          EOF
+            echo '```'
+            echo
+            echo "The registry host is deliberately absent: it is this account's"
+            echo "own, resolved at deploy time, so no account id is written down."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Unchanged. The monolith zip deploy is what serves traffic, and it must not
+  # gain a dependency on the image build: no `needs`, no shared step.
   deploy:
     if: github.ref_name == 'main' || vars.STAGING_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
