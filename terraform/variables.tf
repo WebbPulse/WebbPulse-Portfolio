@@ -52,3 +52,15 @@ variable "route53_write_role_arn" {
     error_message = "route53_write_role_arn must be set when environment is 'staging' and staging_profile is 'full': the staging child zone is delegated from the parent zone through that role."
   }
 }
+
+variable "staging_access_gate" {
+  description = "Put the staging site and API behind the staging-access-gate module (Cognito sign-in, CloudFront signed cookies, origin-verified API). WebbPulse-Platform sets this on staging workspaces only; production never receives it and keeps the default of false."
+  type        = bool
+  default     = false
+}
+
+variable "staging_access_users" {
+  description = "Email addresses allowed through the staging access gate. Each becomes an invited Cognito user. WebbPulse-Platform sets this on staging workspaces only; production never receives it."
+  type        = list(string)
+  default     = []
+}

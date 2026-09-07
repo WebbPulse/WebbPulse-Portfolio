@@ -54,3 +54,22 @@ npm run build
 npm run lint
 npm run test:run
 ```
+
+---
+
+## Infrastructure
+
+`terraform/` is applied by HCP Terraform: the `WebbPulse-Portfolio` workspace tracks `main` (production) and `WebbPulse-Portfolio-staging` tracks `staging`. Work lands on `staging` first, then a PR from `staging` into `main`.
+
+### Staging access gate
+
+Staging sits behind the shared `staging-access-gate` module (`app.terraform.io/WebbPulse/platform-modules/aws//modules/staging-access-gate`) when the workspace variables `staging_access_gate = true` and `staging_access_users = [<emails>]` are set. WebbPulse-Platform sets them on the staging workspace only; production never receives them, so its plan is a no-op.
+
+With the gate on:
+
+- Every visit to `https://www.staging.webbpulse.com` (or the apex) without a live session is redirected to a Cognito hosted UI. Only the invited addresses can sign in; each receives an invitation email with a temporary password. Sessions are CloudFront signed cookies scoped to `staging.webbpulse.com`.
+- The frontend calls the API on the site origin, `https://www.staging.webbpulse.com/api/v1/...`, and CloudFront proxies `/api/*` to `api.staging.webbpulse.com` with an `x-origin-verify` header. The staging GitHub environment variable `API_BASE_URL` must therefore be `https://www.staging.webbpulse.com` (the Terraform output `frontend_api_base_url` says which value is right).
+- The HTTP API's `execute-api` endpoint is disabled and every route uses the module's REQUEST authorizer, so `api.staging.webbpulse.com` answers only requests carrying the header. The backend deploy workflow's smoke test reads the header value from the SSM parameter `/webbpulse-staging/access-gate/origin-verify` at run time (masked, never printed).
+- `/_auth/logout` ends a session. Sign-in problems: check the Cognito user pool in the `staging_access_gate_user_pool_id` output.
+
+The apex to www redirect lives in `terraform/cloudfront_functions/app_handler.js.tftpl` and is shared by the plain `apex_redirect` CloudFront Function (production) and the gate's viewer-request function (staging).
