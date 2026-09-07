@@ -1,30 +1,27 @@
 # ---------------------------------------------------------------------------
 # Application secrets, held in Secrets Manager through the shared app-secrets
-# module. They were SSM SecureString parameters until the values were copied
-# across and the backend switched over; the parameters and their IAM grant are
-# gone.
+# module. One secret per service per environment: webbpulse-<env>/app, a single
+# JSON object the Lambda reads once at cold start through APP_SECRETS_ARN.
 #
-# The estate is moving to one secret per service per environment: webbpulse-<env>/app,
-# a single JSON object the Lambda reads once at cold start through APP_SECRETS_ARN.
-# This change adds that secret alongside the four per-key secrets it replaces. The
-# old four stay until the backend reads the new one, so a rollback is a redeploy
-# rather than a restore; a later change removes them.
+# It replaced four per-key secrets, webbpulse-<env>/{secret-key,admin-username,
+# admin-password,admin-email}, which were kept alongside it until the backend
+# was reading the blob in both environments. This change deletes them.
 #
 # The signing key is not a variable. random_password.secret_key generates it and
 # keeps generating the same value, so the key that has been signing sessions
-# since before any of this survives and nobody is logged out. It moves back out
-# of the module here because the module's generated value can only reach its own
-# secret, and the JSON blob needs it too.
+# since before any of this survives and nobody is logged out. It lives outside
+# the module because a value generated inside it can only reach its own secret,
+# and the JSON blob needs it.
 #
-# The three admin credentials become sensitive workspace variables. They were
+# The three admin credentials are sensitive workspace variables. They were
 # placeholders populated out of band, which was the right shape while Terraform
 # had to stay ignorant of them, but a JSON blob cannot carry ignore_changes on a
 # subset of its keys. A sensitive variable keeps them out of the plan text and
 # out of every log, and puts the values where an operator can rotate them.
 # ---------------------------------------------------------------------------
 
-# Arguments match the module's random_password exactly, so moving the generator
-# out of the module changes no attribute and regenerates nothing.
+# Arguments match the module's random_password exactly, so the generator that
+# moved out of the module carries its existing value rather than making a new one.
 resource "random_password" "secret_key" {
   length           = 64
   special          = true
@@ -35,8 +32,9 @@ resource "random_password" "secret_key" {
   min_lower        = 0
 }
 
-# Load-bearing: without this Terraform destroys the generator and creates a new
-# one, which regenerates the signing key and logs every session out.
+# Load-bearing until it has been applied in both environments: without it
+# Terraform destroys the generator and creates a new one, which regenerates the
+# signing key and logs every session out.
 moved {
   from = module.app_secrets.random_password.this["secret-key"]
   to   = random_password.secret_key
@@ -59,33 +57,6 @@ module "app_secrets" {
         ADMIN_PASSWORD = var.admin_password
         ADMIN_EMAIL    = var.admin_email
       }
-    }
-
-    # Superseded by "app" above. Kept until the backend reads the JSON blob, then
-    # removed. Description left exactly as it is so this change does not touch the
-    # secret at all: it no longer generates here, it takes the same generator's
-    # result, so the stored string does not change either.
-    "secret-key" = {
-      description = "JWT signing key for the FastAPI backend"
-      value       = random_password.secret_key.result
-    }
-
-    # Admin credentials seeded into the app on startup. Superseded by "app" above
-    # and removed once the backend reads it. They keep their placeholder shape so
-    # this change does not plan over the values an operator set out of band.
-    "admin-username" = {
-      description = "Username of the seeded admin user. Populated out of band with put-secret-value."
-      placeholder = "REPLACE_ME"
-    }
-
-    "admin-password" = {
-      description = "Password of the seeded admin user. Populated out of band with put-secret-value."
-      placeholder = "REPLACE_ME"
-    }
-
-    "admin-email" = {
-      description = "Email address of the seeded admin user. Populated out of band with put-secret-value."
-      placeholder = "REPLACE_ME"
     }
   }
 }
