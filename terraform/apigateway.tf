@@ -14,14 +14,28 @@
 
 module "api" {
   source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/http-api"
-  version = "~> 1.3"
+  version = "~> 2.0"
 
   name = "${local.prefix}-api"
 
-  lambda_invoke_arn    = module.lambda_api.invoke_arn
-  lambda_function_name = module.lambda_api.function_name
+  integrations = {
+    legacy = {
+      lambda_function_name           = module.lambda_api.function_name
+      lambda_invoke_arn              = module.lambda_api.invoke_arn
+      lambda_permission_statement_id = "AllowAPIGatewayInvoke"
+    }
+  }
 
-  route_keys                     = ["ANY /{proxy+}", "ANY /"]
+  # The monolith is reached through its two explicit route keys, not $default.
+  # Keeping it that way is what makes the adoption plan zero add; $default
+  # arrives on the first strangler step.
+  default_integration = null
+
+  routes = {
+    "ANY /{proxy+}" = { integration = "legacy" }
+    "ANY /"         = { integration = "legacy" }
+  }
+
   throttling_burst_limit         = 200
   throttling_rate_limit          = 100
   access_log_retention_days      = 30
