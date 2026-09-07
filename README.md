@@ -63,7 +63,7 @@ npm run test:run
 
 ### Shared platform modules
 
-Most of the stack comes from `app.terraform.io/WebbPulse/platform-modules/aws`, the private registry copy of [WebbPulse/terraform-aws-platform-modules](https://github.com/WebbPulse/terraform-aws-platform-modules):
+Parts of the stack come from `app.terraform.io/WebbPulse/platform-modules/aws`, the private registry copy of [WebbPulse/terraform-aws-platform-modules](https://github.com/WebbPulse/terraform-aws-platform-modules):
 
 | Module | What it owns here |
 | --- | --- |
