@@ -31,18 +31,71 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The environment scoped values the image jobs need, read in a job that can
+  # actually see them.
+  #
+  # `vars.AWS_DEPLOY_ROLE_ARN` is defined on the GitHub Environment, not at the
+  # repository level, so only a job with an `environment:` key resolves it. The
+  # `build-images` job cannot have one: it calls a reusable workflow with
+  # `uses:`, and that form rejects every key outside a short allowlist. The
+  # reusable workflow binds the environment itself, from its `environment`
+  # input, but `role-to-assume` is a required secret that the caller must still
+  # pass, and the caller is exactly the job that cannot read it.
+  #
+  # So this job reads it. It runs no build and touches no AWS: it exists to move
+  # one environment scoped value into a job output that `build-images` can
+  # interpolate. That keeps the ARN on the environment where it belongs, rather
+  # than duplicated into a repository level variable where staging and
+  # production would drift.
+  resolve-env:
+    if: >-
+      (github.ref_name == 'main' || vars.STAGING_DEPLOY_ENABLED == 'true')
+      && vars.BACKEND_IMAGE_BUILD_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    permissions: {}
+    outputs:
+      environment: ${{ steps.values.outputs.environment }}
+      role-to-assume: ${{ steps.values.outputs.role-to-assume }}
+    steps:
+      # The ARN is an identifier rather than a credential, and it is held in
+      # `vars` rather than `secrets` for that reason, so passing it through a job
+      # output discloses nothing that `vars` did not already. A job output cannot
+      # carry a secret's masking anyway, which is the other half of why this
+      # works only because the value is a var.
+      - name: Resolve the environment values
+        id: values
+        env:
+          ENVIRONMENT: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+          ROLE_TO_ASSUME: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$ROLE_TO_ASSUME" ]; then
+            echo "vars.AWS_DEPLOY_ROLE_ARN is not set on the ${ENVIRONMENT} environment."
+            exit 1
+          fi
+          echo "Environment: ${ENVIRONMENT}"
+          echo "environment=${ENVIRONMENT}" >> "$GITHUB_OUTPUT"
+          echo "role-to-assume=${ROLE_TO_ASSUME}" >> "$GITHUB_OUTPUT"
+
   # The four domain images. Matrix over the domains rather than four copies of
   # one job, `fail-fast: false` so one domain's failure still tells us about the
   # other three: at this stage the point of the job is the information, since
   # nothing consumes the images yet.
   #
-  # Runs in the same GitHub Environment as `deploy`, which is what makes
-  # `vars.AWS_DEPLOY_ROLE_ARN` resolve at all. That role's trust policy is now
+  # Runs in the same GitHub Environment as `deploy`, which is what makes the OIDC
+  # token's `sub` claim acceptable: the role's trust policy is now
   # `environment:staging` / `environment:production` rather than a branch or a
-  # wildcard subject, so a job without the `environment:` key gets a token whose
-  # `sub` claim the role refuses. It already carries the three grants this needs:
-  # ECR push to the four domain repositories, ECR pull on the shared base image
-  # repository in the Artifacts account, and CodeArtifact read.
+  # wildcard subject. The environment is bound inside the reusable workflow via
+  # the `environment` input rather than by a job level `environment:` key here,
+  # because a job that calls a reusable workflow with `uses:` may only carry
+  # `name`, `uses`, `with`, `secrets`, `needs`, `if` and `permissions`. Adding
+  # `environment:` alongside `uses:` makes GitHub reject the whole workflow file,
+  # which fails the run with zero jobs and an error naming no job at all.
+  #
+  # The role already carries the three grants this needs: ECR push to the four
+  # domain repositories, ECR pull on the shared base image repository in the
+  # Artifacts account, and CodeArtifact read.
   #
   # Gated on `BACKEND_IMAGE_BUILD_ENABLED` as well as the existing deploy gate.
   # `container-image.yml@v1` now resolves to v1.2.0, which ships the three inputs
@@ -56,9 +109,7 @@ jobs:
   # than a side effect of a merge. Setting it to "true" is the whole of the
   # remaining change here.
   build-images:
-    if: >-
-      (github.ref_name == 'main' || vars.STAGING_DEPLOY_ENABLED == 'true')
-      && vars.BACKEND_IMAGE_BUILD_ENABLED == 'true'
+    needs: resolve-env
     strategy:
       fail-fast: false
       matrix:
@@ -71,9 +122,12 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
     uses: WebbPulse/.github/.github/workflows/container-image.yml@v1
     with:
+      # Binds the called job to the GitHub Environment, which is what the deploy
+      # role's `environment:` OIDC subject requires. It cannot be a job level
+      # `environment:` key here, for the reason in the comment above.
+      environment: ${{ needs.resolve-env.outputs.environment }}
       # Repository names come from `terraform/ecr.tf`: `name_prefix` is
       # `webbpulse-<environment>` and the four map keys are the domains, so the
       # repository is `webbpulse-<env>/<domain>`. The registry host is not
@@ -120,7 +174,9 @@ jobs:
       # `image-map` below reads all four digests back.
       upload-manifest-artifact: true
     secrets:
-      role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      # From `resolve-env`, not from `vars` directly: this job has no
+      # `environment:` key, so it cannot see an environment scoped variable.
+      role-to-assume: ${{ needs.resolve-env.outputs.role-to-assume }}
 
   # The digest pinned URIs, collected into the one JSON object PR 10 hands to
   # `lambda-image-deploy.yml` as `function-image-map`. Written to the job summary
@@ -138,7 +194,7 @@ jobs:
   # download picks up whatever artifacts the successful legs uploaded, and a
   # missing domain is a missing key rather than a failed job.
   image-map:
-    needs: build-images
+    needs: [resolve-env, build-images]
     if: always() && needs.build-images.result != 'skipped'
     runs-on: ubuntu-latest
     permissions:
@@ -168,7 +224,7 @@ jobs:
       - name: Assemble the function image map
         id: map
         env:
-          ENVIRONMENT: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+          ENVIRONMENT: ${{ needs.resolve-env.outputs.environment }}
         run: |
           set -euo pipefail
           mkdir -p manifests
