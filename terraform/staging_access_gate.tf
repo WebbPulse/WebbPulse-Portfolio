@@ -13,7 +13,7 @@ module "staging_access_gate" {
   count = local.staging_gate_count
 
   source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/staging-access-gate"
-  version = "~> 1.3"
+  version = "~> 1.1"
 
   name             = local.prefix
   cookie_domain    = local.domain
@@ -21,7 +21,7 @@ module "staging_access_gate" {
   additional_hosts = [local.domain]
   allowed_emails   = var.staging_access_users
 
-  # cloudfront_distribution_arn is left unset on purpose: module.frontend
+  # cloudfront_distribution_arn is left unset on purpose: aws_cloudfront_distribution.frontend
   # consumes this module's outputs, so naming it here would be a dependency cycle.
   http_api_id      = module.api.api_id
   invite_login_url = "https://${local.www_host}/"

@@ -19,9 +19,8 @@ module "staging_dns" {
   parent_zone_id = var.route53_zone_id
 }
 
-# The workload records stay here rather than inside spa-frontend and http-api:
-# production writes them cross-account through aws.dns, and a module has one
-# aws provider, the one that owns the bucket, the distribution and the API.
+# The api record stays here rather than inside http-api: production writes it
+# cross-account through aws.dns, and a module has one aws provider.
 resource "aws_route53_record" "www" {
   count    = local.custom_domain_count
   provider = aws.dns
@@ -31,8 +30,8 @@ resource "aws_route53_record" "www" {
   type    = "A"
 
   alias {
-    name                   = module.frontend.distribution_domain_name
-    zone_id                = module.frontend.distribution_hosted_zone_id
+    name                   = aws_cloudfront_distribution.frontend.domain_name
+    zone_id                = aws_cloudfront_distribution.frontend.hosted_zone_id
     evaluate_target_health = false
   }
 }
@@ -46,8 +45,8 @@ resource "aws_route53_record" "apex_a" {
   type    = "A"
 
   alias {
-    name                   = module.frontend.distribution_domain_name
-    zone_id                = module.frontend.distribution_hosted_zone_id
+    name                   = aws_cloudfront_distribution.frontend.domain_name
+    zone_id                = aws_cloudfront_distribution.frontend.hosted_zone_id
     evaluate_target_health = false
   }
 }

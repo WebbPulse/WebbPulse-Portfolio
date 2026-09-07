@@ -90,28 +90,3 @@ moved {
   to   = module.api.aws_apigatewayv2_api_mapping.this
 }
 
-# spa-frontend
-moved {
-  from = aws_s3_bucket.frontend
-  to   = module.frontend.aws_s3_bucket.this
-}
-
-moved {
-  from = aws_s3_bucket_public_access_block.frontend
-  to   = module.frontend.aws_s3_bucket_public_access_block.this
-}
-
-moved {
-  from = aws_s3_bucket_policy.frontend
-  to   = module.frontend.aws_s3_bucket_policy.this
-}
-
-moved {
-  from = aws_cloudfront_origin_access_control.frontend
-  to   = module.frontend.aws_cloudfront_origin_access_control.this
-}
-
-moved {
-  from = aws_cloudfront_distribution.frontend
-  to   = module.frontend.aws_cloudfront_distribution.this
-}

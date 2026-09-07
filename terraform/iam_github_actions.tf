@@ -82,8 +82,8 @@ locals {
         "s3:ListBucket",
       ]
       Resource = [
-        module.frontend.bucket_arn,
-        "${module.frontend.bucket_arn}/*",
+        aws_s3_bucket.frontend.arn,
+        "${aws_s3_bucket.frontend.arn}/*",
       ]
     },
     {
@@ -92,7 +92,7 @@ locals {
         "cloudfront:CreateInvalidation",
         "cloudfront:GetInvalidation",
       ]
-      Resource = module.frontend.distribution_arn
+      Resource = aws_cloudfront_distribution.frontend.arn
     },
   ], local.github_actions_gate_statements)
 }

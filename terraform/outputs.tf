@@ -25,12 +25,12 @@ output "frontend_url" {
 
 output "cloudfront_distribution_id" {
   description = "CloudFront distribution ID — used by CI/CD to invalidate cache after deploys"
-  value       = module.frontend.distribution_id
+  value       = aws_cloudfront_distribution.frontend.id
 }
 
 output "frontend_bucket" {
   description = "S3 bucket name for frontend asset uploads"
-  value       = module.frontend.bucket_name
+  value       = aws_s3_bucket.frontend.bucket
 }
 
 output "backend_url" {
