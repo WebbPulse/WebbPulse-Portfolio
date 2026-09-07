@@ -18,7 +18,7 @@ os.environ.update(
         "LOG_LEVEL": "WARNING",
     }
 )
-os.environ.pop("SSM_PARAMETER_PREFIX", None)
+os.environ.pop("SECRETS_PREFIX", None)
 os.environ.pop("DYNAMODB_ENDPOINT_URL", None)
 
 import boto3  # noqa: E402

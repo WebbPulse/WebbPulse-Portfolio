@@ -45,8 +45,8 @@ tests/                      pytest suite backed by moto
 | --- | --- | --- |
 | `DYNAMODB_TABLE_PREFIX` | Tables are named `{prefix}-{entity}` | `webbpulse-development` |
 | `DYNAMODB_ENDPOINT_URL` | Point at DynamoDB Local | unset |
-| `SSM_PARAMETER_PREFIX` | When set, secrets are read from SSM SecureStrings `{prefix}/secret-key`, `/admin-username`, `/admin-password`, `/admin-email` | unset |
-| `SECRET_KEY`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ADMIN_EMAIL` | Secrets when not using SSM; env values win over SSM | required |
+| `SECRETS_PREFIX` | When set, secrets are read from the Secrets Manager secrets `{prefix}/secret-key`, `/admin-username`, `/admin-password`, `/admin-email`, once per execution environment | unset |
+| `SECRET_KEY`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ADMIN_EMAIL` | Secrets when not using Secrets Manager; env values win over Secrets Manager | required |
 | `ENVIRONMENT` | Environment label | `development` |
 | `CORS_ORIGINS` | Comma-separated allowed origins (localhost dev origins are always added) | empty |
 | `SITE_URL` | Base URL used in sitemap and robots | `https://www.webbpulse.com` |
