@@ -55,8 +55,8 @@ jobs:
     environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
     permissions: {}
     outputs:
-      environment: ${{ steps.values.outputs.environment }}
-      role-to-assume: ${{ steps.values.outputs.role-to-assume }}
+      name: ${{ steps.values.outputs.name }}
+      role-arn: ${{ steps.values.outputs.role-arn }}
     steps:
       # The ARN is an identifier rather than a credential, and it is held in
       # `vars` rather than `secrets` for that reason, so passing it through a job
@@ -75,8 +75,8 @@ jobs:
             exit 1
           fi
           echo "Environment: ${ENVIRONMENT}"
-          echo "environment=${ENVIRONMENT}" >> "$GITHUB_OUTPUT"
-          echo "role-to-assume=${ROLE_TO_ASSUME}" >> "$GITHUB_OUTPUT"
+          echo "name=${ENVIRONMENT}" >> "$GITHUB_OUTPUT"
+          echo "role-arn=${ROLE_TO_ASSUME}" >> "$GITHUB_OUTPUT"
 
   # The four domain images. Matrix over the domains rather than four copies of
   # one job, `fail-fast: false` so one domain's failure still tells us about the
@@ -127,7 +127,7 @@ jobs:
       # Binds the called job to the GitHub Environment, which is what the deploy
       # role's `environment:` OIDC subject requires. It cannot be a job level
       # `environment:` key here, for the reason in the comment above.
-      environment: ${{ needs.resolve-env.outputs.environment }}
+      environment: ${{ needs.resolve-env.outputs.name }}
       # Repository names come from `terraform/ecr.tf`: `name_prefix` is
       # `webbpulse-<environment>` and the four map keys are the domains, so the
       # repository is `webbpulse-<env>/<domain>`. The registry host is not
@@ -135,7 +135,7 @@ jobs:
       # `amazon-ecr-login`, which resolves the caller's own account, so the
       # account id stays out of the repository and staging and production do not
       # drift apart.
-      ecr-repository: webbpulse-${{ github.ref_name == 'main' && 'production' || 'staging' }}/${{ matrix.domain }}
+      ecr-repository: webbpulse-${{ needs.resolve-env.outputs.name }}/${{ matrix.domain }}
       aws-region: us-west-2
       context: backend
       dockerfile: backend/Dockerfile
@@ -176,7 +176,7 @@ jobs:
     secrets:
       # From `resolve-env`, not from `vars` directly: this job has no
       # `environment:` key, so it cannot see an environment scoped variable.
-      role-to-assume: ${{ needs.resolve-env.outputs.role-to-assume }}
+      role-to-assume: ${{ needs.resolve-env.outputs.role-arn }}
 
   # The digest pinned URIs, collected into the one JSON object PR 10 hands to
   # `lambda-image-deploy.yml` as `function-image-map`. Written to the job summary
@@ -224,7 +224,7 @@ jobs:
       - name: Assemble the function image map
         id: map
         env:
-          ENVIRONMENT: ${{ needs.resolve-env.outputs.environment }}
+          ENVIRONMENT: ${{ needs.resolve-env.outputs.name }}
         run: |
           set -euo pipefail
           mkdir -p manifests

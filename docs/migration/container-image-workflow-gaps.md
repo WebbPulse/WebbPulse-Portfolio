@@ -147,6 +147,59 @@ The concrete consequence for this repository is that `image-map` is now keyed by
 and uploads the whole object as a `function-image-map` artifact for PR 10 to
 consume. Gap 5 is what made the tag-keyed form necessary, and it is gone.
 
+## 6. `environment:` is not allowed on a job that calls a reusable workflow. Was breaking every run
+
+Found after v1.2.0, and worth recording because it broke `staging` silently for
+the better part of an hour and the failure named nothing useful.
+
+PR 8's `build-images` job carried both `uses:` and a job level `environment:`
+key. A job that calls a reusable workflow may only carry `name`, `uses`, `with`,
+`secrets`, `needs`, `if` and `permissions`. `environment:` alongside `uses:` is
+rejected when the workflow file is parsed, so the run fails with **zero jobs**
+and an error that names no job at all, just "this run likely failed because of a
+workflow file issue". Every push touching `backend/**` on `staging` failed that
+way from the moment PR 8 merged, including PR 9's branch.
+
+`actionlint` reported this correctly. It was dismissed on the grounds that the
+same line was already present on `staging` and therefore could not be new. It
+was already present, and it was already breaking every run there. A finding that
+reproduces on the base branch means the base branch is broken, not that the
+finding is noise.
+
+**Closed in v1.2.1** (`v1` now points at `13e6b56`) by an optional `environment`
+input that the workflow's own build job binds to, mirroring
+`lambda-image-deploy.yml`.
+
+The caller side needs one more piece. `vars.AWS_DEPLOY_ROLE_ARN` is defined on
+the GitHub Environment rather than at the repository level, so only a job with an
+`environment:` key resolves it, and `role-to-assume` is a required secret the
+caller must still pass. The caller is exactly the job that can no longer read it.
+A small `resolve-env` job with the `environment:` key reads it and exports it as
+an output, which is the shape the org README's four domain example now documents:
+
+```yaml
+  resolve-env:
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    outputs:
+      name: ${{ ... }}
+      role-arn: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+
+  build-images:
+    needs: resolve-env
+    uses: WebbPulse/.github/.github/workflows/container-image.yml@v1
+    with:
+      environment: ${{ needs.resolve-env.outputs.name }}
+    secrets:
+      role-to-assume: ${{ needs.resolve-env.outputs.role-arn }}
+```
+
+This keeps the ARN on the environment, where staging and production hold
+different values, rather than duplicating it into a repository level variable
+where the two would drift. The `BACKEND_IMAGE_BUILD_ENABLED` gate moves to
+`resolve-env`; `build-images` inherits it through `needs`, since a skipped
+dependency skips the dependent, so the skip behaviour is unchanged.
+
 ### Still open
 
 - **`amazon-ecr-login`'s `registry` output is unset with multiple registries.**
@@ -165,7 +218,9 @@ consume. Gap 5 is what made the tag-keyed form necessary, and it is gone.
   the case here: `vars.CODEARTIFACT_DOMAIN_OWNER`. Not a problem, but do not
   copy a `secrets:` line from one caller to the other.
 - **Unverified end to end.** No enabled run of `build-images` has happened. The
-  v1.2.0 author flagged this, and it is the reason the first run on `staging`
+  v1.2.0 author flagged this, and gap 6 above is a concrete instance of it: a
+  caller can be wrong in a way no amount of reading catches. It is the reason
+  the first run on `staging`
   after `BACKEND_IMAGE_BUILD_ENABLED` is set is worth watching rather than
   assuming. The failure modes that survive review are the ones this document has
   described twice already: the base image pull presenting as a 401 rather than a
