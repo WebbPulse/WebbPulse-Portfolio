@@ -233,6 +233,52 @@ dependency skips the dependent, so the skip behaviour is unchanged.
   (`function_name = "${local.prefix}-${each.key}"`). If PR 9 lands with a
   different naming, this is the one place that has to follow it.
 
+## 7. The reusable deploy workflow's smoke test cannot reach these functions. Caller side
+
+Found writing PR 10, and it is a shape mismatch rather than a defect.
+
+`lambda-image-deploy.yml` takes a single `smoke-url` and probes it with `curl`.
+That fits a service whose function already sits behind a URL. The four domain
+functions do not: they have no API Gateway route until PR 13 through 16 flip the
+routes, so there is no URL that reaches them. Worse, there is a URL that
+*resolves*: `https://api.staging.webbpulse.com/health` answers 200 from the
+monolith through `$default`, so passing it as `smoke-url` would produce a green
+deploy that proved nothing about the image just shipped. Section 4 of the plan
+names that false confidence directly.
+
+So PR 10 passes no `smoke-url`, and the probes live in a `smoke-domains` job
+after the deploy. Each one is an `aws lambda invoke` carrying a synthesised API
+Gateway HTTP API v2 payload, which is the event shape the Lambda Web Adapter
+reads: it turns `rawPath` and `requestContext.http.method` into an ordinary HTTP
+request against the application and turns the response back into
+`{statusCode, headers, body}`. Asserting `statusCode == 200` is therefore the
+same code path a real request will take once the route exists, minus the
+gateway. `smoke-header` is not passed either, for the same reason: the staging
+access gate sits in front of the gateway, and an invoke does not go through it.
+
+The route is `GET /health` for all four domains.
+`backend/app/composition/wiring.py` gives `content`, `resume` and `identity` the
+liveness only `/health` that `create_app` adds, and leaves `public` its own
+database reading one, so every function serves the path with no credential, no
+body and no path parameter. It is also what `AWS_LWA_READINESS_CHECK_PATH`
+names, so a function that fails this probe never passed its own readiness check.
+
+**The deploy role needs one grant it does not have yet.**
+`terraform/iam_github_actions.tf` on PR 9's branch grants
+`lambda:UpdateFunctionCode`, `GetFunction`, `GetFunctionConfiguration` and
+`PublishVersion` over the five function ARNs, and no `lambda:InvokeFunction`.
+The probes will fail with an `AccessDeniedException` naming
+`lambda:InvokeFunction` until that action is added to the same statement. It is
+a one line change in the `actions` list, and it belongs with the functions in
+PR 9 rather than in the workflow, so PR 10 does not make it. Until it lands,
+`BACKEND_IMAGE_DEPLOY_ENABLED` staying unset is what keeps the probe from
+running at all.
+
+Once the routes exist, the probes should move to the HTTP form the plan's
+section 6 describes, which additionally checks that `routeKey` in the access log
+is the explicit key rather than `$default`. An invoke cannot check that, because
+there is no gateway in the path to log it.
+
 ## Until the gate is set
 
 The `build-images` job is wired to v1.2.0 and every gap that blocked it is
@@ -248,3 +294,15 @@ summary, upload it as `function-image-map`, and update no function.
 
 Nothing that serves traffic is affected either way. The monolith zip deploy
 neither depends on this job nor is depended on by it.
+
+PR 10 adds a second variable, `BACKEND_IMAGE_DEPLOY_ENABLED`, gating
+`deploy-images` and `smoke-domains`. The two are separate on purpose: the build
+gate can be on while the deploy gate is off, which is the state that leaves four
+images in ECR and updates nothing, and it is the correct state until PR 9 is
+applied and the four functions exist. `deploy-images` also skips when the map is
+empty or `image-map` did not succeed, so a run where every build leg failed
+skips cleanly rather than handing the reusable workflow a map it rejects.
+
+The order to turn them on is therefore: set `BACKEND_IMAGE_BUILD_ENABLED` and
+watch one run, apply PR 9, add `lambda:InvokeFunction` to the deploy role, then
+set `BACKEND_IMAGE_DEPLOY_ENABLED`.
