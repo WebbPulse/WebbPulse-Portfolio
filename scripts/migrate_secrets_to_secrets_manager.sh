@@ -9,8 +9,21 @@
 #
 # No secret value is ever printed, written to a file, or held in a shell
 # variable. Each value goes from the SSM read straight into the Secrets Manager
-# write through a pipe, and the verification compares byte counts rather than
-# contents.
+# write through a pipe.
+#
+# The value is read as JSON and emitted with `jq -rj`, which writes the raw
+# bytes with no trailing newline. `--output text` would append one, and
+# `--secret-string file:///dev/stdin` stores whatever it is given verbatim, so
+# every secret would end up one byte longer than its source and admin login
+# would fail after the switch.
+#
+# This script does not read the secrets back. `get-secret-value` is not called
+# here in any form: byte counts of a password leak its length, and the estate
+# rule is that the value is never read outside the application. The write check
+# is `set -euo pipefail` plus the VersionId each put returns. End-to-end
+# verification is the backend switch in the next change, where the application
+# reads Secrets Manager and admin login is exercised in staging before
+# production.
 #
 # Usage:
 #   AWS_PROFILE=Portfolio-Staging/AdministratorAccess \
@@ -38,6 +51,11 @@ fi
 
 if [ -z "${AWS_PROFILE:-}" ]; then
   echo "error: set AWS_PROFILE to the account holding the $ENVIRONMENT estate" >&2
+  exit 2
+fi
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "error: jq is required; it emits the parameter value with no trailing newline" >&2
   exit 2
 fi
 
@@ -102,13 +120,15 @@ echo
 for key in "${KEYS[@]}"; do
   printf 'copying %-16s ' "$key"
 
+  # jq -rj writes the raw value with no trailing newline. Anything that appends
+  # one would be stored verbatim by --secret-string file:///dev/stdin.
   version_id=$(
     aws ssm get-parameter \
         --region "$AWS_REGION" \
         --name "$(ssm_name "$key")" \
         --with-decryption \
-        --query Parameter.Value \
-        --output text \
+        --output json \
+      | jq -rj '.Parameter.Value' \
       | aws secretsmanager put-secret-value \
           --region "$AWS_REGION" \
           --secret-id "$(secret_name "$key")" \
@@ -123,47 +143,15 @@ done
 echo
 
 # ---------------------------------------------------------------------------
-# Verify by byte count. Both reads are piped straight into wc -c, so neither
-# value reaches the terminal. --output text appends a newline to each, which
-# cancels out on both sides of the comparison.
+# Done. Nothing is read back: set -euo pipefail fails the run if any stage of a
+# pipeline fails, and each put above printed the VersionId it created, which is
+# the confirmation that the write landed.
+#
+# End-to-end verification is the next change, which switches the backend onto
+# Secrets Manager. Confirm admin login works in staging there before promoting
+# to production.
 # ---------------------------------------------------------------------------
 
-failed=0
-
-for key in "${KEYS[@]}"; do
-  printf 'verifying %-16s ' "$key"
-
-  source_bytes=$(
-    aws ssm get-parameter \
-        --region "$AWS_REGION" \
-        --name "$(ssm_name "$key")" \
-        --with-decryption \
-        --query Parameter.Value \
-        --output text | wc -c
-  )
-
-  destination_bytes=$(
-    aws secretsmanager get-secret-value \
-        --region "$AWS_REGION" \
-        --secret-id "$(secret_name "$key")" \
-        --query SecretString \
-        --output text | wc -c
-  )
-
-  if [ "$source_bytes" -eq "$destination_bytes" ]; then
-    echo "match (${source_bytes} bytes)"
-  else
-    echo "MISMATCH (source ${source_bytes} bytes, secret ${destination_bytes} bytes)"
-    failed=1
-  fi
-done
-
-echo
-
-if [ "$failed" -ne 0 ]; then
-  echo "one or more secrets did not match; do not switch the backend over" >&2
-  exit 1
-fi
-
-echo "All 4 secrets copied and verified."
-echo "Next: merge the backend change that reads Secrets Manager, then deploy."
+echo "All 4 secrets copied."
+echo "Next: merge the backend change that reads Secrets Manager, deploy it to"
+echo "staging, and confirm admin login works before promoting to production."
