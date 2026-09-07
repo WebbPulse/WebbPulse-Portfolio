@@ -24,9 +24,26 @@
 #   deploy role ARN lives in the `staging` GitHub Environment, whose deployment
 #   branch policy admits only the `staging` branch, so a pull request job cannot
 #   read it. `vars.CI_AWS_ROLE_ARN` is repository scoped for the same reason
-#   `STAGING_DEPLOY_ENABLED` is. It names the same staging role, which already
-#   carries the CodeArtifact read grants, and it is only ever used to mint a
-#   read only CodeArtifact token here.
+#   `STAGING_DEPLOY_ENABLED` is.
+#
+# `CI_AWS_ROLE_ARN` now names a dedicated role rather than the deploy role. It
+# used to name `webbpulse-staging-github-actions-deploy`, which can update Lambda
+# code and push ECR images, and whose trust policy admitted every subject in the
+# repository so a pull request branch could assume it. The replacement is
+# `webbpulse-staging-github-actions-ci`, whose only permissions are the
+# CodeArtifact read grants this job needs, and whose trust names the pull request
+# and branch subjects rather than a wildcard.
+#
+# The variable stays a repository variable rather than becoming a per branch
+# selection. The role ARN is deterministic, so the workflow could pick the
+# staging or the production account from `github.ref_name`, but there is nothing
+# to pick between: this workflow only runs on `pull_request`, every pull request
+# check resolves the same read only CodeArtifact package regardless of which
+# branch it targets, and the CodeArtifact domain it reads lives in the Artifacts
+# account, not in either deploy account. Hard coding a branch conditional would
+# add a second account's ARN that no run ever uses, and inlining the ARN would
+# put an account id in the repository for no gain. One repository variable
+# holding the staging CI role ARN is the smallest thing that is correct.
 name: Test Backend
 
 on:

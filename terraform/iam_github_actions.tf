@@ -102,7 +102,18 @@ module "github_actions_role" {
   version = "~> 1.1"
 
   role_name = "${local.prefix}-github-actions-deploy"
-  subjects  = ["repo:WebbPulse@185014056/WebbPulse-Portfolio@1029410045:*"]
+
+  # Scoped to the two GitHub Environments the deploy jobs bind to, not to the
+  # repository as a whole. Both deploy-backend.yml and deploy-frontend.yml set
+  # environment: production on main and staging otherwise, so those are the only
+  # subjects GitHub ever mints for a job that reaches AWS_DEPLOY_ROLE_ARN. Their
+  # workflow_dispatch trigger runs the same environment-bound job, so it is
+  # covered too. The previous ":*" also admitted a pull request branch, which is
+  # what the read-only CI role below exists to stop needing.
+  subjects = [
+    "repo:WebbPulse@185014056/WebbPulse-Portfolio@1029410045:environment:staging",
+    "repo:WebbPulse@185014056/WebbPulse-Portfolio@1029410045:environment:production",
+  ]
 
   policy_statements = concat([
     # Lambda: point the function at the freshly uploaded zip
@@ -182,4 +193,42 @@ module "github_actions_role" {
       resources = [local.shared_base_image_repository_arn]
     },
   ], local.github_actions_codeartifact_statements, local.github_actions_gate_statements)
+}
+
+# ---------------------------------------------------------------------------
+# The role pull request CI assumes, separate from the deploy role above.
+#
+# test-backend.yml calls the org reusable python-ci workflow, which needs an AWS
+# identity for one thing only: minting a read-only CodeArtifact token so pip can
+# install the `webbpulse` package. It was doing that with the deploy role, which
+# can update Lambda code and push ECR images, and whose trust admitted every
+# subject in the repository including a pull request branch. That means any pull
+# request, from anyone who can open one, could assume a role that deploys.
+#
+# This role carries the CodeArtifact statements and nothing else, and its trust
+# names the pull request subject plus the two branch refs, so the reusable
+# workflow keeps working on pushes as well as pull requests.
+# ---------------------------------------------------------------------------
+module "github_actions_ci_role" {
+  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/github-actions-role"
+  version = "~> 1.1"
+
+  role_name        = "${local.prefix}-github-actions-ci"
+  role_description = "Read-only CodeArtifact access for pull request CI in WebbPulse/WebbPulse-Portfolio. Deploy permissions live on the separate github-actions-deploy role."
+
+  # The deploy role's module call owns this account's single
+  # token.actions.githubusercontent.com provider; an account holds at most one
+  # per URL, so this call trusts that one rather than creating a second.
+  create_oidc_provider = false
+  oidc_provider_arn    = module.github_actions_role.oidc_provider_arn
+
+  subjects = [
+    "repo:WebbPulse@185014056/WebbPulse-Portfolio@1029410045:pull_request",
+    "repo:WebbPulse@185014056/WebbPulse-Portfolio@1029410045:ref:refs/heads/staging",
+    "repo:WebbPulse@185014056/WebbPulse-Portfolio@1029410045:ref:refs/heads/main",
+  ]
+
+  inline_policy_name = "codeartifact-read"
+
+  policy_statements = local.github_actions_codeartifact_statements
 }
