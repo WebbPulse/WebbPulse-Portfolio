@@ -643,3 +643,117 @@ jobs:
           done
           echo "Backend did not report healthy."
           exit 1
+
+  # Section 6's route flip verification, run on every deploy rather than by hand.
+  #
+  # A cut can apply cleanly, return 200, and have moved nothing, because the
+  # route key did not match and API Gateway sent the request to `$default` after
+  # all. `scripts/verify_route_cut.sh` is what tells those apart: it asserts the
+  # `X-WebbPulse-Domain` response header names the domain being verified rather
+  # than `monolith`. Running it here means a regression is caught by the deploy
+  # that caused it instead of by the next person to read the plan.
+  #
+  # THE DOMAIN LIST IS THE ONE THING TO EDIT PER CUT. `DOMAINS` below holds the
+  # domains whose routes have actually been cut over. Cut 1 moved `public`, so
+  # that is the whole list today. Cuts 2 through 4 each add one word:
+  #
+  #   DOMAINS="public resume"            after cut 2
+  #   DOMAINS="public resume content"    after cut 3
+  #   DOMAINS="public resume content identity"   after cut 4
+  #
+  # A domain added here before its paths exist in the script fails the job with
+  # "No paths are defined for domain", which is the intended loud failure: the
+  # script exits 2 rather than passing on an empty loop.
+  #
+  # It is a bash loop rather than a job matrix because a matrix leg is a whole
+  # runner, and four legs would each check out the repository and assume the
+  # role to run one curl per path. The loop keeps the whole check in one job and
+  # still reports every failing domain rather than stopping at the first.
+  #
+  # `needs` covers both chains, and the guard is written as three explicit
+  # result tests rather than a bare `always()`:
+  #
+  # - `deploy` must have succeeded. It is the monolith that serves `$default`,
+  #   so verifying routes against a failed deploy would report a stale surface.
+  # - `deploy-images` must not have failed. `smoke-domains` skips when
+  #   `deploy-images` fails, so testing only `smoke-domains` would let a broken
+  #   image deploy through as a skip.
+  # - `smoke-domains` must not have failed. It is allowed to be `skipped`, which
+  #   is the ordinary case while `BACKEND_IMAGE_DEPLOY_ENABLED` is off: the
+  #   routes still need verifying then, because the `public` function they point
+  #   at was deployed by an earlier run.
+  verify-route-cuts:
+    needs: [deploy, deploy-images, smoke-domains]
+    if: >-
+      always()
+      && needs.deploy.result == 'success'
+      && needs.deploy-images.result != 'failure'
+      && needs.smoke-domains.result != 'failure'
+    runs-on: ubuntu-latest
+    # Resolved from the branch the same way `deploy` does it, not from
+    # `resolve-env`. That job is gated on `BACKEND_IMAGE_BUILD_ENABLED`, so its
+    # outputs are empty on exactly the runs where the image chain is off, and an
+    # empty `environment:` would leave `vars.AWS_DEPLOY_ROLE_ARN` unresolvable.
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      AWS_REGION: us-west-2
+      # The credential path is staging only. Production has no access gate, and
+      # the script runs there with no header at all, so the parameter name is
+      # empty on `main` and the read below is skipped.
+      ORIGIN_VERIFY_PARAMETER: ${{ github.ref_name == 'main' && '' || '/webbpulse-staging/access-gate/origin-verify' }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Read and masked exactly the way the `deploy` job's smoke test does it,
+      # so the value cannot reach a log. `WEBBPULSE_ORIGIN_VERIFY` is the name
+      # the script reads; leaving it unset is what production wants, and the
+      # script sends no gate header when it is empty.
+      - name: Read the staging access gate origin-verify value
+        if: env.ORIGIN_VERIFY_PARAMETER != ''
+        run: |
+          if VALUE=$(aws ssm get-parameter --with-decryption --name "$ORIGIN_VERIFY_PARAMETER" \
+              --query Parameter.Value --output text 2>/dev/null) && [ -n "$VALUE" ]; then
+            echo "::add-mask::$VALUE"
+            echo "WEBBPULSE_ORIGIN_VERIFY=$VALUE" >> "$GITHUB_ENV"
+            echo "Using the staging access gate origin-verify header."
+          else
+            echo "No origin-verify parameter found; calling the API host without the header."
+          fi
+
+      - name: Verify each cut domain
+        env:
+          ENVIRONMENT: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+          # Edit this line, and only this line, when a cut lands. See the
+          # comment above the job.
+          DOMAINS: "public"
+        run: |
+          set -uo pipefail
+
+          FAILED=0
+          for DOMAIN in $DOMAINS; do
+            echo "::group::${ENVIRONMENT} ${DOMAIN}"
+            if bash scripts/verify_route_cut.sh "$ENVIRONMENT" "$DOMAIN"; then
+              echo "The '${DOMAIN}' cut verified."
+            else
+              echo "The '${DOMAIN}' cut did not verify."
+              FAILED=1
+            fi
+            echo "::endgroup::"
+          done
+
+          if [ "$FAILED" -ne 0 ]; then
+            echo "One or more route cuts did not verify."
+            exit 1
+          fi
+          echo "Every cut domain is served by its own function."
