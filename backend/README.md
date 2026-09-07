@@ -10,7 +10,7 @@ unchanged from the previous Postgres deployment; only the runtime moved.
 app/
 ├── main.py                 FastAPI app, CORS, middleware, /health
 ├── lambda_handler.py       Lambda entrypoint: app.lambda_handler.handler
-├── config.py               Settings (env vars, Secrets Manager secrets)
+├── config.py               Settings (env vars, the APP_SECRETS_ARN JSON secret)
 ├── api/
 │   ├── seo.py              /sitemap.xml and /robots.txt
 │   └── v1/
@@ -45,8 +45,8 @@ tests/                      pytest suite backed by moto
 | --- | --- | --- |
 | `DYNAMODB_TABLE_PREFIX` | Tables are named `{prefix}-{entity}` | `webbpulse-development` |
 | `DYNAMODB_ENDPOINT_URL` | Point at DynamoDB Local | unset |
-| `SECRETS_PREFIX` | When set, secrets are read from the Secrets Manager secrets `{prefix}/secret-key`, `/admin-username`, `/admin-password`, `/admin-email`, once per execution environment | unset |
-| `SECRET_KEY`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ADMIN_EMAIL` | Secrets when not using Secrets Manager; env values win over Secrets Manager | required |
+| `APP_SECRETS_ARN` | When set, secrets are read once per execution environment from the single Secrets Manager secret `webbpulse-<env>/app`, whose value is a JSON object keyed by `SECRET_KEY`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ADMIN_EMAIL` | unset |
+| `SECRET_KEY`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ADMIN_EMAIL` | Secrets when not using Secrets Manager; env values win over Secrets Manager, per field | required |
 | `ENVIRONMENT` | Environment label | `development` |
 | `CORS_ORIGINS` | Comma-separated allowed origins (localhost dev origins are always added) | empty |
 | `SITE_URL` | Base URL used in sitemap and robots | `https://www.webbpulse.com` |
