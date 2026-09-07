@@ -143,3 +143,21 @@ Reverting `default_integration` to `null` is not part of a rollback and should
 not be done: it would leave the API answering 404 for everything, since the
 monolith's two explicit route keys are gone. `$default` is the monolith's
 coverage from this cut onward, until section 6's retirement step.
+
+### Applied
+
+Applied on staging 2026-09-07, HCP Terraform run `run-wkWvqnQhDMmeziYm`, from
+PR #107. The plan calls this cut PR 13; #107 is the pull request that carried
+it.
+
+Verification is no longer a manual step. `deploy-backend.yml` gained a
+`verify-route-cuts` job that runs `scripts/verify_route_cut.sh` after both the
+monolith zip deploy and the domain image chain, so every backend deploy
+re-checks that the four `public` paths are still answered by the `public`
+function rather than having quietly fallen back to `$default`. The job reads
+the same origin-verify parameter from SSM that the smoke test already reads and
+masks it the same way; production needs no credential and the job sends no gate
+header there.
+
+The list of domains the job verifies lives in one `DOMAINS` variable in that
+job. Cuts 2 through 4 each add one word to it.
