@@ -18,8 +18,8 @@ module "api" {
 
   name = "${local.prefix}-api"
 
-  lambda_invoke_arn    = aws_lambda_function.api.invoke_arn
-  lambda_function_name = aws_lambda_function.api.function_name
+  lambda_invoke_arn    = module.lambda_api.invoke_arn
+  lambda_function_name = module.lambda_api.function_name
 
   route_keys                     = ["ANY /{proxy+}", "ANY /"]
   throttling_burst_limit         = 200
@@ -44,6 +44,6 @@ module "api" {
   authorizer_id                = local.staging_gate_enabled ? one(module.staging_access_gate[*].http_api_authorizer_id) : null
 
   domain_name     = local.custom_domains_enabled ? local.api_host : null
-  certificate_arn = local.custom_domains_enabled ? aws_acm_certificate_validation.api[0].certificate_arn : null
+  certificate_arn = module.api_certificate.certificate_arn
   # zone_id stays null: production writes api.webbpulse.com cross-account through aws.dns.
 }

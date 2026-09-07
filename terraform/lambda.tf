@@ -1,56 +1,62 @@
 locals {
   lambda_function_name = "${local.prefix}-api"
-  lambda_table_arns    = [for t in aws_dynamodb_table.this : t.arn]
-  lambda_index_arns    = [for t in aws_dynamodb_table.this : "${t.arn}/index/*"]
+  lambda_table_arns    = module.dynamodb.table_arns_list
+  lambda_index_arns    = [for arn in module.dynamodb.table_arns_list : "${arn}/index/*"]
 }
 
-resource "aws_s3_bucket" "lambda_artifacts" {
+# ---------------------------------------------------------------------------
+# The artifacts bucket CI uploads deployment packages to, from the shared
+# lambda-artifacts-bucket module. The archive_file below stays in the
+# application: aws_s3_object stores source as the literal path string, and
+# path.module inside the module would resolve somewhere else.
+# ---------------------------------------------------------------------------
+
+module "lambda_artifacts" {
+  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/lambda-artifacts-bucket"
+  version = "~> 1.6"
+
   bucket = "${local.prefix}-lambda-artifacts"
+
+  lifecycle_rule_id                      = "expire-noncurrent"
+  noncurrent_version_expiration_days     = 30
+  abort_incomplete_multipart_upload_days = 7
+
+  enable_sse = true
+
+  create_placeholder_object      = true
+  placeholder_object_key         = "backend/placeholder.zip"
+  placeholder_object_source      = data.archive_file.lambda_placeholder.output_path
+  placeholder_object_source_hash = data.archive_file.lambda_placeholder.output_base64sha256
 }
 
-resource "aws_s3_bucket_public_access_block" "lambda_artifacts" {
-  bucket                  = aws_s3_bucket.lambda_artifacts.id
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
+moved {
+  from = aws_s3_bucket.lambda_artifacts
+  to   = module.lambda_artifacts.aws_s3_bucket.this
 }
 
-resource "aws_s3_bucket_versioning" "lambda_artifacts" {
-  bucket = aws_s3_bucket.lambda_artifacts.id
-
-  versioning_configuration {
-    status = "Enabled"
-  }
+moved {
+  from = aws_s3_bucket_public_access_block.lambda_artifacts
+  to   = module.lambda_artifacts.aws_s3_bucket_public_access_block.this
 }
 
-resource "aws_s3_bucket_server_side_encryption_configuration" "lambda_artifacts" {
-  bucket = aws_s3_bucket.lambda_artifacts.id
-
-  rule {
-    apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
-    }
-  }
+moved {
+  from = aws_s3_bucket_versioning.lambda_artifacts
+  to   = module.lambda_artifacts.aws_s3_bucket_versioning.this
 }
 
-resource "aws_s3_bucket_lifecycle_configuration" "lambda_artifacts" {
-  bucket = aws_s3_bucket.lambda_artifacts.id
+moved {
+  from = aws_s3_bucket_server_side_encryption_configuration.lambda_artifacts
+  to   = module.lambda_artifacts.aws_s3_bucket_server_side_encryption_configuration.this[0]
+}
 
-  rule {
-    id     = "expire-noncurrent"
-    status = "Enabled"
+moved {
+  from = aws_s3_bucket_lifecycle_configuration.lambda_artifacts
+  to   = module.lambda_artifacts.aws_s3_bucket_lifecycle_configuration.this
+}
 
-    filter {}
-
-    noncurrent_version_expiration {
-      noncurrent_days = 30
-    }
-
-    abort_incomplete_multipart_upload {
-      days_after_initiation = 7
-    }
-  }
+moved {
+  from = aws_s3_object.lambda_placeholder
+  to   = module.lambda_artifacts.aws_s3_object.placeholder[0]
 }
 
 data "archive_file" "lambda_placeholder" {
@@ -78,38 +84,69 @@ data "archive_file" "lambda_placeholder" {
   }
 }
 
-resource "aws_s3_object" "lambda_placeholder" {
-  bucket      = aws_s3_bucket.lambda_artifacts.id
-  key         = "backend/placeholder.zip"
-  source      = data.archive_file.lambda_placeholder.output_path
-  source_hash = data.archive_file.lambda_placeholder.output_base64sha256
-}
-
-resource "aws_cloudwatch_log_group" "lambda_api" {
-  name              = "/aws/lambda/${local.lambda_function_name}"
-  retention_in_days = 30
-}
-
-resource "aws_iam_role" "lambda_api" {
-  name = "${local.prefix}-api-lambda"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect    = "Allow"
-      Principal = { Service = "lambda.amazonaws.com" }
-      Action    = "sts:AssumeRole"
-    }]
-  })
-}
-
 data "aws_kms_alias" "ssm" {
   name = "alias/aws/ssm"
 }
 
+# ---------------------------------------------------------------------------
+# The API Lambda from the shared lambda-function module: the execution role,
+# the log group and the function. The runtime permission policy below stays in
+# the application, because it names this application's tables and parameters.
+# ---------------------------------------------------------------------------
+
+module "lambda_api" {
+  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/lambda-function"
+  version = "~> 1.6"
+
+  function_name = local.lambda_function_name
+  role_name     = "${local.prefix}-api-lambda"
+
+  runtime       = "python3.13"
+  handler       = "app.lambda_handler.handler"
+  architectures = ["arm64"]
+  memory_size   = 512
+  timeout       = 15
+
+  code = {
+    s3_bucket        = module.lambda_artifacts.bucket_id
+    s3_key           = module.lambda_artifacts.placeholder_object_key
+    source_code_hash = data.archive_file.lambda_placeholder.output_base64sha256
+  }
+
+  environment_variables = {
+    DYNAMODB_TABLE_PREFIX        = local.prefix
+    SSM_PARAMETER_PREFIX         = "/${local.prefix}"
+    ENVIRONMENT                  = var.environment
+    CORS_ORIGINS                 = local.cors_origins
+    SITE_URL                     = local.frontend_url
+    LOG_LEVEL                    = "INFO"
+    POWERTOOLS_SERVICE_NAME      = "webbpulse-api"
+    POWERTOOLS_METRICS_NAMESPACE = "WebbPulse"
+  }
+
+  log_retention_days           = 30
+  log_format                   = "Text"
+  set_logging_config_log_group = true
+}
+
+moved {
+  from = aws_iam_role.lambda_api
+  to   = module.lambda_api.aws_iam_role.this
+}
+
+moved {
+  from = aws_cloudwatch_log_group.lambda_api
+  to   = module.lambda_api.aws_cloudwatch_log_group.this
+}
+
+moved {
+  from = aws_lambda_function.api
+  to   = module.lambda_api.aws_lambda_function.this
+}
+
 resource "aws_iam_role_policy" "lambda_api" {
   name = "api-runtime"
-  role = aws_iam_role.lambda_api.id
+  role = module.lambda_api.role_id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -117,7 +154,7 @@ resource "aws_iam_role_policy" "lambda_api" {
       {
         Effect   = "Allow"
         Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
-        Resource = "${aws_cloudwatch_log_group.lambda_api.arn}:*"
+        Resource = "${module.lambda_api.log_group_arn}:*"
       },
       {
         Effect   = "Allow"
@@ -147,6 +184,11 @@ resource "aws_iam_role_policy" "lambda_api" {
         Action   = ["ssm:GetParameter", "ssm:GetParameters"]
         Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/${local.prefix}/*"
       },
+      # Read access to the Secrets Manager secrets the backend moves onto. The
+      # grant lands before the backend reads them so the switch in the next
+      # change is a deploy rather than a deploy plus an apply. The SSM statement
+      # above stays until the backend has stopped reading parameters.
+      module.app_secrets.read_policy_statement,
       {
         Effect   = "Allow"
         Action   = "kms:Decrypt"
@@ -157,46 +199,4 @@ resource "aws_iam_role_policy" "lambda_api" {
       },
     ]
   })
-}
-
-resource "aws_lambda_function" "api" {
-  function_name = local.lambda_function_name
-  role          = aws_iam_role.lambda_api.arn
-  runtime       = "python3.13"
-  architectures = ["arm64"]
-  handler       = "app.lambda_handler.handler"
-  memory_size   = 512
-  timeout       = 15
-
-  s3_bucket        = aws_s3_bucket.lambda_artifacts.id
-  s3_key           = aws_s3_object.lambda_placeholder.key
-  source_code_hash = data.archive_file.lambda_placeholder.output_base64sha256
-
-  environment {
-    variables = {
-      DYNAMODB_TABLE_PREFIX        = local.prefix
-      SSM_PARAMETER_PREFIX         = "/${local.prefix}"
-      ENVIRONMENT                  = var.environment
-      CORS_ORIGINS                 = local.cors_origins
-      SITE_URL                     = local.frontend_url
-      LOG_LEVEL                    = "INFO"
-      POWERTOOLS_SERVICE_NAME      = "webbpulse-api"
-      POWERTOOLS_METRICS_NAMESPACE = "WebbPulse"
-    }
-  }
-
-  tracing_config {
-    mode = "Active"
-  }
-
-  logging_config {
-    log_format = "Text"
-    log_group  = aws_cloudwatch_log_group.lambda_api.name
-  }
-
-  depends_on = [aws_iam_role_policy.lambda_api]
-
-  lifecycle {
-    ignore_changes = [s3_key, s3_object_version, source_code_hash]
-  }
 }
