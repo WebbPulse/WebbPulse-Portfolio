@@ -1,7 +1,8 @@
 # Backend tests
 
-pytest suite for the portfolio API. DynamoDB and SSM are provided by moto, so
-the suite runs anywhere with Python 3.13 and `requirements-dev.txt` installed.
+pytest suite for the portfolio API. DynamoDB and Secrets Manager are provided
+by moto, so the suite runs anywhere with Python 3.13 and `requirements-dev.txt`
+installed.
 
 ```
 tests/
@@ -13,7 +14,7 @@ tests/
 ├── test_lambda_handler.py      API Gateway v2 events through the Lambda handler
 ├── test_migration.py           Postgres -> DynamoDB migration script
 ├── test_repository.py          serializer, repository, ordering
-├── test_settings.py            env and SSM configuration
+├── test_settings.py            env and Secrets Manager configuration
 ├── test_seo.py                 sitemap and robots
 └── test_*_api.py               posts, projects, experience, skills, education,
                                 certifications, site content

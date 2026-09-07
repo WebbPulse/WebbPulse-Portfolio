@@ -8,6 +8,12 @@
 # way the hand-written jsonencode() did, so the stored documents do not change.
 # ---------------------------------------------------------------------------
 
+# The key the access gate's origin-verify SecureString parameter is encrypted
+# with. This is the only remaining SSM read in the application.
+data "aws_kms_alias" "ssm" {
+  name = "alias/aws/ssm"
+}
+
 locals {
   # Behind the staging access gate the backend smoke test calls the API host
   # directly and needs the origin-verify header value from SSM.

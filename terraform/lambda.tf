@@ -89,14 +89,10 @@ data "archive_file" "lambda_placeholder" {
   }
 }
 
-data "aws_kms_alias" "ssm" {
-  name = "alias/aws/ssm"
-}
-
 # ---------------------------------------------------------------------------
 # The API Lambda from the shared lambda-function module: the execution role,
 # the log group and the function. The runtime permission policy below stays in
-# the application, because it names this application's tables and parameters.
+# the application, because it names this application's tables and secrets.
 # ---------------------------------------------------------------------------
 
 module "lambda_api" {
@@ -124,15 +120,7 @@ module "lambda_api" {
     # from the module's own output rather than rebuilt from local.prefix, so
     # the function depends on the secrets existing and the two cannot drift to
     # different names.
-    SECRETS_PREFIX = local.app_secrets_prefix
-    # Kept alongside SECRETS_PREFIX for one change only. This apply and the CI
-    # backend deploy race after the merge, so for a few minutes either version
-    # of the code can be running against this environment. With both variables
-    # present the old code still finds its SSM prefix and the new code finds
-    # its secrets prefix, whichever lands first, in staging and again in
-    # production. The code in this change never reads it. Removed in the next
-    # change together with the SSM parameters themselves.
-    SSM_PARAMETER_PREFIX         = "/${local.prefix}"
+    SECRETS_PREFIX               = local.app_secrets_prefix
     ENVIRONMENT                  = var.environment
     CORS_ORIGINS                 = local.cors_origins
     SITE_URL                     = local.frontend_url
@@ -196,24 +184,10 @@ resource "aws_iam_role_policy" "lambda_api" {
         ]
         Resource = concat(local.lambda_table_arns, local.lambda_index_arns)
       },
-      {
-        Effect   = "Allow"
-        Action   = ["ssm:GetParameter", "ssm:GetParameters"]
-        Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/${local.prefix}/*"
-      },
-      # Read access to the Secrets Manager secrets the backend moves onto. The
-      # grant lands before the backend reads them so the switch in the next
-      # change is a deploy rather than a deploy plus an apply. The SSM statement
-      # above stays until the backend has stopped reading parameters.
+      # Read access to the Secrets Manager secrets holding the signing key and
+      # the seeded admin credentials. The module renders the statement so the
+      # policy always names exactly the secrets it creates.
       module.app_secrets.read_policy_statement,
-      {
-        Effect   = "Allow"
-        Action   = "kms:Decrypt"
-        Resource = data.aws_kms_alias.ssm.target_key_arn
-        Condition = {
-          StringEquals = { "kms:ViaService" = "ssm.${var.aws_region}.amazonaws.com" }
-        }
-      },
     ]
   })
 }
