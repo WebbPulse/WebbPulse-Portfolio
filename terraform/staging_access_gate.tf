@@ -23,7 +23,7 @@ module "staging_access_gate" {
 
   # cloudfront_distribution_arn is left unset on purpose: aws_cloudfront_distribution.frontend
   # consumes this module's outputs, so naming it here would be a dependency cycle.
-  http_api_id      = aws_apigatewayv2_api.backend.id
+  http_api_id      = module.api.api_id
   invite_login_url = "https://${local.www_host}/"
 
   viewer_request_handler_js = templatefile("${path.module}/cloudfront_functions/app_handler.js.tftpl", {

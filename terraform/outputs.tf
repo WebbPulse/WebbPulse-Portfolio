@@ -15,7 +15,7 @@ output "webbpulse_zone_id" {
 
 output "staging_zone_name_servers" {
   description = "Name servers of the staging child zone, null in production or when custom domains are disabled"
-  value       = one(aws_route53_zone.staging[*].name_servers)
+  value       = module.staging_dns.name_servers
 }
 
 output "frontend_url" {
@@ -45,12 +45,12 @@ output "frontend_api_base_url" {
 
 output "api_gateway_url" {
   description = "Default HTTP API endpoint for the Lambda backend"
-  value       = aws_apigatewayv2_api.backend.api_endpoint
+  value       = module.api.api_endpoint
 }
 
 output "api_custom_domain" {
   description = "Regional target hostname of the API Gateway custom domain, null when custom domains are disabled"
-  value       = one(aws_apigatewayv2_domain_name.api[*].domain_name_configuration[0].target_domain_name)
+  value       = module.api.custom_domain_target_domain_name
 }
 
 output "lambda_function_name" {

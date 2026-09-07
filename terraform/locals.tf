@@ -20,10 +20,10 @@ locals {
   api_host = "api.${local.domain}"
 
   workload_dns_role_arn = var.environment == "production" ? var.route53_write_role_arn : ""
-  records_zone_id       = var.environment == "production" ? var.route53_zone_id : one(aws_route53_zone.staging[*].zone_id)
+  records_zone_id       = var.environment == "production" ? var.route53_zone_id : module.staging_dns.zone_id
 
   frontend_url = local.custom_domains_enabled ? "https://${local.www_host}" : "https://${aws_cloudfront_distribution.frontend.domain_name}"
-  api_url      = local.custom_domains_enabled ? "https://${local.api_host}" : aws_apigatewayv2_api.backend.api_endpoint
+  api_url      = module.api.api_url
   cors_origins = local.custom_domains_enabled ? "https://${local.www_host},https://${local.domain}" : local.frontend_url
 
   # Staging access gate. Only a fully provisioned staging environment with custom domains can be
