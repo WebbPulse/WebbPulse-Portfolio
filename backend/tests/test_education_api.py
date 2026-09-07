@@ -20,7 +20,7 @@ class TestEducationAPI:
 
     @pytest.mark.api
     def test_get_single_education(self, client: TestClient, test_education):
-        response = client.get(f"/api/v1/education/{test_education["id"]}")
+        response = client.get(f"/api/v1/education/{test_education['id']}")
         assert response.status_code == 200
         data = response.json()
         assert data["school"] == test_education["school"]
@@ -87,7 +87,7 @@ class TestEducationAdminAPI:
         self, client: TestClient, admin_auth_headers, test_education
     ):
         response = client.put(
-            f"/api/v1/education/{test_education["id"]}",
+            f"/api/v1/education/{test_education['id']}",
             json={"degree": "Updated Degree"},
             headers=admin_auth_headers,
         )
@@ -101,10 +101,10 @@ class TestEducationAdminAPI:
         self, client: TestClient, admin_auth_headers, test_education
     ):
         response = client.delete(
-            f"/api/v1/education/{test_education["id"]}", headers=admin_auth_headers
+            f"/api/v1/education/{test_education['id']}", headers=admin_auth_headers
         )
         assert response.status_code == 200
-        get_response = client.get(f"/api/v1/education/{test_education["id"]}")
+        get_response = client.get(f"/api/v1/education/{test_education['id']}")
         assert get_response.status_code == 404
 
 

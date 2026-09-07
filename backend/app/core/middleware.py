@@ -2,8 +2,6 @@ import time
 
 from starlette.routing import Match
 
-from ..domains.content.service import ensure_site_content_seeded
-from ..domains.identity.service import ensure_admin_seeded
 from .logging import logger
 
 
@@ -30,11 +28,29 @@ class TrailingSlashMiddleware:
 
 
 class SeedMiddleware:
+    """Seed the admin user and the site-content singleton on the first request.
+
+    The two seeders are imported inside `__call__`, not at module scope, and
+    that placement is load-bearing rather than stylistic. This module also holds
+    `TrailingSlashMiddleware`, which every domain application adds, so a
+    module-level import of `app.domains.content` and `app.domains.identity`
+    would pull both domains into all four images. The `public` function would
+    then carry `content`'s modules, pay their import on every cold start, and
+    make the "no file under `domains/<name>/` reaches another domain" rule true
+    only of the domain packages and not of what actually ships.
+
+    The import is cached by `sys.modules` after the first request, so the cost
+    is a dictionary lookup per request rather than a re-import.
+    """
+
     def __init__(self, app):
         self.app = app
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "http":
+            from ..domains.content.service import ensure_site_content_seeded
+            from ..domains.identity.service import ensure_admin_seeded
+
             ensure_admin_seeded()
             ensure_site_content_seeded()
         await self.app(scope, receive, send)

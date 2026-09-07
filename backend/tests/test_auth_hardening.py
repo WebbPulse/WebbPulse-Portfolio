@@ -443,7 +443,7 @@ class TestLimiterFailsOpen:
             property(lambda self: absent),
         )
         for _ in range(settings.LOGIN_MAX_FAILURES + 2):
-            assert (
-                attempt(client, ip="10.0.0.5").status_code == 401
-            ), "a broken limiter must never lock anyone out"
+            assert attempt(client, ip="10.0.0.5").status_code == 401, (
+                "a broken limiter must never lock anyone out"
+            )
         assert attempt(client, "adminpassword123", ip="10.0.0.5").status_code == 200

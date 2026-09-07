@@ -205,9 +205,10 @@ def test_migrate_then_verify(script, postgres_rows):
     assert summary["posts"] == {"rows": 2, "max_id": 11, "existing": 0}
     assert script.verify(postgres_rows) == []
 
-    assert entities.users.find_by_unique("username", "legacy-admin")[
-        "hashed_password"
-    ] == (postgres_rows["users"][0]["hashed_password"])
+    assert (
+        entities.users.find_by_unique("username", "legacy-admin")["hashed_password"]
+        == (postgres_rows["users"][0]["hashed_password"])
+    )
     assert entities.posts.current_counter() == 11
     assert entities.categories.create({"name": "Next", "slug": "next"})["id"] == 8
     assert [p["slug"] for p in entities.posts.list_published()] == ["published"]

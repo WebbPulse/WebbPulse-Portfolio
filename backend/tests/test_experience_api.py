@@ -34,7 +34,7 @@ class TestExperienceAPI:
     @pytest.mark.api
     def test_get_single_experience(self, client: TestClient, test_experience):
         """Test getting a single experience entry by ID"""
-        response = client.get(f"/api/v1/experience/{test_experience["id"]}")
+        response = client.get(f"/api/v1/experience/{test_experience['id']}")
         assert response.status_code == 200
         data = response.json()
         assert data["title"] == test_experience["title"]
@@ -155,7 +155,7 @@ class TestExperienceAdminAPI:
             "technologies": ["Python", "FastAPI", "React", "TypeScript"],
         }
         response = client.put(
-            f"/api/v1/experience/{test_experience["id"]}",
+            f"/api/v1/experience/{test_experience['id']}",
             json=update_data,
             headers=admin_auth_headers,
         )
@@ -173,7 +173,7 @@ class TestExperienceAdminAPI:
         """Test updating an experience entry without admin privileges"""
         update_data = {"title": "Updated Title"}
         response = client.put(
-            f"/api/v1/experience/{test_experience["id"]}",
+            f"/api/v1/experience/{test_experience['id']}",
             json=update_data,
             headers=auth_headers,
         )
@@ -200,13 +200,13 @@ class TestExperienceAdminAPI:
     ):
         """Test soft deleting an experience entry as admin"""
         response = client.delete(
-            f"/api/v1/experience/{test_experience["id"]}", headers=admin_auth_headers
+            f"/api/v1/experience/{test_experience['id']}", headers=admin_auth_headers
         )
         assert response.status_code == 200
         assert "deleted successfully" in response.json()["message"]
 
         # Verify experience entry is no longer accessible via public endpoint
-        get_response = client.get(f"/api/v1/experience/{test_experience["id"]}")
+        get_response = client.get(f"/api/v1/experience/{test_experience['id']}")
         assert get_response.status_code == 404
 
     @pytest.mark.api
@@ -216,7 +216,7 @@ class TestExperienceAdminAPI:
     ):
         """Test deleting an experience entry without admin privileges"""
         response = client.delete(
-            f"/api/v1/experience/{test_experience["id"]}", headers=auth_headers
+            f"/api/v1/experience/{test_experience['id']}", headers=auth_headers
         )
         assert response.status_code == 403
         assert "Not enough permissions" in response.json()["detail"]
@@ -315,7 +315,7 @@ class TestExperienceAPIValidation:
         # Test setting end date
         update_data = {"end_date": "2024-12-31"}
         response = client.put(
-            f"/api/v1/experience/{test_experience["id"]}",
+            f"/api/v1/experience/{test_experience['id']}",
             json=update_data,
             headers=admin_auth_headers,
         )
@@ -326,7 +326,7 @@ class TestExperienceAPIValidation:
         # Test clearing end date (making it current)
         update_data = {"end_date": None}
         response = client.put(
-            f"/api/v1/experience/{test_experience["id"]}",
+            f"/api/v1/experience/{test_experience['id']}",
             json=update_data,
             headers=admin_auth_headers,
         )

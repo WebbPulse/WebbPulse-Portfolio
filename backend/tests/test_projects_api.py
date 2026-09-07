@@ -42,7 +42,7 @@ class TestProjectsAPI:
     @pytest.mark.api
     def test_get_single_project(self, client: TestClient, test_project):
         """Test getting a single project by ID"""
-        response = client.get(f"/api/v1/projects/{test_project["id"]}")
+        response = client.get(f"/api/v1/projects/{test_project['id']}")
         assert response.status_code == 200
         data = response.json()
         assert data["title"] == test_project["title"]
@@ -132,7 +132,7 @@ class TestProjectsAdminAPI:
             "technologies": ["Python", "FastAPI", "React", "TypeScript"],
         }
         response = client.put(
-            f"/api/v1/projects/{test_project["id"]}",
+            f"/api/v1/projects/{test_project['id']}",
             json=update_data,
             headers=admin_auth_headers,
         )
@@ -150,7 +150,7 @@ class TestProjectsAdminAPI:
         """Test updating a project without admin privileges"""
         update_data = {"title": "Updated Title"}
         response = client.put(
-            f"/api/v1/projects/{test_project["id"]}",
+            f"/api/v1/projects/{test_project['id']}",
             json=update_data,
             headers=auth_headers,
         )
@@ -175,13 +175,13 @@ class TestProjectsAdminAPI:
     ):
         """Test soft deleting a project as admin"""
         response = client.delete(
-            f"/api/v1/projects/{test_project["id"]}", headers=admin_auth_headers
+            f"/api/v1/projects/{test_project['id']}", headers=admin_auth_headers
         )
         assert response.status_code == 200
         assert "deleted successfully" in response.json()["message"]
 
         # Verify project is no longer accessible via public endpoint
-        get_response = client.get(f"/api/v1/projects/{test_project["id"]}")
+        get_response = client.get(f"/api/v1/projects/{test_project['id']}")
         assert get_response.status_code == 404
 
     @pytest.mark.api
@@ -191,7 +191,7 @@ class TestProjectsAdminAPI:
     ):
         """Test deleting a project without admin privileges"""
         response = client.delete(
-            f"/api/v1/projects/{test_project["id"]}", headers=auth_headers
+            f"/api/v1/projects/{test_project['id']}", headers=auth_headers
         )
         assert response.status_code == 403
         assert "Not enough permissions" in response.json()["detail"]

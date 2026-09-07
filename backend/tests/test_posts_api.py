@@ -34,7 +34,7 @@ class TestPostsAPI:
         self, client: TestClient, test_post, test_category
     ):
         """Test getting posts filtered by category"""
-        response = client.get(f"/api/v1/posts/?category_slug={test_category["slug"]}")
+        response = client.get(f"/api/v1/posts/?category_slug={test_category['slug']}")
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
@@ -46,7 +46,7 @@ class TestPostsAPI:
         self, client: TestClient, test_post, test_category
     ):
         """Test getting posts by category using dedicated endpoint"""
-        response = client.get(f"/api/v1/posts/category/{test_category["slug"]}")
+        response = client.get(f"/api/v1/posts/category/{test_category['slug']}")
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
@@ -56,7 +56,7 @@ class TestPostsAPI:
     @pytest.mark.api
     def test_get_single_post(self, client: TestClient, test_post):
         """Test getting a single post by slug"""
-        response = client.get(f"/api/v1/posts/{test_post["slug"]}")
+        response = client.get(f"/api/v1/posts/{test_post['slug']}")
         assert response.status_code == 200
         data = response.json()
         assert data["title"] == test_post["title"]
@@ -73,7 +73,7 @@ class TestPostsAPI:
     @pytest.mark.api
     def test_get_draft_post_public_fails(self, client: TestClient, test_draft_post):
         """Test that draft posts are not accessible via public endpoint"""
-        response = client.get(f"/api/v1/posts/{test_draft_post["slug"]}")
+        response = client.get(f"/api/v1/posts/{test_draft_post['slug']}")
         assert response.status_code == 404
         assert "Post not found" in response.json()["detail"]
 
@@ -202,7 +202,7 @@ class TestPostsAdminAPI:
             "excerpt": "Updated excerpt",
         }
         response = client.put(
-            f"/api/v1/posts/admin/{test_post["id"]}",
+            f"/api/v1/posts/admin/{test_post['id']}",
             json=update_data,
             headers=admin_auth_headers,
         )
@@ -228,13 +228,13 @@ class TestPostsAdminAPI:
     def test_delete_post_admin(self, client: TestClient, admin_auth_headers, test_post):
         """Test deleting a post as admin"""
         response = client.delete(
-            f"/api/v1/posts/admin/{test_post["id"]}", headers=admin_auth_headers
+            f"/api/v1/posts/admin/{test_post['id']}", headers=admin_auth_headers
         )
         assert response.status_code == 200
         assert "deleted successfully" in response.json()["message"]
 
         # Verify post is deleted
-        get_response = client.get(f"/api/v1/posts/{test_post["slug"]}")
+        get_response = client.get(f"/api/v1/posts/{test_post['slug']}")
         assert get_response.status_code == 404
 
     @pytest.mark.api
@@ -252,14 +252,14 @@ class TestPostsAdminAPI:
     ):
         """Test publishing a draft post as admin"""
         response = client.post(
-            f"/api/v1/posts/admin/{test_draft_post["id"]}/publish",
+            f"/api/v1/posts/admin/{test_draft_post['id']}/publish",
             headers=admin_auth_headers,
         )
         assert response.status_code == 200
         assert "published successfully" in response.json()["message"]
 
         # Verify post is now published
-        get_response = client.get(f"/api/v1/posts/{test_draft_post["slug"]}")
+        get_response = client.get(f"/api/v1/posts/{test_draft_post['slug']}")
         assert get_response.status_code == 200
 
     @pytest.mark.api
@@ -269,7 +269,7 @@ class TestPostsAdminAPI:
     ):
         """Test publishing a post that's already published"""
         response = client.post(
-            f"/api/v1/posts/admin/{test_post["id"]}/publish", headers=admin_auth_headers
+            f"/api/v1/posts/admin/{test_post['id']}/publish", headers=admin_auth_headers
         )
         assert response.status_code == 400
         assert "already published" in response.json()["detail"]
@@ -339,7 +339,7 @@ class TestCategoriesAdminAPI:
             "description": "Updated category description",
         }
         response = client.put(
-            f"/api/v1/posts/categories/{test_category["id"]}",
+            f"/api/v1/posts/categories/{test_category['id']}",
             json=update_data,
             headers=admin_auth_headers,
         )
@@ -355,7 +355,7 @@ class TestCategoriesAdminAPI:
     ):
         """Test deleting a category as admin"""
         response = client.delete(
-            f"/api/v1/posts/categories/{test_category["id"]}",
+            f"/api/v1/posts/categories/{test_category['id']}",
             headers=admin_auth_headers,
         )
         assert response.status_code == 200
@@ -368,7 +368,7 @@ class TestCategoriesAdminAPI:
     ):
         """Test deleting a category that has posts (should fail)"""
         response = client.delete(
-            f"/api/v1/posts/categories/{test_category["id"]}",
+            f"/api/v1/posts/categories/{test_category['id']}",
             headers=admin_auth_headers,
         )
         assert response.status_code == 400

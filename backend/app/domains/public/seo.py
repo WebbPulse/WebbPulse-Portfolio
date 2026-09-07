@@ -49,10 +49,5 @@ async def sitemap() -> Response:
 @router.get("/robots.txt", include_in_schema=False)
 async def robots() -> Response:
     base = settings.SITE_URL.rstrip("/")
-    body = (
-        "User-agent: *\n"
-        "Allow: /\n"
-        "Disallow: /admin\n"
-        f"Sitemap: {base}/sitemap.xml\n"
-    )
+    body = f"User-agent: *\nAllow: /\nDisallow: /admin\nSitemap: {base}/sitemap.xml\n"
     return Response(content=body, media_type="text/plain")

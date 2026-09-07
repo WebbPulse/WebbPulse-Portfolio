@@ -2,7 +2,6 @@ import json
 
 import boto3
 import pytest
-from pydantic import ValidationError
 
 from app import secrets as app_secrets
 from app.config import Settings
@@ -84,16 +83,46 @@ def test_environment_fills_only_the_keys_the_secret_omits(
 
 
 @pytest.mark.unit
-def test_missing_keys_fail_fast(clear_secret_env, monkeypatch):
-    """A blob missing keys fails as missing settings, with every unset field
-    named."""
+def test_missing_keys_fail_when_required_not_when_constructed(
+    clear_secret_env, monkeypatch
+):
+    """PR 4 moved this failure from construction to the point of use.
+
+    The class this replaces raised here, at `Settings(...)`, which made
+    importing anything under `app/` fail without secrets. That is what the
+    `public` function must not do: it holds no Secrets Manager permission at
+    all, so an import-time read would fail every cold start before a single
+    route was reached. The message is unchanged and still names every unset
+    field, it is just raised by `require_secrets` instead.
+    """
     arn = create_app_secret("webbpulse-empty/app", {"SECRET_KEY": "sm-secret"})
     monkeypatch.setenv("APP_SECRETS_ARN", arn)
-    with pytest.raises(ValidationError) as excinfo:
-        Settings(_env_file=None)
+
+    settings = Settings(_env_file=None)
+    assert settings.SECRET_KEY == "sm-secret"
+
+    with pytest.raises(ValueError) as excinfo:
+        settings.require_secrets()
     message = str(excinfo.value)
     assert "ADMIN_USERNAME" in message and "ADMIN_EMAIL" in message
     assert "SECRET_KEY" not in message
+
+
+@pytest.mark.unit
+def test_require_secrets_passes_when_the_named_fields_resolve(
+    clear_secret_env, monkeypatch
+):
+    """A domain names only the secrets it needs, and a partial blob suffices.
+
+    `resume` and `content` need the signing key and nothing else, so a secret
+    carrying only `SECRET_KEY` has to satisfy them. Requiring all four would
+    put the admin credentials in the read path of two functions that never
+    authenticate anyone.
+    """
+    arn = create_app_secret("webbpulse-partial-require/app", {"SECRET_KEY": "sm"})
+    monkeypatch.setenv("APP_SECRETS_ARN", arn)
+    settings = Settings(_env_file=None)
+    settings.require_secrets("SECRET_KEY")
 
 
 @pytest.mark.unit
@@ -101,19 +130,41 @@ def test_unreadable_secret_raises_rather_than_reporting_missing(
     clear_secret_env, monkeypatch
 ):
     """An ARN pointing at a secret that is not there is a misconfiguration and
-    must surface as itself, not as a vague 'missing setting'."""
+    must surface as itself, not as a vague 'missing setting'.
+
+    It now surfaces on the first read of a secret field rather than at
+    construction, because that is where the blob is fetched. The distinction
+    that matters is unchanged: a bad ARN raises the boto3 error, so it reads as
+    the misconfiguration it is instead of as four fields that happen to be
+    unset.
+    """
     monkeypatch.setenv("APP_SECRETS_ARN", MISSING_SECRET_ARN)
+    settings = Settings(_env_file=None)
     with pytest.raises(Exception) as excinfo:
-        Settings(_env_file=None)
+        settings.SECRET_KEY
     raised = f"{type(excinfo.value).__name__} {excinfo.value}"
     assert "ResourceNotFound" in raised
 
 
 @pytest.mark.unit
-def test_missing_secrets_without_arn_fail_fast(clear_secret_env, monkeypatch):
+def test_settings_construct_with_no_arn_and_no_environment(
+    clear_secret_env, monkeypatch
+):
+    """The property every domain image's cold start depends on.
+
+    With no `APP_SECRETS_ARN` and no secret in the environment, constructing
+    settings must succeed and reading a secret must return `None` rather than
+    calling AWS. `tests/entrypoints/test_entrypoint_isolation.py` asserts the
+    same thing end to end, by building each application under `env -i`.
+    """
     monkeypatch.delenv("APP_SECRETS_ARN", raising=False)
-    with pytest.raises(ValidationError):
-        Settings(_env_file=None)
+    settings = Settings(_env_file=None)
+    assert settings.SECRET_KEY is None
+    assert settings.ADMIN_USERNAME is None
+
+    with pytest.raises(ValueError) as excinfo:
+        settings.require_secrets("SECRET_KEY")
+    assert "SECRET_KEY" in str(excinfo.value)
 
 
 @pytest.mark.unit

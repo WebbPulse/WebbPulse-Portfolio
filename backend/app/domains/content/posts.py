@@ -9,9 +9,8 @@ from ...db import ordering
 from ...db.repository import UniqueViolation
 from .repository import categories, posts
 from .schemas import Category as CategorySchema
-from .schemas import CategoryCreate, CategoryUpdate
+from .schemas import CategoryCreate, CategoryUpdate, PostCreate, PostList, PostUpdate
 from .schemas import Post as PostSchema
-from .schemas import PostCreate, PostList, PostUpdate
 
 router = APIRouter()
 
