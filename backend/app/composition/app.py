@@ -48,7 +48,12 @@ from typing import TYPE_CHECKING
 
 from webbpulse.http import create_app
 
-from ..core.middleware import SeedMiddleware, TrailingSlashMiddleware
+from ..core.middleware import (
+    MONOLITH_DOMAIN,
+    DomainHeaderMiddleware,
+    SeedMiddleware,
+    TrailingSlashMiddleware,
+)
 from ..version import VERSION
 from .settings import Settings, get_settings
 from .wiring import DOMAINS
@@ -88,6 +93,11 @@ def build_app(settings: Settings | None = None) -> "FastAPI":
 
     app.add_middleware(SeedMiddleware)
     app.add_middleware(TrailingSlashMiddleware, router=app.router)
+    # Root A is every domain in one process, so no single domain name is true of
+    # it. It reports `monolith`, which is also what the deployed monolith
+    # reports, and that is the value section 6's verification treats as "this
+    # route has not been cut over yet".
+    app.add_middleware(DomainHeaderMiddleware, domain=MONOLITH_DOMAIN)
     return app
 
 

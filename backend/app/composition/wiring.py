@@ -173,7 +173,7 @@ def build_domain_app(
     # `identity` into every entrypoint and undo the whole point of the split:
     # the `public` image would carry `content`'s modules and pay their import
     # at every cold start.
-    from ..core.middleware import TrailingSlashMiddleware
+    from ..core.middleware import DomainHeaderMiddleware, TrailingSlashMiddleware
 
     if isinstance(domain, str):
         domain = DOMAINS[domain]
@@ -205,4 +205,9 @@ def build_domain_app(
 
         app.add_middleware(SeedMiddleware)
     app.add_middleware(TrailingSlashMiddleware, router=app.router)
+    # Outermost, so the header is on the response whatever the inner stack did
+    # with it, error envelopes included. The value is this domain's name, which
+    # is what lets a caller tell a flipped route from one still falling through
+    # to the monolith on $default.
+    app.add_middleware(DomainHeaderMiddleware, domain=domain.name)
     return app
