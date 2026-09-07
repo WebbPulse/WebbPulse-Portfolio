@@ -45,17 +45,16 @@ jobs:
   # repository in the Artifacts account, and CodeArtifact read.
   #
   # Gated on `BACKEND_IMAGE_BUILD_ENABLED` as well as the existing deploy gate.
-  # `container-image.yml@v1` cannot build this Dockerfile yet: it has no BuildKit
-  # secret input for the CodeArtifact token, no CodeArtifact login, and its ECR
-  # login covers only the caller's own account, so the shared base image in the
-  # Artifacts account cannot be pulled. All three are recorded in
-  # `docs/migration/container-image-workflow-gaps.md` and all three belong in the
-  # org workflow rather than in a fork of it here.
+  # `container-image.yml@v1` now resolves to v1.2.0, which ships the three inputs
+  # this Dockerfile needs: the CodeArtifact token as a BuildKit secret, the
+  # CodeArtifact login that mints it, and an ECR login covering the Artifacts
+  # account so the shared base image the `FROM` pins can be pulled. It also
+  # guards the IMMUTABLE tag and uploads a per leg manifest artifact. See
+  # `docs/migration/container-image-workflow-gaps.md` for what each one closed.
   #
-  # The variable exists so that landing the caller does not turn every staging
-  # deploy red while that work happens. Set it to "true" once the org workflow
-  # ships the three inputs, and this job starts building without another change
-  # to this file.
+  # The gate variable stays so the first enabled run is a deliberate act rather
+  # than a side effect of a merge. Setting it to "true" is the whole of the
+  # remaining change here.
   build-images:
     if: >-
       (github.ref_name == 'main' || vars.STAGING_DEPLOY_ENABLED == 'true')
@@ -100,33 +99,100 @@ jobs:
       build-args: |
         DOMAIN=${{ matrix.domain }}
         READINESS_PROTOCOL=${{ matrix.domain == 'public' && 'tcp' || 'http' }}
+      # The token is minted after the credentials step and handed to buildx as a
+      # BuildKit secret named `codeartifact_token`, which is the id the
+      # Dockerfile's `RUN --mount=type=secret,id=codeartifact_token` reads. The
+      # default `codeartifact-secret-id` already spells that, so it is not
+      # repeated here. It is never a build arg: a build arg lands in
+      # `docker history` and is readable by anyone who can pull the image.
+      codeartifact-domain: webbpulse
+      codeartifact-domain-owner: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
+      codeartifact-repository: python
+      # The Artifacts account. The Dockerfile's `FROM` pins the shared
+      # `webbpulse/python-lambda-base` image there by digest, and without a
+      # Docker credential for that host the pull fails with a 401 that looks
+      # nothing like the IAM grant it is not missing. The caller's own account is
+      # added by the reusable workflow, so only the second one is named.
+      additional-ecr-registries: "432410731887"
+      # One JSON manifest per matrix leg, named `image-*`, because a matrix of
+      # reusable workflow calls collapses to a single `needs` entry whose
+      # `outputs` hold whichever leg finished last. The artifacts are how
+      # `image-map` below reads all four digests back.
+      upload-manifest-artifact: true
     secrets:
       role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
 
   # The digest pinned URIs, collected into the one JSON object PR 10 hands to
-  # `lambda-image-deploy.yml` as `function-image-map`. It is written to the job
-  # summary rather than passed anywhere, because nothing consumes it yet; making
-  # it visible now is what lets PR 10 be a small change instead of a leap.
+  # `lambda-image-deploy.yml` as `function-image-map`. Written to the job summary
+  # so it is visible on every run, and uploaded as the `function-image-map`
+  # artifact so PR 10 can consume it without re-deriving anything.
   #
-  # Keyed by function name, `webbpulse-<env>-<domain>`, matching
-  # `terraform/lambda.tf`'s naming. `always()` so a partial matrix still reports
-  # the domains that did build.
+  # Keyed by function name. PR 9 has not landed on `staging` yet, so
+  # `terraform/lambda.tf` still declares only the monolith `${local.prefix}-api`.
+  # The names below are the ones `docs/migration/pilot-split-plan.md` section 3.3
+  # specifies for the split: `function_name = "${local.prefix}-${each.key}"`,
+  # which is `webbpulse-<env>-<domain>`. Once PR 9 lands, that is what Terraform
+  # creates, so the key needs no change.
+  #
+  # `always()` so a partial matrix still reports the domains that did build: the
+  # download picks up whatever artifacts the successful legs uploaded, and a
+  # missing domain is a missing key rather than a failed job.
   image-map:
     needs: build-images
     if: always() && needs.build-images.result != 'skipped'
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    outputs:
+      function-image-map: ${{ steps.map.outputs.function-image-map }}
     steps:
-      # A matrix of reusable workflow calls collapses to a single `needs` entry
-      # whose `outputs` hold only the last job to finish, so the four URIs cannot
-      # be read back from `needs`. Rebuilding them from the digest is not
-      # possible either. Until the map is actually consumed, the tag is the
-      # stable identifier: it is `sha-<full sha>` for every domain, it is
-      # immutable, and `PR 10` resolves it to a digest at deploy time.
-      - name: Write the image map to the summary
+      # `merge-multiple: true` lands one JSON file per leg in `manifests/`
+      # without a per artifact subdirectory. Each file is named after its
+      # artifact, `image-<sanitised repository>-<tag>.json`, so the four cannot
+      # collide. Pinned to the same major the org workflow pins its
+      # `actions/upload-artifact` to, since the two halves share a format.
+      #
+      # `continue-on-error` because this job runs under `always()`: if every
+      # matrix leg failed there are no `image-*` artifacts at all, and the
+      # download errors on finding nothing. The right outcome then is an empty
+      # map and a summary saying so, not a second red job restating what
+      # `build-images` already reported.
+      - name: Download the per-domain image manifests
+        continue-on-error: true
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          path: manifests
+          pattern: image-*
+          merge-multiple: true
+
+      - name: Assemble the function image map
+        id: map
         env:
           ENVIRONMENT: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+        run: |
+          set -euo pipefail
+          mkdir -p manifests
+          python3 - <<'PY' > function-image-map.json
+          import json, os, pathlib
+
+          env = os.environ["ENVIRONMENT"]
+          out = {}
+          for path in sorted(pathlib.Path("manifests").glob("*.json")):
+              manifest = json.loads(path.read_text())
+              # "webbpulse-staging/content" -> "content"
+              domain = manifest["repository"].rsplit("/", 1)[-1]
+              out[f"webbpulse-{env}-{domain}"] = manifest["image_uri"]
+          print(json.dumps(out, indent=2))
+          PY
+          cat function-image-map.json
+
+          # The step output is the compact form, because it is a workflow output
+          # rather than something a person reads.
+          MAP=$(python3 -c 'import json,sys; print(json.dumps(json.load(open("function-image-map.json"))))')
+          echo "function-image-map=${MAP}" >> "$GITHUB_OUTPUT"
+
+      - name: Write the image map to the summary
+        env:
           RESULT: ${{ needs.build-images.result }}
         run: |
           set -euo pipefail
@@ -136,30 +202,25 @@ jobs:
             echo "Matrix result: \`${RESULT}\`. Tag: \`sha-${GITHUB_SHA}\`."
             echo
             echo "The map PR 10 passes to \`lambda-image-deploy.yml\` as"
-            echo "\`function-image-map\`, once the functions exist:"
+            echo "\`function-image-map\`, once the functions exist. Every value is"
+            echo "pinned by digest, not by tag."
             echo
             echo '```json'
-            python3 - <<'EOF'
-          import json, os
-
-          env = os.environ["ENVIRONMENT"]
-          sha = os.environ["GITHUB_SHA"]
-          domains = ["content", "resume", "identity", "public"]
-          print(
-              json.dumps(
-                  {
-                      f"webbpulse-{env}-{d}": f"webbpulse-{env}/{d}:sha-{sha}"
-                      for d in domains
-                  },
-                  indent=2,
-              )
-          )
-          EOF
+            cat function-image-map.json
             echo '```'
-            echo
-            echo "The registry host is deliberately absent: it is this account's"
-            echo "own, resolved at deploy time, so no account id is written down."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # Uploaded so PR 10 can read the map from a prior job rather than rebuild
+      # it. The name is fixed, not `image-*`, so the download above never picks
+      # its own output up on a rerun.
+      - name: Upload the function image map
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: function-image-map
+          path: function-image-map.json
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
 
   # Unchanged. The monolith zip deploy is what serves traffic, and it must not
   # gain a dependency on the image build: no `needs`, no shared step.
