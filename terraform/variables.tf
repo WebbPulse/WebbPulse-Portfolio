@@ -64,3 +64,21 @@ variable "staging_access_users" {
   type        = list(string)
   default     = []
 }
+
+variable "admin_username" {
+  description = "Username of the seeded admin user, delivered into the webbpulse-<env>/app secret. Set as a sensitive workspace variable in HCP Terraform; there is no default, so a workspace that has not been given one fails to plan rather than seeding a guessable account."
+  type        = string
+  sensitive   = true
+}
+
+variable "admin_password" {
+  description = "Password of the seeded admin user, delivered into the webbpulse-<env>/app secret. Set as a sensitive workspace variable in HCP Terraform; there is no default, so a workspace that has not been given one fails to plan rather than seeding a guessable account."
+  type        = string
+  sensitive   = true
+}
+
+variable "admin_email" {
+  description = "Email address of the seeded admin user, delivered into the webbpulse-<env>/app secret. Set as a sensitive workspace variable in HCP Terraform; there is no default, so a workspace that has not been given one fails to plan rather than seeding a guessable account."
+  type        = string
+  sensitive   = true
+}

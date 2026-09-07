@@ -4,16 +4,43 @@
 # across and the backend switched over; the parameters and their IAM grant are
 # gone.
 #
-# secret-key carries the generator itself: random_password.secret_key lives in
-# the module, so the signing key that was generated before the move survives and
-# live sessions were never invalidated.
+# The estate is moving to one secret per service per environment: webbpulse-<env>/app,
+# a single JSON object the Lambda reads once at cold start through APP_SECRETS_ARN.
+# This change adds that secret alongside the four per-key secrets it replaces. The
+# old four stay until the backend reads the new one, so a rollback is a redeploy
+# rather than a restore; a later change removes them.
 #
-# The three admin credentials stay operator-owned. They are seeded once with a
-# placeholder and carry ignore_changes on the stored value, so Terraform never
-# learns the real values and never plans them back. That is why they are three
-# secrets rather than one JSON blob: the json shape would put every value in
-# state, and ignore_changes cannot cover a subset of one blob.
+# The signing key is not a variable. random_password.secret_key generates it and
+# keeps generating the same value, so the key that has been signing sessions
+# since before any of this survives and nobody is logged out. It moves back out
+# of the module here because the module's generated value can only reach its own
+# secret, and the JSON blob needs it too.
+#
+# The three admin credentials become sensitive workspace variables. They were
+# placeholders populated out of band, which was the right shape while Terraform
+# had to stay ignorant of them, but a JSON blob cannot carry ignore_changes on a
+# subset of its keys. A sensitive variable keeps them out of the plan text and
+# out of every log, and puts the values where an operator can rotate them.
 # ---------------------------------------------------------------------------
+
+# Arguments match the module's random_password exactly, so moving the generator
+# out of the module changes no attribute and regenerates nothing.
+resource "random_password" "secret_key" {
+  length           = 64
+  special          = true
+  override_special = null
+  min_special      = 0
+  min_numeric      = 0
+  min_upper        = 0
+  min_lower        = 0
+}
+
+# Load-bearing: without this Terraform destroys the generator and creates a new
+# one, which regenerates the signing key and logs every session out.
+moved {
+  from = module.app_secrets.random_password.this["secret-key"]
+  to   = random_password.secret_key
+}
 
 module "app_secrets" {
   source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/app-secrets"
@@ -22,14 +49,30 @@ module "app_secrets" {
   name_prefix = local.prefix
 
   secrets = {
-    "secret-key" = {
-      description     = "JWT signing key for the FastAPI backend"
-      generate        = true
-      generate_length = 64
+    # The one secret the backend reads. Its keys are the setting names the
+    # application already uses, so there is no mapping to keep in step.
+    "app" = {
+      description = "JSON map of runtime secrets read by the Lambda API at cold start"
+      json = {
+        SECRET_KEY     = random_password.secret_key.result
+        ADMIN_USERNAME = var.admin_username
+        ADMIN_PASSWORD = var.admin_password
+        ADMIN_EMAIL    = var.admin_email
+      }
     }
 
-    # Admin credentials seeded into the app on startup. Set the values manually
-    # in Secrets Manager after first apply; Terraform ignores later changes.
+    # Superseded by "app" above. Kept until the backend reads the JSON blob, then
+    # removed. Description left exactly as it is so this change does not touch the
+    # secret at all: it no longer generates here, it takes the same generator's
+    # result, so the stored string does not change either.
+    "secret-key" = {
+      description = "JWT signing key for the FastAPI backend"
+      value       = random_password.secret_key.result
+    }
+
+    # Admin credentials seeded into the app on startup. Superseded by "app" above
+    # and removed once the backend reads it. They keep their placeholder shape so
+    # this change does not plan over the values an operator set out of band.
     "admin-username" = {
       description = "Username of the seeded admin user. Populated out of band with put-secret-value."
       placeholder = "REPLACE_ME"
