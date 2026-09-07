@@ -9,9 +9,9 @@
 #
 # The signing key is not a variable. random_password.secret_key generates it and
 # keeps generating the same value, so the key that has been signing sessions
-# since before any of this survives and nobody is logged out. It lives outside
-# the module because a value generated inside it can only reach its own secret,
-# and the JSON blob needs it.
+# since before any of this is still the one in use. It lives outside the module
+# because a value generated inside it can only reach its own secret, and the
+# JSON blob needs it.
 #
 # The three admin credentials are sensitive workspace variables. They were
 # placeholders populated out of band, which was the right shape while Terraform
@@ -20,8 +20,10 @@
 # out of every log, and puts the values where an operator can rotate them.
 # ---------------------------------------------------------------------------
 
-# Arguments match the module's random_password exactly, so the generator that
-# moved out of the module carries its existing value rather than making a new one.
+# The generator holds the live signing key, so do not change these arguments and
+# do not replace this resource: a new value logs every session out. The explicit
+# defaults are the app-secrets module's own, from when the generator lived inside
+# it, and are spelled out so nobody tidies them into a difference.
 resource "random_password" "secret_key" {
   length           = 64
   special          = true
@@ -30,14 +32,6 @@ resource "random_password" "secret_key" {
   min_numeric      = 0
   min_upper        = 0
   min_lower        = 0
-}
-
-# Load-bearing until it has been applied in both environments: without it
-# Terraform destroys the generator and creates a new one, which regenerates the
-# signing key and logs every session out.
-moved {
-  from = module.app_secrets.random_password.this["secret-key"]
-  to   = random_password.secret_key
 }
 
 module "app_secrets" {
