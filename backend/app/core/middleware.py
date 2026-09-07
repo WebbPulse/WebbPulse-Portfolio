@@ -82,3 +82,54 @@ class RequestLoggingMiddleware:
                 status=status["code"],
                 duration_ms=round((time.perf_counter() - started) * 1000, 2),
             )
+
+
+#: Response header naming the application that served the request. Section 6 of
+#: docs/migration/pilot-split-plan.md verifies a route flip by confirming the
+#: request reached the new function rather than falling through to $default on
+#: the monolith, and the access log's routeKey answers that only for someone who
+#: can read CloudWatch. This header answers it from the response itself, which is
+#: what scripts/verify_route_cut.sh asserts on.
+DOMAIN_HEADER = "x-webbpulse-domain"
+
+#: The value both whole-surface roots report: `app.main`, which is the
+#: deployed monolith, and `app.composition.app`, which is the same surface
+#: built from the domain routers. Neither is one of the four domain names,
+#: and seeing it on a path that was supposed to be cut over is exactly the
+#: signal section 6 is looking for: the request fell through to $default.
+MONOLITH_DOMAIN = "monolith"
+
+
+class DomainHeaderMiddleware:
+    """Stamp every response with the name of the application that produced it.
+
+    The value is the domain name for a per-domain function (`public`, `resume`,
+    `content`, `identity`) and `monolith` for root A and `app.main`, so a
+    response tells you which of the five functions served it without reading a
+    log group. During the strangler that is the difference between a route flip
+    that worked and one that silently did nothing.
+
+    Written on `http.response.start`, so it lands on every response including
+    the error envelopes, and it is a pure ASGI middleware for the same reason
+    the others here are: it has to sit inside whatever `create_app` installed.
+    """
+
+    def __init__(self, app, domain: str):
+        self.app = app
+        self.value = domain.encode("latin-1")
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                headers = message.setdefault("headers", [])
+                # A list of (name, value) byte pairs, lowercase by convention.
+                # Appending rather than replacing is safe here because nothing
+                # else in the stack sets this name.
+                headers.append((DOMAIN_HEADER.encode("latin-1"), self.value))
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
