@@ -133,6 +133,15 @@ module "github_actions_role" {
         [for name in sort(keys(local.lambda_domains)) : module.lambda_domain[name].function_arn],
       )
     },
+    # Lambda: invoke the four domain functions directly for the post deploy
+    # smoke probes. They have no API Gateway route until the cutover PRs, so
+    # the only way to prove a freshly shipped image answers is an Invoke with a
+    # synthetic HTTP API event. The monolith is deliberately excluded: its
+    # probe goes through the public /health URL as before.
+    {
+      actions   = ["lambda:InvokeFunction"]
+      resources = [for name in sort(keys(local.lambda_domains)) : module.lambda_domain[name].function_arn]
+    },
     # S3: upload the Lambda deployment package
     {
       actions   = ["s3:PutObject", "s3:GetObject", "s3:ListBucket"]
