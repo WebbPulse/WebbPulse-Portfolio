@@ -1,0 +1,30 @@
+# Dependabot targets staging, never main: every push to main deploys to
+# production, and the release flow is staging first, then a promotion PR.
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/backend"
+    target-branch: "staging"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    target-branch: "staging"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "staging"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "docker"
+    directory: "/backend"
+    target-branch: "staging"
+    schedule:
+      interval: "weekly"
