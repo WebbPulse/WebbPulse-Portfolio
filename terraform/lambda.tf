@@ -63,7 +63,7 @@ data "archive_file" "lambda_placeholder" {
 
 module "lambda_api" {
   source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/lambda-function"
-  version = "~> 1.6"
+  version = "~> 1.8"
 
   function_name = local.lambda_function_name
   role_name     = "${local.prefix}-api-lambda"
@@ -97,6 +97,11 @@ module "lambda_api" {
   log_retention_days           = 30
   log_format                   = "Text"
   set_logging_config_log_group = true
+
+  # aws_iam_role_policy.lambda_api below already grants xray:PutTraceSegments
+  # and xray:PutTelemetryRecords, so the module's own inline policy would be
+  # redundant. Turning it off keeps this adoption a zero diff change.
+  attach_xray_write_policy = false
 }
 
 resource "aws_iam_role_policy" "lambda_api" {
