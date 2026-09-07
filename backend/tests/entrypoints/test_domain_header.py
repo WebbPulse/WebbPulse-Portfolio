@@ -52,13 +52,13 @@ def _bare_app(domain: str) -> Starlette:
     handlers turning the exception into a 500 before the middleware sees it.
     """
 
-    async def ok(request):
+    async def ok(_request):
         return PlainTextResponse("ok")
 
-    async def boom(request):
+    async def boom(_request):
         raise RuntimeError("boom")
 
-    async def down(request):
+    async def down(_request):
         raise HTTPException(status_code=503, detail="down")
 
     app = Starlette(
@@ -116,29 +116,37 @@ def test_the_header_is_set_exactly_once():
     assert values == ["public"]
 
 
-def test_header_is_not_set_on_a_non_http_scope():
-    """A websocket scope passes straight through.
+def test_a_non_http_scope_passes_straight_through():
+    """A lifespan scope reaches the inner application untouched.
 
     The middleware only wraps `send` for `http`, so a lifespan or websocket
-    scope must reach the inner application untouched rather than having a
-    header appended to a message that has no headers.
+    scope must not have a header appended to a message that has no headers.
+
+    Driven through `TestClient`, whose context manager sends the lifespan
+    startup and shutdown messages through the whole stack. Deliberately not
+    `asyncio.run`: that closes its loop and leaves the main thread with no
+    current one, and `tests/test_lambda_handler.py` later calls Mangum, whose
+    `asyncio.get_event_loop()` then raises "There is no current event loop".
+    A test must not leave process-wide state worse than it found it, and this
+    file sorts ahead of that one.
     """
     seen = []
 
     async def inner(scope, receive, send):
         seen.append(scope["type"])
+        if scope["type"] != "lifespan":  # pragma: no cover - defensive
+            return
+        while True:
+            message = await receive()
+            if message["type"] == "lifespan.startup":
+                await send({"type": "lifespan.startup.complete"})
+            elif message["type"] == "lifespan.shutdown":
+                await send({"type": "lifespan.shutdown.complete"})
+                return
 
-    middleware = DomainHeaderMiddleware(inner, domain="public")
+    with TestClient(DomainHeaderMiddleware(inner, domain="public")):
+        pass
 
-    async def receive():  # pragma: no cover - never awaited
-        raise AssertionError("receive should not be called")
-
-    async def send(message):  # pragma: no cover - never awaited
-        raise AssertionError("send should not be called")
-
-    import asyncio
-
-    asyncio.run(middleware({"type": "lifespan"}, receive, send))
     assert seen == ["lifespan"]
 
 
