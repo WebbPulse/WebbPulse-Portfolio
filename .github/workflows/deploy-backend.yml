@@ -1,17 +1,21 @@
-# Deploy Backend: the monolith zip deploy, plus the per-domain container image
-# build that PR 10 will deploy from.
+# Deploy Backend: the monolith zip deploy, and the per-domain container image
+# build and deploy beside it.
 #
-# Two independent jobs. `deploy` is the existing zip pipeline for the monolith
+# Two independent chains. `deploy` is the existing zip pipeline for the monolith
 # and is unchanged: it still builds `function.zip`, waits on HCP Terraform, calls
-# `update-function-code` and smoke tests `/health`. `build-images` is new, builds
-# the four domain images and pushes them to this environment's ECR repositories,
-# and updates no function at all. Nothing depends on anything, on purpose: the
-# monolith is what serves traffic until PR 10 moves a route, so an image build
-# that fails must never hold back or roll back the deploy that does.
+# `update-function-code` and smoke tests `/health`. The image chain is
+# `resolve-env`, `build-images`, `image-map`, `deploy-images`, `smoke-domains`:
+# it builds the four domain images, collects their digest pinned URIs, points the
+# four domain functions at them and probes each one. `deploy` depends on none of
+# it, on purpose: the monolith is what serves traffic until PR 13 moves a route,
+# so an image build or an image deploy that fails must never hold back or roll
+# back the deploy that does.
 #
-# `build-images` is the plan's section 4 "Per-domain jobs", minus the deploy half.
-# The first run on staging should leave four images in ECR and change no
-# behaviour anywhere.
+# Together the image jobs are the plan's section 4 "Per-domain jobs". Two
+# repository variables gate them separately. `BACKEND_IMAGE_BUILD_ENABLED` turns
+# on the build, whose enabled run leaves four images in ECR and changes no
+# behaviour anywhere. `BACKEND_IMAGE_DEPLOY_ENABLED` turns on the deploy, which
+# needs the four functions to exist, so it stays off until PR 9 is applied.
 name: Deploy Backend
 
 on:
@@ -277,6 +281,227 @@ jobs:
           if-no-files-found: error
           retention-days: 7
           overwrite: true
+
+  # The four domain functions, pointed at the images `image-map` just assembled.
+  #
+  # This is the deploy half of the plan's section 4 "Per-domain jobs". It calls
+  # the org reusable workflow rather than running `update-function-code` here,
+  # because that workflow already holds the two things this deploy needs and a
+  # hand written step would have to grow: it waits with `function-updated-v2`
+  # before the update as well as after, and it retries
+  # `ResourceConflictException` with a backoff. Terraform owns the function
+  # configuration in this estate, so an apply in flight when a deploy starts is
+  # the ordinary case rather than the exceptional one, and while
+  # `LastUpdateStatus` is `InProgress` every one of `UpdateFunctionCode`,
+  # `UpdateFunctionConfiguration` and `PublishVersion` fails.
+  #
+  # `function-image-map` goes in as a string input, not as the artifact. The
+  # reusable workflow takes only the string form, and it parses it with
+  # `json.loads` and rejects anything that is not a non empty JSON object, so
+  # the artifact `image-map` uploads stays what it is: a record on the run for a
+  # person to read, and the input comes from the job output.
+  #
+  # `smoke-url` is deliberately not passed. The reusable workflow's smoke test
+  # is a `curl` against one URL, and these four functions have no API Gateway
+  # route yet: nothing reaches them over HTTP until PR 13 through 16 flip the
+  # routes. The probes therefore live in `smoke-domains` below, which invokes
+  # each function directly.
+  deploy-images:
+    needs: [resolve-env, image-map]
+    # `image-map` runs under `always()`, so it succeeds with an empty map when
+    # every matrix leg failed, and its `result` alone would not catch that. The
+    # two string comparisons against `''` and `'{}'` are what make this job skip
+    # cleanly in that case rather than handing the reusable workflow a map it
+    # rejects with a hard failure: it parses the input with `json.loads` and
+    # exits non zero on anything that is not a non empty JSON object. The
+    # comparison is textual because a job level `if` cannot call `fromJSON` on a
+    # value and get an empty-object test out of it any more cheaply.
+    #
+    # The gate variable is checked here rather than only inherited through
+    # `needs`, because the build gate and the deploy gate are separately
+    # settable: the first enabled build run should push four images and update
+    # nothing.
+    if: >-
+      needs.image-map.result == 'success'
+      && vars.BACKEND_IMAGE_DEPLOY_ENABLED == 'true'
+      && needs.image-map.outputs.function-image-map != ''
+      && needs.image-map.outputs.function-image-map != '{}'
+    # A called workflow cannot hold permissions wider than the caller's grant,
+    # and a job level block replaces rather than merges with the top level one.
+    permissions:
+      contents: read
+      id-token: write
+    uses: WebbPulse/.github/.github/workflows/lambda-image-deploy.yml@v1
+    with:
+      # Binds the called job to the GitHub Environment, for the same reason
+      # `build-images` does: the deploy role's trust policy names
+      # `environment:staging` and `environment:production` as the OIDC subject,
+      # and a job that calls a reusable workflow with `uses:` may not carry a
+      # job level `environment:` key.
+      environment: ${{ needs.resolve-env.outputs.name }}
+      aws-region: us-west-2
+      # Every value here is `<registry>/<repository>@sha256:...`, pinned by
+      # digest rather than by tag, and every key is `webbpulse-<env>-<domain>`,
+      # which is the `function_name = "${local.prefix}-${each.key}"` that
+      # `terraform/lambda_domains.tf` gives the four functions. The map is
+      # assembled from the per leg manifests, so a domain whose build failed is
+      # simply absent and the other three still deploy.
+      function-image-map: ${{ needs.image-map.outputs.function-image-map }}
+      # Publish a version per deploy, matching what the monolith's
+      # `update-function-code --publish` already does, so a bad image can be
+      # rolled back to a numbered version rather than to a tag.
+      publish-version: true
+      # Named rather than left to the default, which is the workflow name plus
+      # the ref. Two deploys for the same environment must not overlap, and the
+      # environment is the thing that makes them collide.
+      concurrency-group: backend-image-deploy-${{ needs.resolve-env.outputs.name }}
+    secrets:
+      # From `resolve-env`, not from `vars` directly: this job has no
+      # `environment:` key, so it cannot see an environment scoped variable.
+      role-to-assume: ${{ needs.resolve-env.outputs.role-arn }}
+
+  # One probe per domain, against the function itself.
+  #
+  # The plan's section 4 says the smoke test must probe one path per domain, and
+  # section 6 says a route flip is only verified when the request actually
+  # reaches the new function. Neither is possible over HTTP yet: the four
+  # functions have no API Gateway route until PR 13, so a `curl` at
+  # `api.staging.webbpulse.com` reaches the monolith and passes whether or not
+  # the domain image works at all. That is the false confidence section 4 calls
+  # out by name.
+  #
+  # So the probe is `lambda invoke` with a synthesised API Gateway HTTP API v2
+  # payload. The Lambda Web Adapter reads that payload shape directly: it turns
+  # `rawPath`, `requestContext.http.method` and the headers into an ordinary
+  # HTTP request against `127.0.0.1:$AWS_LWA_PORT` and turns the response back
+  # into the `{statusCode, headers, body}` object this step asserts on. Invoking
+  # the function is therefore the same code path a real request takes once the
+  # route exists, minus the gateway.
+  #
+  # `GET /health` is the route for all four. `backend/app/composition/wiring.py`
+  # gives the three API domains the liveness only `/health` that `create_app`
+  # adds, and leaves `public` its own database reading one, so every function
+  # serves the path and none of them needs a credential, a body or a path
+  # parameter to answer it. It is also the path `AWS_LWA_READINESS_CHECK_PATH`
+  # names, so a function that fails this probe would never have passed its own
+  # readiness check either.
+  #
+  # A `public` probe that returns 200 additionally proves the least privilege
+  # claim the whole split rests on: `public` has read only DynamoDB and no
+  # Secrets Manager access at all, and its `/health` reads the site-content
+  # singleton, so a 200 there means the narrow role is sufficient.
+  smoke-domains:
+    needs: [resolve-env, image-map, deploy-images]
+    if: needs.deploy-images.result == 'success'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-env.outputs.name }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        with:
+          role-to-assume: ${{ needs.resolve-env.outputs.role-arn }}
+          aws-region: us-west-2
+
+      # One loop rather than four near identical steps: the four probes differ
+      # only in the function name, and a loop keeps the assertion in one place.
+      # The loop does not stop at the first failure, so a run reports every
+      # broken domain rather than only the first alphabetically.
+      - name: Probe each domain function
+        env:
+          ENVIRONMENT: ${{ needs.resolve-env.outputs.name }}
+          FUNCTION_IMAGE_MAP: ${{ needs.image-map.outputs.function-image-map }}
+        run: |
+          set -euo pipefail
+
+          # The payload the Web Adapter expects. `version: "2.0"` is what
+          # selects the HTTP API format; the adapter ignores an unknown shape
+          # and the invoke then returns a 500 that looks like an application
+          # error rather than a malformed event.
+          cat > event.json <<'JSON'
+          {
+            "version": "2.0",
+            "routeKey": "GET /health",
+            "rawPath": "/health",
+            "rawQueryString": "",
+            "headers": {
+              "accept": "application/json",
+              "host": "smoke.invoke.local",
+              "user-agent": "webbpulse-deploy-smoke"
+            },
+            "requestContext": {
+              "accountId": "anonymous",
+              "apiId": "smoke",
+              "domainName": "smoke.invoke.local",
+              "http": {
+                "method": "GET",
+                "path": "/health",
+                "protocol": "HTTP/1.1",
+                "sourceIp": "127.0.0.1",
+                "userAgent": "webbpulse-deploy-smoke"
+              },
+              "requestId": "smoke",
+              "routeKey": "GET /health",
+              "stage": "$default",
+              "time": "01/Jan/2026:00:00:00 +0000",
+              "timeEpoch": 1767225600000
+            },
+            "isBase64Encoded": false
+          }
+          JSON
+
+          # Probe only the domains the map actually carries. A domain whose
+          # build leg failed was never deployed, so probing it would report a
+          # second failure for the same cause.
+          FUNCTIONS=$(printf '%s' "$FUNCTION_IMAGE_MAP" \
+            | python3 -c 'import json,sys; print("\n".join(sorted(json.load(sys.stdin))))')
+
+          FAILED=0
+          while IFS= read -r FUNCTION; do
+            [ -n "$FUNCTION" ] || continue
+            echo "::group::${FUNCTION} GET /health"
+
+            # A function level error (an unhandled exception, a timeout) sets
+            # FunctionError in the response metadata and still exits zero, so
+            # the metadata is read rather than trusting the exit status.
+            META=$(aws lambda invoke \
+              --function-name "$FUNCTION" \
+              --cli-binary-format raw-in-base64-out \
+              --payload file://event.json \
+              --cli-read-timeout 60 \
+              response.json)
+            echo "$META"
+
+            STATUS=$(python3 -c '
+          import json, sys
+
+          try:
+              payload = json.load(open("response.json"))
+          except (OSError, ValueError):
+              print("unparseable")
+              sys.exit(0)
+          print(payload.get("statusCode", "missing") if isinstance(payload, dict) else "not-an-object")
+          ')
+
+            if [ "$STATUS" = "200" ]; then
+              echo "${FUNCTION} answered GET /health with 200."
+            else
+              echo "${FUNCTION} answered GET /health with ${STATUS}, expected 200."
+              echo "Response payload:"
+              cat response.json
+              echo
+              FAILED=1
+            fi
+            echo "::endgroup::"
+          done <<< "$FUNCTIONS"
+
+          if [ "$FAILED" -ne 0 ]; then
+            echo "One or more domain functions failed the /health probe."
+            exit 1
+          fi
+          echo "All probed domain functions answered GET /health with 200."
 
   # Unchanged. The monolith zip deploy is what serves traffic, and it must not
   # gain a dependency on the image build: no `needs`, no shared step.
