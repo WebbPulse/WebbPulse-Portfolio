@@ -8,7 +8,14 @@ from botocore.exceptions import ClientError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.db.tables import ENTITIES, META, TTL_ATTRIBUTE, table_definition  # noqa: E402
+from app.db.tables import (  # noqa: E402
+    ENTITIES,
+    META,
+    RATE_LIMIT_TTL_ATTRIBUTE,
+    RATE_LIMITS,
+    TTL_ATTRIBUTE,
+    table_definition,
+)
 
 
 def parse_args():
@@ -32,7 +39,7 @@ def create_tables(prefix, endpoint_url, region):
     os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "local")
     client = boto3.client("dynamodb", endpoint_url=endpoint_url, region_name=region)
     created = []
-    for entity in ENTITIES + (META,):
+    for entity in ENTITIES + (META, RATE_LIMITS):
         definition = table_definition(prefix, entity)
         try:
             client.create_table(**definition)
@@ -43,14 +50,21 @@ def create_tables(prefix, endpoint_url, region):
             if error.response["Error"]["Code"] != "ResourceInUseException":
                 raise
             print(f"exists  {definition['TableName']}")
-    meta_table = table_definition(prefix, META)["TableName"]
-    ttl = client.describe_time_to_live(TableName=meta_table)["TimeToLiveDescription"]
-    if ttl.get("TimeToLiveStatus") not in ("ENABLED", "ENABLING"):
-        client.update_time_to_live(
-            TableName=meta_table,
-            TimeToLiveSpecification={"Enabled": True, "AttributeName": TTL_ATTRIBUTE},
-        )
-        print(f"ttl     {meta_table} ({TTL_ATTRIBUTE})")
+    # The two TTL attribute names differ on purpose: `meta` has always used
+    # `ttl`, and `rate-limits` uses the `expires_at` that `webbpulse.ratelimit`
+    # and the Terraform table declaration both name.
+    for entity, attribute in (
+        (META, TTL_ATTRIBUTE),
+        (RATE_LIMITS, RATE_LIMIT_TTL_ATTRIBUTE),
+    ):
+        table = table_definition(prefix, entity)["TableName"]
+        ttl = client.describe_time_to_live(TableName=table)["TimeToLiveDescription"]
+        if ttl.get("TimeToLiveStatus") not in ("ENABLED", "ENABLING"):
+            client.update_time_to_live(
+                TableName=table,
+                TimeToLiveSpecification={"Enabled": True, "AttributeName": attribute},
+            )
+            print(f"ttl     {table} ({attribute})")
     return created
 
 

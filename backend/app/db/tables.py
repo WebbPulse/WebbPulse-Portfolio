@@ -12,9 +12,15 @@ ENTITIES = (
 
 META = "meta"
 
+# The rate limiter's own table. Login throttling used to write LOGIN_FAIL#
+# items into `meta`, which made the id allocator's table shared with a hot,
+# high-churn workload and gave every writing domain a reason to hold write
+# access to it. The limiter items live here instead, keyed and named to match
+# `webbpulse.ratelimit` so PR 4 can swap the package implementation in.
+RATE_LIMITS = "rate-limits"
+
 COUNTER_PREFIX = "COUNTER#"
 UNIQUE_PREFIX = "UNIQUE#"
-LOGIN_FAIL_PREFIX = "LOGIN_FAIL#"
 
 POSTS_PUBLISHED_INDEX = "published-index"
 POSTS_CATEGORY_INDEX = "category-index"
@@ -58,9 +64,9 @@ def _posts_table():
     return spec
 
 
-def _meta_table():
+def _pk_table(name):
     return {
-        "TableName": META,
+        "TableName": name,
         "BillingMode": "PAY_PER_REQUEST",
         "KeySchema": [{"AttributeName": "pk", "KeyType": "HASH"}],
         "AttributeDefinitions": [{"AttributeName": "pk", "AttributeType": "S"}],
@@ -70,10 +76,16 @@ def _meta_table():
 TABLES = {
     **{entity: _entity_table(entity) for entity in ENTITIES if entity != "posts"},
     "posts": _posts_table(),
-    META: _meta_table(),
+    META: _pk_table(META),
+    RATE_LIMITS: _pk_table(RATE_LIMITS),
 }
 
 TTL_ATTRIBUTE = "ttl"
+
+# `webbpulse.ratelimit` names its TTL attribute `expires_at`, not the `ttl` the
+# meta table uses, and the Terraform table declaration follows the package. The
+# two names have to stay distinct while both tables exist.
+RATE_LIMIT_TTL_ATTRIBUTE = "expires_at"
 
 
 def table_name(prefix, entity):

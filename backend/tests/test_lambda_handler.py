@@ -86,6 +86,7 @@ def test_unknown_path_is_404():
 
 @pytest.mark.integration
 def test_login_uses_api_gateway_source_ip(test_admin_user, client):
+    """The limiter keys on the source IP API Gateway observed, through Mangum."""
     from app.config import settings
 
     for _ in range(settings.LOGIN_MAX_FAILURES):
@@ -96,12 +97,7 @@ def test_login_uses_api_gateway_source_ip(test_admin_user, client):
             source_ip="198.51.100.9",
         )
     assert status == 429
-    other = client.post(
-        "/api/v1/admin/login",
-        json={"username": "adminuser", "password": "adminpassword123"},
-        headers={"X-Forwarded-For": "198.51.100.9"},
-    )
-    assert other.status_code == 429
+
     status, body, _ = invoke(
         "POST",
         "/api/v1/admin/login",
@@ -109,6 +105,35 @@ def test_login_uses_api_gateway_source_ip(test_admin_user, client):
         source_ip="198.51.100.10",
     )
     assert status == 200 and body["token_type"] == "bearer"
+
+
+@pytest.mark.integration
+def test_forwarded_for_cannot_claim_another_callers_lockout(test_admin_user, client):
+    """Spoofing `X-Forwarded-For` must neither inherit nor escape a lockout.
+
+    This inverts what the suite used to assert. The old `client_ip` fell through
+    to the leftmost `X-Forwarded-For` hop, so a caller could claim any identity
+    it liked by setting one header. That made the limiter appear to work while
+    an attacker could rotate the header per request and never be throttled.
+    """
+    from app.config import settings
+
+    for _ in range(settings.LOGIN_MAX_FAILURES):
+        invoke(
+            "POST",
+            "/api/v1/admin/login",
+            body={"username": "adminuser", "password": "wrong"},
+            source_ip="198.51.100.9",
+        )
+
+    # The header is ignored, so this request is keyed on the test client's own
+    # peer address, which has no failures recorded against it.
+    spoofed = client.post(
+        "/api/v1/admin/login",
+        json={"username": "adminuser", "password": "adminpassword123"},
+        headers={"X-Forwarded-For": "198.51.100.9"},
+    )
+    assert spoofed.status_code == 200, "the spoofable header must not be read"
 
 
 @pytest.mark.integration
