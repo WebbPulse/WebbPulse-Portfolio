@@ -58,9 +58,9 @@ bash scripts/build_lambda.sh                       # -> backend/dist/function.zi
 
 - **Runtime**: one FastAPI app on a single Lambda (`webbpulse-<env>-api`, Python 3.13, arm64) via Mangum, behind an API Gateway HTTP API (`ANY /{proxy+}`). Handler is `app.lambda_handler.handler`
 - **REST API**: All routes under `/api/v1/` prefix. OpenAPI docs at `/docs`. Ids stay integers and list endpoints keep `skip`/`limit` so the frontend contract is unchanged
-- **Auth**: JWT tokens (HS256, python-jose/bcrypt). Users have an `is_admin` boolean flag. The admin user is seeded from Secrets Manager on cold start
+- **Auth**: JWT tokens (HS256, python-jose/bcrypt). Users have an `is_admin` boolean flag. The admin user is seeded from the `APP_SECRETS_ARN` secret on cold start
 - **Database**: DynamoDB, one table per entity (`webbpulse-<env>-<entity>`: users, categories, posts, projects, experience, skills, education, certifications, site-content, meta). Integer ids come from counter items in `meta`; uniqueness (username, email, slug) is enforced with lookup items inside `TransactWriteItems`. `posts` has `published-index` and `category-index` GSIs
-- **Config**: env vars `DYNAMODB_TABLE_PREFIX`, `SECRETS_PREFIX` (secret key + admin credentials are read from Secrets Manager), `ENVIRONMENT`, `CORS_ORIGINS`, `SITE_URL`, `LOG_LEVEL`; `DYNAMODB_ENDPOINT_URL` points at a local DynamoDB
+- **Config**: env vars `DYNAMODB_TABLE_PREFIX`, `APP_SECRETS_ARN` (signing key + admin credentials come from one JSON secret, `webbpulse-<env>/app`, read at cold start), `ENVIRONMENT`, `CORS_ORIGINS`, `SITE_URL`, `LOG_LEVEL`; `DYNAMODB_ENDPOINT_URL` points at a local DynamoDB
 - **Rate limiting**: API Gateway stage throttling (burst 200, rate 100). There is no in-process limiter
 - **Observability**: aws-lambda-powertools logger, X-Ray active tracing, 30-day CloudWatch log groups for the function and the HTTP API access log
 
@@ -70,7 +70,7 @@ bash scripts/build_lambda.sh                       # -> backend/dist/function.zi
 |---|---|
 | `backend/app/main.py` | FastAPI app entrypoint — CORS, middleware, lifespan hooks |
 | `backend/app/lambda_handler.py` | Mangum adapter — the Lambda entrypoint |
-| `backend/app/config.py` | Pydantic Settings — env vars and Secrets Manager backed secrets |
+| `backend/app/config.py` | Pydantic Settings, env vars and the `APP_SECRETS_ARN` JSON secret |
 | `backend/app/api/v1/` | Route handlers by resource |
 | `backend/scripts/build_lambda.sh` | Builds `dist/function.zip` for Lambda |
 | `terraform/dynamodb.tf` | Table map — attributes, GSIs, TTL, PITR per entity |

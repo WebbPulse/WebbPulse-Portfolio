@@ -3,17 +3,11 @@ from typing import Optional
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from app.secrets import load_secrets
+from app.secrets import load_app_secrets
 
-# Settings field to the short key of the Secrets Manager secret holding it. The
-# key is the last segment of the secret name, so SECRET_KEY comes from
-# <SECRETS_PREFIX>/secret-key.
-SECRET_FIELDS = {
-    "SECRET_KEY": "secret-key",
-    "ADMIN_USERNAME": "admin-username",
-    "ADMIN_PASSWORD": "admin-password",
-    "ADMIN_EMAIL": "admin-email",
-}
+# Settings filled from the single JSON secret named by APP_SECRETS_ARN. Its
+# keys are these names exactly, so there is no mapping to keep in step.
+SECRET_FIELDS = ("SECRET_KEY", "ADMIN_USERNAME", "ADMIN_PASSWORD", "ADMIN_EMAIL")
 
 LOCALHOST_ORIGINS = [
     "http://localhost:3000",
@@ -29,7 +23,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     DYNAMODB_TABLE_PREFIX: str = "webbpulse-development"
     DYNAMODB_ENDPOINT_URL: Optional[str] = None
-    SECRETS_PREFIX: Optional[str] = None
+    APP_SECRETS_ARN: Optional[str] = None
 
     SECRET_KEY: Optional[str] = None
     ALGORITHM: str = "HS256"
@@ -72,20 +66,17 @@ class Settings(BaseSettings):
         Manager once per execution environment and cached there.
         """
         missing = [field for field in SECRET_FIELDS if getattr(self, field) is None]
-        if missing and self.SECRETS_PREFIX:
-            loaded = load_secrets(
-                self.SECRETS_PREFIX,
-                [SECRET_FIELDS[field] for field in missing],
-            )
+        if missing and self.APP_SECRETS_ARN:
+            loaded = load_app_secrets(self.APP_SECRETS_ARN)
             for field in missing:
-                value = loaded.get(SECRET_FIELDS[field])
+                value = loaded.get(field)
                 if value is not None:
                     setattr(self, field, value)
             missing = [field for field in missing if getattr(self, field) is None]
         if missing:
             raise ValueError(
                 "Missing required settings (set them as environment variables or "
-                f"as secrets under SECRETS_PREFIX): {', '.join(missing)}"
+                f"as keys of the APP_SECRETS_ARN secret): {', '.join(missing)}"
             )
         return self
 
