@@ -10,7 +10,7 @@ unchanged from the previous Postgres deployment; only the runtime moved.
 app/
 ├── main.py                 FastAPI app, CORS, middleware, /health
 ├── lambda_handler.py       Lambda entrypoint: app.lambda_handler.handler
-├── config.py               Settings (env vars, optional SSM secrets)
+├── config.py               Settings (env vars, Secrets Manager secrets)
 ├── api/
 │   ├── seo.py              /sitemap.xml and /robots.txt
 │   └── v1/
