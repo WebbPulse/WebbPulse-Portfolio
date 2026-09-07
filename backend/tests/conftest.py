@@ -31,18 +31,29 @@ from app.core import admin, site_content  # noqa: E402
 from app.core.security import create_access_token, get_password_hash  # noqa: E402
 from app.db import client as db_client  # noqa: E402
 from app.db import entities  # noqa: E402
-from app.db.tables import ENTITIES, META, TTL_ATTRIBUTE, table_definition  # noqa: E402
+from app.db.tables import (  # noqa: E402
+    ENTITIES,
+    META,
+    RATE_LIMIT_TTL_ATTRIBUTE,
+    RATE_LIMITS,
+    TTL_ATTRIBUTE,
+    table_definition,
+)
 
 
 def create_all_tables(prefix: str = settings.DYNAMODB_TABLE_PREFIX):
     resource = boto3.resource("dynamodb", region_name="us-west-2")
-    for entity in ENTITIES + (META,):
+    for entity in ENTITIES + (META, RATE_LIMITS):
         definition = table_definition(prefix, entity)
         resource.create_table(**definition)
-    resource.meta.client.update_time_to_live(
-        TableName=f"{prefix}-{META}",
-        TimeToLiveSpecification={"Enabled": True, "AttributeName": TTL_ATTRIBUTE},
-    )
+    for entity, attribute in (
+        (META, TTL_ATTRIBUTE),
+        (RATE_LIMITS, RATE_LIMIT_TTL_ATTRIBUTE),
+    ):
+        resource.meta.client.update_time_to_live(
+            TableName=f"{prefix}-{entity}",
+            TimeToLiveSpecification={"Enabled": True, "AttributeName": attribute},
+        )
 
 
 def reset_seed_state():

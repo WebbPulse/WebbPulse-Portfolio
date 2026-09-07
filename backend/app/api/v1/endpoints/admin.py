@@ -47,7 +47,13 @@ async def login(user_credentials: UserLogin, request: Request):
     if not user or not verify_password(user_credentials.password, hashed):
         failures = login_limiter.record_failure(ip)
         if failures >= login_limiter.max_failures:
-            return _too_many_requests(login_limiter.retry_after(ip))
+            # The limiter fails open, so the second lookup can come back None
+            # even though the first call reached the threshold. Fall back to the
+            # configured window rather than emitting a null Retry-After.
+            retry_after = login_limiter.retry_after(ip)
+            return _too_many_requests(
+                retry_after if retry_after else login_limiter.window_seconds
+            )
         raise _unauthorized("Incorrect username or password")
     if not user.get("is_active", True):
         raise _unauthorized("User account is inactive")
