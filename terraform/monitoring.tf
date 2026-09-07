@@ -27,4 +27,19 @@ module "alarms" {
   # dynamodb_tables stays empty because the aggregate alarm needs no list.
   dynamodb_aggregate_alarm = true
   dynamodb_tables          = {}
+
+  # AWS/Lambda Errors only counts an invocation that raised. A request the
+  # function handled but logged an error for, a caught failure from a
+  # downstream call or a rejected payload, is invisible to it and exists only
+  # in the logs. This adds one metric filter over the API log group and one
+  # "<prefix>-application-errors" alarm on the metric it publishes.
+  #
+  # The key is the domain the function serves, because it is what a responder
+  # reads in the filter name. The log group comes from the module output so it
+  # cannot drift from the function it belongs to. error_filter_pattern keeps
+  # its default of { $.level = "ERROR" }, which matches what Powertools writes
+  # once lambda.tf sets log_format = "JSON".
+  error_log_groups = {
+    api = module.lambda_api.log_group_name
+  }
 }
