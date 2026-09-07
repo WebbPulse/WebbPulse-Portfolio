@@ -1,6 +1,10 @@
 resource "aws_apigatewayv2_api" "backend" {
   name          = "${local.prefix}-api"
   protocol_type = "HTTP"
+
+  # Behind the staging access gate the API is reachable only through its custom
+  # domain, where the origin-verify authorizer applies.
+  disable_execute_api_endpoint = local.staging_gate_enabled
 }
 
 resource "aws_apigatewayv2_integration" "lambda" {
@@ -14,12 +18,18 @@ resource "aws_apigatewayv2_route" "proxy" {
   api_id    = aws_apigatewayv2_api.backend.id
   route_key = "ANY /{proxy+}"
   target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+
+  authorization_type = local.staging_gate_enabled ? "CUSTOM" : "NONE"
+  authorizer_id      = local.staging_gate_enabled ? one(module.staging_access_gate[*].http_api_authorizer_id) : null
 }
 
 resource "aws_apigatewayv2_route" "root" {
   api_id    = aws_apigatewayv2_api.backend.id
   route_key = "ANY /"
   target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+
+  authorization_type = local.staging_gate_enabled ? "CUSTOM" : "NONE"
+  authorizer_id      = local.staging_gate_enabled ? one(module.staging_access_gate[*].http_api_authorizer_id) : null
 }
 
 resource "aws_cloudwatch_log_group" "apigateway_access" {
