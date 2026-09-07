@@ -1,6 +1,18 @@
 locals {
   lambda_function_name = "${local.prefix}-api"
 
+  # Every table in the environment, which for the monolith is the right answer:
+  # it mounts every domain's routers, so it touches every table. That includes
+  # the new rate-limits table, and it needs to. app/api/v1/api.py includes the
+  # identity router, whose login route calls the limiter in
+  # app/core/login_limiter.py, and the limiter's items moved out of meta and
+  # into rate-limits. Without this grant login throttling on the monolith would
+  # fail open on every attempt, logging rate_limit_failed_open and letting the
+  # request through, which is the fail-open path working as designed but not a
+  # state to leave the monolith in while it is still serving every login.
+  #
+  # Reading the list from the module rather than naming tables is what makes
+  # that grant arrive with the table instead of needing a second change.
   lambda_table_arns = module.dynamodb.table_arns_list
   lambda_index_arns = [for arn in module.dynamodb.table_arns_list : "${arn}/index/*"]
 }
