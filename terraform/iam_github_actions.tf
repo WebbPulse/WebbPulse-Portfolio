@@ -78,13 +78,3 @@ module "github_actions_role" {
     },
   ], local.github_actions_gate_statements)
 }
-
-# The production account already had a GitHub OIDC provider when this stack was
-# written, so it was imported rather than created. The import has happened; the
-# block is kept pointed at the module address so a fresh account still adopts an
-# existing provider instead of failing on EntityAlreadyExists.
-import {
-  for_each = var.environment == "production" ? toset(["production"]) : toset([])
-  to       = module.github_actions_role.aws_iam_openid_connect_provider.this[0]
-  id       = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com"
-}
