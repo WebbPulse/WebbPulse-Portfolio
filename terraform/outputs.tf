@@ -55,17 +55,17 @@ output "api_custom_domain" {
 
 output "lambda_function_name" {
   description = "Lambda function name — CI/CD updates its code after each backend push"
-  value       = aws_lambda_function.api.function_name
+  value       = module.lambda_api.function_name
 }
 
 output "lambda_artifact_bucket" {
   description = "S3 bucket CI/CD uploads Lambda deployment packages to"
-  value       = aws_s3_bucket.lambda_artifacts.bucket
+  value       = module.lambda_artifacts.bucket_id
 }
 
 output "dynamodb_table_names" {
   description = "DynamoDB table names keyed by entity"
-  value       = { for k, t in aws_dynamodb_table.this : k => t.name }
+  value       = module.dynamodb.table_names
 }
 
 output "staging_access_gate_hosted_ui" {

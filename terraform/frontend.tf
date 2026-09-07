@@ -26,7 +26,7 @@ module "frontend" {
   # origin_id = "s3-frontend" and bucket_policy_sid = "AllowCloudFrontServicePrincipal" are the defaults.
 
   aliases             = local.custom_domains_enabled ? [local.www_host, local.domain] : []
-  acm_certificate_arn = one(aws_acm_certificate_validation.www[*].certificate_arn)
+  acm_certificate_arn = module.www_certificate.certificate_arn
 
   viewer_request_function_arn = one(aws_cloudfront_function.apex_redirect[*].arn)
 
