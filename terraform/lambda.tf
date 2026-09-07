@@ -94,8 +94,18 @@ module "lambda_api" {
     POWERTOOLS_METRICS_NAMESPACE = "WebbPulse"
   }
 
+  # JSON rather than Text so the log group's events parse as JSON, which is what
+  # the application errors metric filter in monitoring.tf needs: a JSON filter
+  # pattern is only applied to events that parse as JSON, so under Text the
+  # filter would match nothing and the alarm would sit in OK forever without
+  # anything erroring. The backend logs through AWS Lambda Powertools, which
+  # already writes JSON with a top level "level" key, and Lambda does not
+  # double encode logs that are already JSON encoded, so records keep that
+  # shape and the module default pattern { $.level = "ERROR" } matches them.
   log_retention_days           = 30
-  log_format                   = "Text"
+  log_format                   = "JSON"
+  application_log_level        = "INFO"
+  system_log_level             = "INFO"
   set_logging_config_log_group = true
 
   # aws_iam_role_policy.lambda_api below already grants xray:PutTraceSegments
