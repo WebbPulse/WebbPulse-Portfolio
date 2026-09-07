@@ -124,7 +124,15 @@ module "lambda_api" {
     # from the module's own output rather than rebuilt from local.prefix, so
     # the function depends on the secrets existing and the two cannot drift to
     # different names.
-    SECRETS_PREFIX               = local.app_secrets_prefix
+    SECRETS_PREFIX = local.app_secrets_prefix
+    # Kept alongside SECRETS_PREFIX for one change only. This apply and the CI
+    # backend deploy race after the merge, so for a few minutes either version
+    # of the code can be running against this environment. With both variables
+    # present the old code still finds its SSM prefix and the new code finds
+    # its secrets prefix, whichever lands first, in staging and again in
+    # production. The code in this change never reads it. Removed in the next
+    # change together with the SSM parameters themselves.
+    SSM_PARAMETER_PREFIX         = "/${local.prefix}"
     ENVIRONMENT                  = var.environment
     CORS_ORIGINS                 = local.cors_origins
     SITE_URL                     = local.frontend_url
