@@ -33,22 +33,6 @@ moved {
 # Adoption of the shared platform modules. State moves only.
 # ---------------------------------------------------------------------------
 
-# github-actions-role
-moved {
-  from = aws_iam_openid_connect_provider.github_actions
-  to   = module.github_actions_role.aws_iam_openid_connect_provider.this[0]
-}
-
-moved {
-  from = aws_iam_role.github_actions_deploy
-  to   = module.github_actions_role.aws_iam_role.this
-}
-
-moved {
-  from = aws_iam_role_policy.github_actions_deploy
-  to   = module.github_actions_role.aws_iam_role_policy.this[0]
-}
-
 # staging-dns
 moved {
   from = aws_route53_zone.staging[0]
