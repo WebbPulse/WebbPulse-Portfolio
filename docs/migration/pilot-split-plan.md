@@ -810,18 +810,29 @@ The two metric alarms do not generalise. `api-alarms` takes a single
 
 1. Add `lambda_aggregate_alarm` and its threshold, period and evaluation inputs
    to `api-alarms`, mirroring the `dynamodb_aggregate_*` set that already exists
-   there. One alarm on `AWS/Lambda` `Errors` with no `FunctionName` dimension
-   covers every function in the account and picks up new ones without a change.
+   there. One alarm sums `AWS/Lambda` `Errors` across the listed functions, so
+   adding a domain changes the expression rather than the alarm set.
 2. Call `api-alarms` once per function. Four times the alarms, four times the
    billable alarm metrics, and it contradicts the bucketed-alarm decision.
 
 **Recommend option 1.** It matches the shape already proven by
 `dynamodb_aggregate_alarm` in the same module, it is the only remaining module
-work, and it is small. The caveat, which the aggregate DynamoDB alarm shares, is
-that an account-wide dimensionless alarm also catches the access gate's authorizer
-Lambda and the CloudFront function, so the threshold is a per-environment
-judgement rather than a copy of the per-function one. This is the alarm question
-in section 9.
+work, and it is small. The threshold is still a per-environment judgement rather
+than a copy of the per-function one, because a sum across five functions trips
+more readily than one function's own count. This is the alarm question in
+section 9.
+
+**As shipped in v2.1.0**, the alarm sums named metrics rather than alarming on a
+dimensionless `AWS/Lambda` metric: one `metric_query` per name in
+`lambda_function_names` carrying that function's `FunctionName` dimension, plus a
+SUM expression. So it covers exactly the listed functions and does *not* catch
+the access gate's authorizer, which is what the option 1 sketch above assumed it
+would. The trade is a ceiling of 10 functions, the CloudWatch metric math limit,
+which `lambda_function_names` validates. Past that the log based alarm in
+`error_log_groups` is the shape that scales, because its metric is dimensionless.
+The alarms are named `<prefix>-lambda-errors-aggregate` and
+`<prefix>-lambda-throttles-aggregate`, so switching to them destroys the two
+per-function alarms rather than updating them in place.
 
 Until that lands, keep `lambda_function_name` pointed at the monolith: it is the
 function still serving `$default` and therefore still the one whose errors matter
@@ -1205,7 +1216,7 @@ Prerequisites that sit outside the sequence:
 | 9 | Terraform: the four `package_type = "Image"` functions, per-domain IAM, the `rate-limits` table, 7-day retention. Monolith untouched and still holding every route | ~30 to add (4 functions, 4 roles, 4 policies, 4 log groups, 1 table), a few to change | 6, 8 |
 | 10 | CI: `deploy-backend.yml` gains the `lambda-image-deploy.yml@v1` step with `function-image-map`, and per-domain smoke probes | none | 9 |
 | 11 | `api-alarms` gains `lambda_aggregate_alarm` and its threshold, period and evaluation inputs | none (module repo) | none |
-| 12 | Terraform: `error_log_groups` covers all five functions; switch to the aggregate Lambda alarm | ~4 to add, 2 to change | 9, 11 |
+| 12 | Terraform: `error_log_groups` covers all five functions; switch to the aggregate Lambda alarm | 6 to add, 2 to destroy | 9, 11 |
 | 13 | **Cut 1.** Route `/health`, `/`, `/sitemap.xml`, `/robots.txt` to `public`; `default_integration` flips to `legacy` | 5 to add (4 routes + `$default`), 0 destroy | 10, 12 |
 | 14 | **Cut 2.** Route the five resume prefixes, two keys each | 10 to add | 13 |
 | 15 | **Cut 3.** Route the content prefixes, including the `/posts` literal siblings | 4 to add | 14 |
@@ -1234,14 +1245,15 @@ Only the ones where a real judgement call exists and the answer changes the plan
    and means a `webbpulse` bump is a base image rebuild rather than a
    `pyproject.toml` edit. This decides PR 5's Dockerfile and P2's scope.
 
-2. **Aggregate Lambda alarm threshold.** A dimensionless `AWS/Lambda` `Errors`
-   alarm catches every function in the account, including the access gate's
-   authorizer and anything else added later. The per-function threshold today is
-   0 with `GreaterThanThreshold`, meaning any single error alarms. Account-wide
-   that is probably too sensitive on staging and about right on production.
-   Should staging and production carry different thresholds, or should the alarm
-   stay per-function for the four domains and accept eight billable alarm
-   metrics?
+2. **Aggregate Lambda alarm threshold.** PR 12 holds the threshold at the
+   module default of 0 with `GreaterThanThreshold`, the same value the
+   per-function alarm carried, so any single error on any of the five functions
+   alarms. A sum across five functions trips more often than one function's own
+   count did, so that is a starting point rather than a settled answer. Should
+   staging and production carry different thresholds? The v2.1.0 alarm sums only
+   the functions it is given, so the access gate's authorizer is not in the sum
+   and does not push the number up, which makes 0 more defensible than the
+   dimensionless shape this question originally assumed.
 
 3. **Trace sampling rate.** The package deliberately does not override
    `OTEL_TRACES_SAMPLER`. Portfolio's traffic is low enough that a percentage
