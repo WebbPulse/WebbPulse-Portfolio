@@ -1,108 +1,84 @@
-resource "aws_iam_openid_connect_provider" "github_actions" {
-  url            = "https://token.actions.githubusercontent.com"
-  client_id_list = ["sts.amazonaws.com"]
-  thumbprint_list = [
-    "6938fd4d98bab03faadb97b34396831e3780aea1",
-    "1c58a3a8518e8759bf075b76b750d4f2df264fcd",
-  ]
-}
-
-import {
-  for_each = var.environment == "production" ? toset(["production"]) : toset([])
-  to       = aws_iam_openid_connect_provider.github_actions
-  id       = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com"
-}
-
-resource "aws_iam_role" "github_actions_deploy" {
-  name = "${local.prefix}-github-actions-deploy"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Principal = {
-          Federated = aws_iam_openid_connect_provider.github_actions.arn
-        }
-        Action = "sts:AssumeRoleWithWebIdentity"
-        Condition = {
-          StringEquals = {
-            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          }
-          StringLike = {
-            "token.actions.githubusercontent.com:sub" = "repo:WebbPulse@185014056/WebbPulse-Portfolio@1029410045:*"
-          }
-        }
-      }
-    ]
-  })
-}
+# ---------------------------------------------------------------------------
+# The role GitHub Actions assumes to deploy, from the shared
+# github-actions-role module: the account's GitHub OIDC provider, the role and
+# its single inline deploy policy.
+#
+# The statement order below is the order the hand-written policy had, and the
+# module renders a one-entry Action or Resource as a bare JSON string the same
+# way the hand-written jsonencode() did, so the stored documents do not change.
+# ---------------------------------------------------------------------------
 
 locals {
   # Behind the staging access gate the backend smoke test calls the API host
   # directly and needs the origin-verify header value from SSM.
   github_actions_gate_statements = [for statement in [
     {
-      Effect   = "Allow"
-      Action   = "ssm:GetParameter"
-      Resource = one(module.staging_access_gate[*].origin_verify_ssm_parameter_arn)
+      actions   = ["ssm:GetParameter"]
+      resources = [one(module.staging_access_gate[*].origin_verify_ssm_parameter_arn)]
     },
     {
-      Effect   = "Allow"
-      Action   = "kms:Decrypt"
-      Resource = data.aws_kms_alias.ssm.target_key_arn
-      Condition = {
-        StringEquals = { "kms:ViaService" = "ssm.${var.aws_region}.amazonaws.com" }
+      actions   = ["kms:Decrypt"]
+      resources = [data.aws_kms_alias.ssm.target_key_arn]
+      condition = {
+        StringEquals = { "kms:ViaService" = ["ssm.${var.aws_region}.amazonaws.com"] }
       }
     },
   ] : statement if local.staging_gate_enabled]
+}
 
-  github_actions_statements = concat([
+module "github_actions_role" {
+  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/github-actions-role"
+  version = "~> 1.1"
+
+  role_name = "${local.prefix}-github-actions-deploy"
+  subjects  = ["repo:WebbPulse@185014056/WebbPulse-Portfolio@1029410045:*"]
+
+  policy_statements = concat([
+    # Lambda: point the function at the freshly uploaded zip
     {
-      Effect = "Allow"
-      Action = [
+      actions = [
         "lambda:UpdateFunctionCode",
         "lambda:GetFunction",
         "lambda:GetFunctionConfiguration",
         "lambda:PublishVersion",
       ]
-      Resource = aws_lambda_function.api.arn
+      resources = [aws_lambda_function.api.arn]
     },
+    # S3: upload the Lambda deployment package
     {
-      Effect   = "Allow"
-      Action   = ["s3:PutObject", "s3:GetObject", "s3:ListBucket"]
-      Resource = [aws_s3_bucket.lambda_artifacts.arn, "${aws_s3_bucket.lambda_artifacts.arn}/*"]
+      actions   = ["s3:PutObject", "s3:GetObject", "s3:ListBucket"]
+      resources = [aws_s3_bucket.lambda_artifacts.arn, "${aws_s3_bucket.lambda_artifacts.arn}/*"]
     },
+    # S3: sync frontend build artifacts
     {
-      Effect = "Allow"
-      Action = [
+      actions = [
         "s3:PutObject",
         "s3:GetObject",
         "s3:DeleteObject",
         "s3:ListBucket",
       ]
-      Resource = [
-        aws_s3_bucket.frontend.arn,
-        "${aws_s3_bucket.frontend.arn}/*",
+      resources = [
+        module.frontend.bucket_arn,
+        "${module.frontend.bucket_arn}/*",
       ]
     },
+    # CloudFront: invalidate the cache after a frontend deploy
     {
-      Effect = "Allow"
-      Action = [
+      actions = [
         "cloudfront:CreateInvalidation",
         "cloudfront:GetInvalidation",
       ]
-      Resource = aws_cloudfront_distribution.frontend.arn
+      resources = [module.frontend.distribution_arn]
     },
   ], local.github_actions_gate_statements)
 }
 
-resource "aws_iam_role_policy" "github_actions_deploy" {
-  name = "deploy-permissions"
-  role = aws_iam_role.github_actions_deploy.id
-
-  policy = jsonencode({
-    Version   = "2012-10-17"
-    Statement = local.github_actions_statements
-  })
+# The production account already had a GitHub OIDC provider when this stack was
+# written, so it was imported rather than created. The import has happened; the
+# block is kept pointed at the module address so a fresh account still adopts an
+# existing provider instead of failing on EntityAlreadyExists.
+import {
+  for_each = var.environment == "production" ? toset(["production"]) : toset([])
+  to       = module.github_actions_role.aws_iam_openid_connect_provider.this[0]
+  id       = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com"
 }

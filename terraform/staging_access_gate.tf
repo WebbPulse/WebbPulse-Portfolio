@@ -21,7 +21,7 @@ module "staging_access_gate" {
   additional_hosts = [local.domain]
   allowed_emails   = var.staging_access_users
 
-  # cloudfront_distribution_arn is left unset on purpose: aws_cloudfront_distribution.frontend
+  # cloudfront_distribution_arn is left unset on purpose: module.frontend
   # consumes this module's outputs, so naming it here would be a dependency cycle.
   http_api_id      = module.api.api_id
   invite_login_url = "https://${local.www_host}/"
