@@ -42,12 +42,12 @@ module "github_actions_role" {
         "lambda:GetFunctionConfiguration",
         "lambda:PublishVersion",
       ]
-      resources = [aws_lambda_function.api.arn]
+      resources = [module.lambda_api.function_arn]
     },
     # S3: upload the Lambda deployment package
     {
       actions   = ["s3:PutObject", "s3:GetObject", "s3:ListBucket"]
-      resources = [aws_s3_bucket.lambda_artifacts.arn, "${aws_s3_bucket.lambda_artifacts.arn}/*"]
+      resources = [module.lambda_artifacts.bucket_arn, "${module.lambda_artifacts.bucket_arn}/*"]
     },
     # S3: sync frontend build artifacts
     {

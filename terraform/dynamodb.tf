@@ -1,3 +1,11 @@
+# ---------------------------------------------------------------------------
+# The DynamoDB layer from the shared dynamodb-tables module. The table
+# definitions stay here as locals, reshaped into the module's input: attributes
+# as a list of objects, gsis as global_secondary_indexes, ttl as ttl_attribute
+# and pitr as point_in_time_recovery. Nine of the ten tables had pitr = true,
+# so that is the module wide value and only meta overrides it.
+# ---------------------------------------------------------------------------
+
 locals {
   dynamodb_entity_tables = ["users", "categories", "posts", "projects", "experience", "skills", "education", "certifications", "site-content"]
 
@@ -5,69 +13,90 @@ locals {
     {
       for entity in local.dynamodb_entity_tables : entity => {
         hash_key   = "id"
-        attributes = { id = "N" }
-        gsis       = []
-        ttl        = null
-        pitr       = true
+        attributes = [{ name = "id", type = "N" }]
       }
     },
     {
       posts = {
-        hash_key   = "id"
-        attributes = { id = "N", published_flag = "S", published_at = "S", category_id = "N" }
-        gsis = [
+        hash_key = "id"
+        attributes = [
+          { name = "id", type = "N" },
+          { name = "published_flag", type = "S" },
+          { name = "published_at", type = "S" },
+          { name = "category_id", type = "N" },
+        ]
+        global_secondary_indexes = [
           { name = "published-index", hash_key = "published_flag", range_key = "published_at", projection_type = "ALL" },
           { name = "category-index", hash_key = "category_id", range_key = "id", projection_type = "KEYS_ONLY" },
         ]
-        ttl  = null
-        pitr = true
       }
       meta = {
-        hash_key   = "pk"
-        attributes = { pk = "S" }
-        gsis       = []
-        ttl        = "ttl"
-        pitr       = false
+        hash_key               = "pk"
+        attributes             = [{ name = "pk", type = "S" }]
+        ttl_attribute          = "ttl"
+        point_in_time_recovery = false
       }
     },
   )
 }
 
-resource "aws_dynamodb_table" "this" {
-  for_each = local.dynamodb_tables
+module "dynamodb" {
+  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/dynamodb-tables"
+  version = "~> 1.6"
 
-  name                        = "${local.prefix}-${each.key}"
-  billing_mode                = "PAY_PER_REQUEST"
-  hash_key                    = each.value.hash_key
-  deletion_protection_enabled = var.environment == "production"
+  name_prefix = local.prefix
+  tables      = local.dynamodb_tables
 
-  dynamic "attribute" {
-    for_each = each.value.attributes
-    content {
-      name = attribute.key
-      type = attribute.value
-    }
-  }
+  point_in_time_recovery = true
+  deletion_protection    = var.environment == "production"
+}
 
-  dynamic "global_secondary_index" {
-    for_each = each.value.gsis
-    content {
-      name            = global_secondary_index.value.name
-      hash_key        = global_secondary_index.value.hash_key
-      range_key       = global_secondary_index.value.range_key
-      projection_type = global_secondary_index.value.projection_type
-    }
-  }
+moved {
+  from = aws_dynamodb_table.this["users"]
+  to   = module.dynamodb.aws_dynamodb_table.this["users"]
+}
 
-  dynamic "ttl" {
-    for_each = each.value.ttl == null ? [] : [each.value.ttl]
-    content {
-      attribute_name = ttl.value
-      enabled        = true
-    }
-  }
+moved {
+  from = aws_dynamodb_table.this["categories"]
+  to   = module.dynamodb.aws_dynamodb_table.this["categories"]
+}
 
-  point_in_time_recovery {
-    enabled = each.value.pitr
-  }
+moved {
+  from = aws_dynamodb_table.this["posts"]
+  to   = module.dynamodb.aws_dynamodb_table.this["posts"]
+}
+
+moved {
+  from = aws_dynamodb_table.this["projects"]
+  to   = module.dynamodb.aws_dynamodb_table.this["projects"]
+}
+
+moved {
+  from = aws_dynamodb_table.this["experience"]
+  to   = module.dynamodb.aws_dynamodb_table.this["experience"]
+}
+
+moved {
+  from = aws_dynamodb_table.this["skills"]
+  to   = module.dynamodb.aws_dynamodb_table.this["skills"]
+}
+
+moved {
+  from = aws_dynamodb_table.this["education"]
+  to   = module.dynamodb.aws_dynamodb_table.this["education"]
+}
+
+moved {
+  from = aws_dynamodb_table.this["certifications"]
+  to   = module.dynamodb.aws_dynamodb_table.this["certifications"]
+}
+
+moved {
+  from = aws_dynamodb_table.this["site-content"]
+  to   = module.dynamodb.aws_dynamodb_table.this["site-content"]
+}
+
+moved {
+  from = aws_dynamodb_table.this["meta"]
+  to   = module.dynamodb.aws_dynamodb_table.this["meta"]
 }
