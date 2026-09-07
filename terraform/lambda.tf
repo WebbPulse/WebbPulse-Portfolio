@@ -90,7 +90,12 @@ module "lambda_api" {
     # from the module's own output rather than rebuilt from local.prefix, so
     # the function depends on the secrets existing and the two cannot drift to
     # different names.
-    SECRETS_PREFIX               = local.app_secrets_prefix
+    SECRETS_PREFIX = local.app_secrets_prefix
+    # The one secret the backend is moving to: a JSON object read once at cold
+    # start. Named outright rather than rebuilt from a prefix, so the function
+    # and the secret cannot drift to different names. SECRETS_PREFIX above goes
+    # once the backend reads this.
+    APP_SECRETS_ARN              = module.app_secrets.arns["app"]
     ENVIRONMENT                  = var.environment
     CORS_ORIGINS                 = local.cors_origins
     SITE_URL                     = local.frontend_url
