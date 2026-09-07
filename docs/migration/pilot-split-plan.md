@@ -1387,3 +1387,85 @@ tag. PR 4 deliberately writes no Dockerfile.
 The CodeArtifact token that the image build needs must be a BuildKit secret
 mount, `--mount=type=secret,id=codeartifact_token`. Not a build argument and not
 an `ENV`: both persist in `docker history` for anyone who can pull the image.
+
+## PR 9 notes
+
+What PR 9 built, and the three places reading the code changed an answer this
+document gives. Everything not listed here held.
+
+### The seeding middleware widens two rows of the table ownership matrix
+
+Section 1 gives `content` read only access to `users`, and gives `identity`
+nothing at all on `site-content`. Neither survives contact with
+`app/core/middleware.py`.
+
+`SeedMiddleware` calls `ensure_admin_seeded()` and `ensure_site_content_seeded()
+` together, in that order, on the first HTTP request in a process. It is one
+middleware, not two, and `app/composition/wiring.py` adds it to every domain
+whose descriptor sets `seeds = True`, which is `content` and `identity`. So on
+its first request `content` writes the `users` table and `identity` writes the
+`site-content` singleton, whichever domain the ownership table says owns them.
+
+Denying either write would fail the first request of every cold start, on a
+table the domain does not own, with a message about the seeder rather than about
+the route the caller asked for. Both are therefore granted, and the ownership
+table's column for those two domains is wider than section 1 states. The
+narrower shape is reachable, but it needs a code change first: splitting
+`SeedMiddleware` so a domain seeds only what it owns, or moving seeding out of
+the request path entirely. That is a separate change, not an IAM one.
+
+The same middleware is why `content`'s function reads more than `SECRET_KEY`.
+`seed_admin_user()` reads `ADMIN_USERNAME`, `ADMIN_EMAIL` and `ADMIN_PASSWORD`
+off the settings object, so `content` resolves all four secret fields at
+runtime even though `Domain.requires_secrets` names one. This costs nothing in
+IAM, because all four are keys of the single `webbpulse-<env>/app` secret and
+one `secretsmanager:GetSecretValue` grant covers the blob, but the descriptor
+and the runtime disagree and the descriptor is the optimistic one.
+
+`public` is unaffected, and the least privilege claim the split rests on is
+intact: it sets `seeds = False`, adds no `SeedMiddleware`, holds no
+`secretsmanager` action, and its DynamoDB grant is read only on `posts` and
+`site-content`.
+
+### `meta` is a write table for three domains, and `resume` reads `users`
+
+Section 1 already corrects the design on `meta` being shared. Reading
+`app/db/repository.py` confirms the mechanism: `create` writes the `COUNTER#`
+item and every `UNIQUE#` item in the same `transact_write_items` call as the
+entity itself, so a domain that creates anything needs
+`dynamodb:TransactWriteItems` on `meta` as well as on its own table. `content`,
+`resume` and `identity` all do; `public` creates nothing and gets no `meta`
+grant at all.
+
+`resume` reads `users` as well as `site-content`, because `app/core/security`
+resolves the bearer token against the user table on every authenticated
+request, which is what gates its admin writes. Section 1's table says this
+already; it is repeated here because it is easy to read the "reads only" column
+as optional.
+
+### The functions are a new module block, not a `for_each` over the old one
+
+Section 3.3 writes the split as `module "lambda_api"` gaining a `for_each`.
+Doing that literally would destroy the monolith, which is the one thing PR 9's
+row on the section 8 table forbids: the monolith is untouched and still holds
+every route, because nothing is routed to the new functions until the four cuts
+in section 6. The four image functions are therefore `module "lambda_domain"`,
+a new block, and `module "lambda_api"` keeps its name, its state address and
+its zip. Section 3.5's `module.lambda_monolith` is the rename that belongs with
+PR 17, where the monolith is deleted anyway and the address stops mattering.
+
+`CORS_ORIGINS` also keeps its name rather than becoming `CORS_ALLOW_ORIGINS`.
+`app/composition/settings.py` declares `CORS_ORIGINS` and derives the base
+class's `cors_allow_origins` from it in `_mirror_base_fields`, so renaming the
+environment variable would leave the field on its default and quietly drop the
+configured origins.
+
+### The bootstrap tag is a required variable with no default
+
+Section 3.3's option 3, with the ordering of option 1. `var.bootstrap_image_tag`
+has no default and is validated against `sha-<40 hex>`, so a workspace that has
+not been given a tag CI has already pushed fails to plan rather than applying a
+`CreateFunction` against an image URI that does not resolve. It is a seed only:
+`image_uri` is on the module's `ignore_changes` list, so the deploy step's
+`UpdateFunctionCode` is not undone by the next plan and the value never needs
+changing again.

@@ -116,7 +116,11 @@ module "github_actions_role" {
   ]
 
   policy_statements = concat([
-    # Lambda: point the function at the freshly uploaded zip
+    # Lambda: point a function at freshly published code. The monolith still
+    # takes a zip from the artifacts bucket below; the four domain functions
+    # take an image tag the container build has already pushed to ECR. Both
+    # deploys are the same UpdateFunctionCode call, so this is one statement
+    # over five function ARNs rather than two statements.
     {
       actions = [
         "lambda:UpdateFunctionCode",
@@ -124,7 +128,19 @@ module "github_actions_role" {
         "lambda:GetFunctionConfiguration",
         "lambda:PublishVersion",
       ]
-      resources = [module.lambda_api.function_arn]
+      resources = concat(
+        [module.lambda_api.function_arn],
+        [for name in sort(keys(local.lambda_domains)) : module.lambda_domain[name].function_arn],
+      )
+    },
+    # Lambda: invoke the four domain functions directly for the post deploy
+    # smoke probes. They have no API Gateway route until the cutover PRs, so
+    # the only way to prove a freshly shipped image answers is an Invoke with a
+    # synthetic HTTP API event. The monolith is deliberately excluded: its
+    # probe goes through the public /health URL as before.
+    {
+      actions   = ["lambda:InvokeFunction"]
+      resources = [for name in sort(keys(local.lambda_domains)) : module.lambda_domain[name].function_arn]
     },
     # S3: upload the Lambda deployment package
     {
