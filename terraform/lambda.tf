@@ -34,36 +34,6 @@ module "lambda_artifacts" {
   placeholder_object_source_hash = data.archive_file.lambda_placeholder.output_base64sha256
 }
 
-moved {
-  from = aws_s3_bucket.lambda_artifacts
-  to   = module.lambda_artifacts.aws_s3_bucket.this
-}
-
-moved {
-  from = aws_s3_bucket_public_access_block.lambda_artifacts
-  to   = module.lambda_artifacts.aws_s3_bucket_public_access_block.this
-}
-
-moved {
-  from = aws_s3_bucket_versioning.lambda_artifacts
-  to   = module.lambda_artifacts.aws_s3_bucket_versioning.this
-}
-
-moved {
-  from = aws_s3_bucket_server_side_encryption_configuration.lambda_artifacts
-  to   = module.lambda_artifacts.aws_s3_bucket_server_side_encryption_configuration.this[0]
-}
-
-moved {
-  from = aws_s3_bucket_lifecycle_configuration.lambda_artifacts
-  to   = module.lambda_artifacts.aws_s3_bucket_lifecycle_configuration.this
-}
-
-moved {
-  from = aws_s3_object.lambda_placeholder
-  to   = module.lambda_artifacts.aws_s3_object.placeholder[0]
-}
-
 data "archive_file" "lambda_placeholder" {
   type        = "zip"
   output_path = "${path.module}/.terraform/lambda-placeholder.zip"
@@ -132,21 +102,6 @@ module "lambda_api" {
   log_retention_days           = 30
   log_format                   = "Text"
   set_logging_config_log_group = true
-}
-
-moved {
-  from = aws_iam_role.lambda_api
-  to   = module.lambda_api.aws_iam_role.this
-}
-
-moved {
-  from = aws_cloudwatch_log_group.lambda_api
-  to   = module.lambda_api.aws_cloudwatch_log_group.this
-}
-
-moved {
-  from = aws_lambda_function.api
-  to   = module.lambda_api.aws_lambda_function.this
 }
 
 resource "aws_iam_role_policy" "lambda_api" {

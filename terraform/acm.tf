@@ -41,33 +41,3 @@ module "api_certificate" {
 
   depends_on = [module.staging_dns]
 }
-
-moved {
-  from = aws_acm_certificate.www[0]
-  to   = module.www_certificate.aws_acm_certificate.this[0]
-}
-
-moved {
-  from = aws_route53_record.www_cert_validation
-  to   = module.www_certificate.aws_route53_record.validation
-}
-
-moved {
-  from = aws_acm_certificate_validation.www[0]
-  to   = module.www_certificate.aws_acm_certificate_validation.this[0]
-}
-
-moved {
-  from = aws_acm_certificate.api[0]
-  to   = module.api_certificate.aws_acm_certificate.this[0]
-}
-
-moved {
-  from = aws_route53_record.api_cert_validation
-  to   = module.api_certificate.aws_route53_record.validation
-}
-
-moved {
-  from = aws_acm_certificate_validation.api[0]
-  to   = module.api_certificate.aws_acm_certificate_validation.this[0]
-}

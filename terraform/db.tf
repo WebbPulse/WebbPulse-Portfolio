@@ -46,10 +46,3 @@ module "app_secrets" {
     }
   }
 }
-
-# Load-bearing: without this Terraform destroys the generator and creates a new
-# one, which regenerates the signing key and logs every session out.
-moved {
-  from = random_password.secret_key
-  to   = module.app_secrets.random_password.this["secret-key"]
-}
