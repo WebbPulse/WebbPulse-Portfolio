@@ -7,6 +7,8 @@ from datetime import datetime
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.envelope import error_message
+
 
 class TestExperienceAPI:
     """Test class for experience API endpoints"""
@@ -49,7 +51,7 @@ class TestExperienceAPI:
         """Test getting an experience entry that doesn't exist"""
         response = client.get("/api/v1/experience/999")
         assert response.status_code == 404
-        assert "Experience entry not found" in response.json()["detail"]
+        assert "Experience entry not found" in error_message(response)
 
     @pytest.mark.api
     def test_get_inactive_experience_fails(self, client: TestClient):
@@ -74,7 +76,7 @@ class TestExperienceAPI:
 
         response = client.get(f"/api/v1/experience/{inactive_experience['id']}")
         assert response.status_code == 404
-        assert "Experience entry not found" in response.json()["detail"]
+        assert "Experience entry not found" in error_message(response)
 
 
 class TestExperienceAdminAPI:
@@ -109,7 +111,7 @@ class TestExperienceAdminAPI:
             "/api/v1/experience/", json=sample_experience_data, headers=auth_headers
         )
         assert response.status_code == 403
-        assert "Not enough permissions" in response.json()["detail"]
+        assert "Not enough permissions" in error_message(response)
 
     @pytest.mark.api
     @pytest.mark.auth
@@ -178,7 +180,7 @@ class TestExperienceAdminAPI:
             headers=auth_headers,
         )
         assert response.status_code == 403
-        assert "Not enough permissions" in response.json()["detail"]
+        assert "Not enough permissions" in error_message(response)
 
     @pytest.mark.api
     @pytest.mark.auth
@@ -191,7 +193,7 @@ class TestExperienceAdminAPI:
             "/api/v1/experience/999", json=update_data, headers=admin_auth_headers
         )
         assert response.status_code == 404
-        assert "Experience entry not found" in response.json()["detail"]
+        assert "Experience entry not found" in error_message(response)
 
     @pytest.mark.api
     @pytest.mark.auth
@@ -219,7 +221,7 @@ class TestExperienceAdminAPI:
             f"/api/v1/experience/{test_experience['id']}", headers=auth_headers
         )
         assert response.status_code == 403
-        assert "Not enough permissions" in response.json()["detail"]
+        assert "Not enough permissions" in error_message(response)
 
     @pytest.mark.api
     @pytest.mark.auth
@@ -229,7 +231,7 @@ class TestExperienceAdminAPI:
         """Test deleting an experience entry that doesn't exist"""
         response = client.delete("/api/v1/experience/999", headers=admin_auth_headers)
         assert response.status_code == 404
-        assert "Experience entry not found" in response.json()["detail"]
+        assert "Experience entry not found" in error_message(response)
 
 
 class TestExperienceAPIValidation:

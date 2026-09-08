@@ -18,6 +18,7 @@ from app.domains.identity.service import (
     reset_seed_state,
     seed_admin_user,
 )
+from tests.envelope import error_message
 
 LOGIN = "/api/v1/admin/login"
 PROTECTED = "/api/v1/posts/admin"
@@ -85,7 +86,7 @@ class TestTokens:
         token = create_access_token({"sub": test_admin_user["username"]})
         response = client.get(PROTECTED, headers={"Authorization": f"Bearer {token}"})
         assert response.status_code == 403
-        assert response.json()["detail"] == "User account is inactive"
+        assert error_message(response) == "User account is inactive"
 
     @pytest.mark.auth
     def test_wrong_scheme_rejected(self, client: TestClient):

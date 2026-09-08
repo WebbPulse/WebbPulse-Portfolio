@@ -5,6 +5,8 @@ Tests for the projects API endpoints
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.envelope import error_message
+
 
 class TestProjectsAPI:
     """Test class for projects API endpoints"""
@@ -56,7 +58,7 @@ class TestProjectsAPI:
         """Test getting a project that doesn't exist"""
         response = client.get("/api/v1/projects/999")
         assert response.status_code == 404
-        assert "Project not found" in response.json()["detail"]
+        assert "Project not found" in error_message(response)
 
     @pytest.mark.api
     def test_get_inactive_project_fails(self, client: TestClient):
@@ -77,7 +79,7 @@ class TestProjectsAPI:
 
         response = client.get(f"/api/v1/projects/{inactive_project['id']}")
         assert response.status_code == 404
-        assert "Project not found" in response.json()["detail"]
+        assert "Project not found" in error_message(response)
 
 
 class TestProjectsAdminAPI:
@@ -111,7 +113,7 @@ class TestProjectsAdminAPI:
             "/api/v1/projects/", json=sample_project_data, headers=auth_headers
         )
         assert response.status_code == 403
-        assert "Not enough permissions" in response.json()["detail"]
+        assert "Not enough permissions" in error_message(response)
 
     @pytest.mark.api
     @pytest.mark.auth
@@ -155,7 +157,7 @@ class TestProjectsAdminAPI:
             headers=auth_headers,
         )
         assert response.status_code == 403
-        assert "Not enough permissions" in response.json()["detail"]
+        assert "Not enough permissions" in error_message(response)
 
     @pytest.mark.api
     @pytest.mark.auth
@@ -166,7 +168,7 @@ class TestProjectsAdminAPI:
             "/api/v1/projects/999", json=update_data, headers=admin_auth_headers
         )
         assert response.status_code == 404
-        assert "Project not found" in response.json()["detail"]
+        assert "Project not found" in error_message(response)
 
     @pytest.mark.api
     @pytest.mark.auth
@@ -194,7 +196,7 @@ class TestProjectsAdminAPI:
             f"/api/v1/projects/{test_project['id']}", headers=auth_headers
         )
         assert response.status_code == 403
-        assert "Not enough permissions" in response.json()["detail"]
+        assert "Not enough permissions" in error_message(response)
 
     @pytest.mark.api
     @pytest.mark.auth
@@ -202,7 +204,7 @@ class TestProjectsAdminAPI:
         """Test deleting a project that doesn't exist"""
         response = client.delete("/api/v1/projects/999", headers=admin_auth_headers)
         assert response.status_code == 404
-        assert "Project not found" in response.json()["detail"]
+        assert "Project not found" in error_message(response)
 
 
 class TestProjectsAPIValidation:
