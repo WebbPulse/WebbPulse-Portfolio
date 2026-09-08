@@ -83,20 +83,22 @@ resource "aws_xray_trace_segment_destination" "main" {
   depends_on = [aws_cloudwatch_log_resource_policy.transaction_search_spans]
 }
 
-# Step two, added only after the destination above has applied and X-Ray has
-# created the group: adopt aws/spans into state and put the platform's 7 day
-# retention on it. Until then the group carries the never expire default. The
-# import block is a no-op once the group is in state.
-#
-# import {
-#   to = aws_cloudwatch_log_group.spans
-#   id = "aws/spans"
-# }
-#
-# resource "aws_cloudwatch_log_group" "spans" {
-#   name              = "aws/spans"
-#   retention_in_days = 7
-# }
+# Step two: the destination above has applied and X-Ray created aws/spans (with
+# its own 30 day default), so adopt the group into state and put the platform's
+# 7 day retention on it. The import block is a no-op once the group is in state
+# and stays here so a fresh environment converges in one apply after X-Ray has
+# created the group.
+import {
+  to = aws_cloudwatch_log_group.spans
+  id = "aws/spans"
+}
+
+resource "aws_cloudwatch_log_group" "spans" {
+  name              = "aws/spans"
+  retention_in_days = 7
+
+  depends_on = [aws_xray_trace_segment_destination.main]
+}
 
 # Adopts the account's existing "Default" indexing rule rather than creating a
 # new named one: the provider's own example uses name = "Default" and imports by
