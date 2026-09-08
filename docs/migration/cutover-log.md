@@ -739,22 +739,25 @@ recorded under "What section 6 got wrong" below.
 
 ### What is destroyed, in full
 
-Eleven resources. The list is short enough to read and long enough that it
-belongs in the PR description as well:
+Eight resources, confirmed against the speculative plan. The list is short
+enough to read and long enough that it belongs in the PR description as well:
 
 - `module.api.aws_apigatewayv2_route.this["$default"]`
 - `module.api.aws_apigatewayv2_integration.this["legacy"]`
 - `module.api.aws_lambda_permission.this["legacy"]`
 - `module.lambda_api.aws_lambda_function.this`
 - `module.lambda_api.aws_iam_role.this`
-- `module.lambda_api.aws_iam_role_policy_attachment.basic_execution`
 - `module.lambda_api.aws_cloudwatch_log_group.this`
 - `aws_iam_role_policy.lambda_api`
-- `module.alarms.aws_cloudwatch_log_metric_filter.application_errors["api"]`
+- `module.alarms.aws_cloudwatch_log_metric_filter.errors["api"]`
 
-plus whatever the `lambda-function` module attaches alongside the role. The
-speculative plan is the authority on the exact count; this list is what to
-check it against.
+Two corrections to the list this entry was first written with, both from
+reading the plan rather than the module source. There is no
+`module.lambda_api.aws_iam_role_policy_attachment.basic_execution`: the
+`lambda-function` module attaches the basic execution policy inline on the role
+rather than as its own resource, so the role is the only IAM resource the module
+owns and destroying it takes the attachment with it. And the metric filter is
+`aws_cloudwatch_log_metric_filter.errors`, not `application_errors`.
 
 **Nothing about the four domain functions is destroyed, and that is the line a
 reviewer should check first.** In particular none of the four
@@ -876,34 +879,48 @@ domain reports `NO ROUTE` and exits 1; a monolith response reports
 
 ### Plan
 
-Filled in from the speculative plan on the PR before merging. The shape to
-expect is **0 to add, a small number to change, and the destroy list above**.
+`run-qj94xMEonSnDKHBh` / `plan-J2rEixHoooX1Urd8`, against commit `7638ab7` on
+PR 118: **0 to add, 4 to change, 8 to destroy.** The eight destroys are exactly
+the list above. Every other resource in the workspace plans as a no-op,
+including all 21 explicit route keys, all four domain integrations and all four
+domain permissions.
 
-The changes are worth naming, because a retirement PR that shows changes rather
-than only destroys invites a second look:
+Nothing plans as `create` or `replace` anywhere in the run. That is the single
+most useful line in the plan for this PR, because it settles the sequencing
+question below in one read.
 
-- Both `module.alarms` aggregate Lambda alarms change. The module turns
-  `lambda_function_names` into positional metric math ids, `m0`, `m1` and so on,
-  and the monolith led that list, so dropping it shifts every domain's id down
-  one and rewrites both alarm definitions. It is a metric math rewrite with no
-  behaviour change.
-- The GitHub Actions deploy policy changes: one fewer function ARN on the
-  `UpdateFunctionCode` statement, and the artifacts bucket grant narrowed to
-  read-only.
+The four changes, named because a retirement PR that shows changes rather than
+only destroys invites a second look:
 
-**The one thing to read the plan for is how `$default` sequences.** It is a
-destroy, not a replace: the route is removed and nothing takes its place, so
-there is no destroy-then-create and no window where `$default` exists pointing
-somewhere wrong. What there is instead is a window, inside the apply, where
-`$default` is gone and the request that would have used it gets a 404. That
-window is only a problem for a request that needed `$default`, and after four
-cuts no request should: every path the four applications serve has an explicit
-route key, which `test_gateway_routes.py` asserts statically in CI. If that
-assertion is wrong, the apply is when it becomes visible.
+- `module.alarms.aws_cloudwatch_metric_alarm.lambda_aggregate_errors[0]` and
+  `...lambda_aggregate_throttles[0]`. The module turns `lambda_function_names`
+  into positional metric math ids and the monolith led that list, so dropping it
+  shifts every domain's id down one. The errors alarm goes from
+  `m0 + m1 + m2 + m3 + m4` over five ids to `m0 + m1 + m2 + m3` over four, with
+  the four remaining metrics the four domain functions. A metric math rewrite
+  with no behaviour change.
+- `module.alarms.aws_cloudwatch_metric_alarm.errors[0]`, the log-metric-filter
+  alarm, for the same reason one rung down: it aggregates over the filters and
+  one filter is going away.
+- `module.github_actions_role.aws_iam_role_policy.this[0]`: one fewer function
+  ARN on the `UpdateFunctionCode` statement, and the artifacts bucket grant
+  narrowed to read-only.
 
-The 21 explicit route keys plan as no-ops. A plan that shows any of them
-changing or being replaced is a reason to stop: they are addressed by route key,
-and this PR changes no route key.
+**How `$default` sequences.** It is a plain destroy. There is no
+destroy-then-create on it, so no `create_before_destroy` and no two-step apply
+is needed, and there is no window in which `$default` exists pointing somewhere
+wrong. What there is instead is a window, inside the apply, where `$default` is
+gone and a request that would have used it gets an API Gateway 404. That window
+is only a problem for a request that needed `$default`, and after four cuts no
+request should: every path the four applications serve has an explicit route
+key, and all 21 of those keys plan as no-ops, so none of them is disturbed while
+`$default` is removed. `test_gateway_routes.py` asserts the same exhaustiveness
+statically in CI. If that assertion is wrong, the apply is when it becomes
+visible.
+
+The four domain permissions planning as no-ops is the confirmation of the
+statement-id reasoning above: removing the `default_integration` does not move
+the bare `AllowAPIGatewayInvoke` onto any domain.
 
 ### Verification, once applied
 
