@@ -291,7 +291,9 @@ def test_public_never_asks_for_a_secret(clear_secret_env, monkeypatch, environme
     settings = Settings(_env_file=None)
 
     with warnings.catch_warnings():
-        warnings.simplefilter("error")
+        # Only ours. Promoting every warning would also catch a dependency's
+        # unrelated DeprecationWarning, which says nothing about this code.
+        warnings.simplefilter("error", UserWarning)
         check_required_secrets([DOMAINS["public"]], settings=settings)
 
 
@@ -305,7 +307,9 @@ def test_a_deployed_environment_passes_when_the_secret_resolves(
     settings = Settings(_env_file=None)
 
     with warnings.catch_warnings():
-        warnings.simplefilter("error")
+        # Only ours. Promoting every warning would also catch a dependency's
+        # unrelated DeprecationWarning, which says nothing about this code.
+        warnings.simplefilter("error", UserWarning)
         check_required_secrets([DOMAINS["resume"]], settings=settings)
 
 
