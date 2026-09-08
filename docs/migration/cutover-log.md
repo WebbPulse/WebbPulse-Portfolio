@@ -164,8 +164,23 @@ job. Cuts 2 through 4 each add one word to it.
 ## Cut 2: resume
 
 PR 14. Routes the five resume collections, projects, experience, skills,
-education and certifications, to the `resume` function. Status: **PR open, not
-applied**.
+education and certifications, to the `resume` function. Status: **Applied on
+staging, in two steps** (PR #110, then the correction PR below).
+
+**The first apply errored, and the error is the lesson of this cut.** HCP run
+`run-wejfhcFYu9riFnvc` created the `resume` integration, its permission and the
+ten bare and `{proxy+}` routes, then failed on all five
+`ANY /api/v1/<collection>/` keys with
+`BadRequestException: Part of the given route key path is empty`. **API Gateway
+HTTP API will not accept a route key whose path ends in a slash.** The
+reasoning in "The route keys" below, written before the apply, was sound as a
+reading of the documentation and wrong about the product; it is kept as
+written, with this note, because the next person to reason about the trailing
+slash will otherwise reach the same conclusion. The correction PR removes the
+five keys so the workspace converges on 12 resources, changes the parsed
+route test to model trailing-slash normalisation instead of the conservative
+reading, and leaves both slash probes in the verify script so the gateway's
+real behaviour is observed by CI on the next deploy rather than assumed.
 
 ### What changed
 
@@ -184,7 +199,7 @@ applied**.
   route keys out of `apigateway.tf` and asserts they cover exactly the paths
   `build_domain_app("resume")` serves.
 
-### The route keys, and why there are three per collection and not two
+### The route keys, and why there were three per collection and not two (superseded, see above)
 
 This is the one place cut 2 departs from section 3.5, and it is worth reading
 before the next cut copies the pattern.
