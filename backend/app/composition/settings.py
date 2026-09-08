@@ -53,6 +53,21 @@ DEFAULT_CORS_ORIGINS = (
     "https://webbpulse.com,https://www.webbpulse.com,http://webbpulse.com"
 )
 
+# How Portfolio's free-text `ENVIRONMENT` maps onto the base class's
+# `environment`, which is a Literal of local/test/staging/production. Anything
+# unrecognised lands on "local", which is the safe end: it is the value that
+# grants the least, and `is_production` stays False for it.
+ENVIRONMENT_ALIASES = {
+    "development": "local",
+    "dev": "local",
+    "local": "local",
+    "test": "test",
+    "testing": "test",
+    "staging": "staging",
+    "production": "production",
+    "prod": "production",
+}
+
 
 class Settings(BaseServiceSettings):
     """Portfolio's settings. Constructing this reads no AWS and no secret."""
@@ -108,28 +123,56 @@ class Settings(BaseServiceSettings):
     # validation instead: Portfolio's uppercase names stay the ones the
     # application and Terraform use, and the lower case ones are derived.
     #
-    # `environment` is the one that needs care. The base types it as a Literal
-    # of local/test/staging/production while Portfolio's `ENVIRONMENT` has
-    # always defaulted to "development" and is free text, so the mapping is
-    # explicit rather than a pass-through and an unrecognised value lands on
-    # "local" rather than failing validation.
-    _ENVIRONMENT_ALIASES = {
-        "development": "local",
-        "dev": "local",
-        "local": "local",
-        "test": "test",
-        "testing": "test",
-        "staging": "staging",
-        "production": "production",
-        "prod": "production",
-    }
+    # `environment` is the one that needs care, and it has to be translated
+    # *before* validation rather than after. `BaseServiceSettings` is
+    # case-insensitive, so the base's `environment` and Portfolio's
+    # `ENVIRONMENT` are fed by the same `ENVIRONMENT` environment variable.
+    # That means the base's Literal runs against Portfolio's raw value: with
+    # `ENVIRONMENT=development` set, which is both the documented default and
+    # what a developer actually exports, the model raised
+    #
+    #     Input should be 'local', 'test', 'staging' or 'production'
+    #
+    # and never reached the `mode="after"` validator that was supposed to do
+    # the mapping. `ENVIRONMENT=dev` failed the same way. Only leaving the
+    # variable unset worked, because then the base fell back to its own
+    # "local" default and the field was never given Portfolio's spelling.
+    #
+    # Mapping in a `mode="before"` model validator fixes that: the raw input
+    # is rewritten so `environment` already holds a Literal member by the time
+    # the field is validated, while `ENVIRONMENT` keeps the free-text value
+    # the application and Terraform use.
+    @model_validator(mode="before")
+    @classmethod
+    def _map_environment_alias(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        # Case-insensitively, since the environment variable may arrive under
+        # any spelling and pydantic-settings matches without regard to case.
+        keys = [key for key in data if key.lower() == "environment"]
+        if not keys:
+            return data
+        raw = data[keys[0]]
+        if not isinstance(raw, str):
+            return data
+
+        mapped = ENVIRONMENT_ALIASES.get(raw.strip().lower(), "local")
+        data = dict(data)
+        # Portfolio's own field keeps the value as given; the base's Literal
+        # field gets the translation. Both are written explicitly because a
+        # single case-insensitive key would otherwise feed both.
+        for key in keys:
+            data.pop(key)
+        data["ENVIRONMENT"] = raw
+        data["environment"] = mapped
+        return data
 
     @model_validator(mode="after")
     def _mirror_base_fields(self) -> "Settings":
         object.__setattr__(
             self,
             "environment",
-            self._ENVIRONMENT_ALIASES.get(self.ENVIRONMENT.strip().lower(), "local"),
+            ENVIRONMENT_ALIASES.get(self.ENVIRONMENT.strip().lower(), "local"),
         )
         object.__setattr__(self, "log_level", self.LOG_LEVEL)
         origins = self.CORS_ORIGINS
