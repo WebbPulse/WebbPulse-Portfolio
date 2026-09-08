@@ -166,7 +166,7 @@ export const MarkdownCheatsheet: React.FC = () => {
                             </span>
                           </div>
                           <button
-                            onClick={() => copyToClipboard(example.syntax)}
+                            onClick={() => void copyToClipboard(example.syntax)}
                             className="ml-2 p-1 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity duration-150"
                             title="Copy to clipboard"
                           >

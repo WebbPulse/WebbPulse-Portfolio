@@ -27,7 +27,7 @@ export const BlogPostForm: React.FC<BlogPostFormProps> = ({
   const [showPreview, setShowPreview] = useState(false);
 
   useEffect(() => {
-    loadCategories();
+    void loadCategories();
   }, []);
 
   const loadCategories = async () => {
@@ -52,7 +52,7 @@ export const BlogPostForm: React.FC<BlogPostFormProps> = ({
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
         {editingPost ? 'Edit Blog Post' : 'Add New Blog Post'}
       </h3>
-      <form onSubmit={onSubmit} className="space-y-4">
+      <form onSubmit={e => void onSubmit(e)} className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Title *

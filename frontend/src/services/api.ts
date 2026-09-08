@@ -1,24 +1,35 @@
-// API service for communicating with the backend
-// Detect environment and set appropriate API base URL
-const getApiBaseUrl = (): string => {
-  // Check if we have an explicit API URL set
-  if (import.meta.env.VITE_API_BASE_URL) {
-    return import.meta.env.VITE_API_BASE_URL;
-  }
+// API service for communicating with the backend.
+//
+// The transport is @webbpulse/api-client and the configuration is
+// @webbpulse/config, both from the org CodeArtifact repository. The
+// `{ data, error }` envelope below is Portfolio's own: the shared client
+// rejects on a non 2xx, and every call site in this application reads
+// `response.error` instead, so this class adapts the throwing contract back
+// into the envelope rather than rewriting every page component.
+import {
+  ApiError,
+  createApiClient,
+  formatApiErrorMessage,
+  type ApiClient,
+} from '@webbpulse/api-client';
+import { loadAppConfig } from '@webbpulse/config';
+import { TokenStore } from '@webbpulse/auth';
 
-  // Check the Vite mode to determine which backend to use
-  const mode = import.meta.env.MODE;
+/** Key the auth token is stored under. Unchanged, so sessions survive deploy. */
+const TOKEN_STORAGE_KEY = 'authToken';
 
-  if (mode === 'production') {
-    // Use production backend for production mode
-    return 'https://api.webbpulse.com/api/v1';
-  } else {
-    // Use local backend for development mode (default)
-    return 'http://localhost:8000/api/v1';
-  }
-};
+const config = loadAppConfig(import.meta.env, {
+  // Stated here rather than defaulted inside the package: production talks to
+  // the deployed API and everything else to a local backend, which is the
+  // behaviour the previous hand rolled getApiBaseUrl had.
+  defaultApiBaseUrl:
+    import.meta.env.MODE === 'production'
+      ? 'https://api.webbpulse.com/api/v1'
+      : 'http://localhost:8000/api/v1',
+  defaultAppName: 'WebbPulse Portfolio',
+});
 
-const API_BASE_URL = getApiBaseUrl();
+export const API_BASE_URL = config.apiBaseUrl;
 
 export interface Project {
   id: number;
@@ -52,12 +63,14 @@ export interface BlogPost {
   title: string;
   slug: string;
   content: string;
-  excerpt?: string;
-  read_time?: string;
-  published_at?: string;
+  excerpt?: string | undefined;
+  read_time?: string | undefined;
+  // Absent until the post is published, and the admin form carries it as
+  // `undefined` for a draft, so the optionality has to be explicit.
+  published_at?: string | undefined;
   created_at: string;
-  updated_at?: string;
-  category_id?: number;
+  updated_at?: string | undefined;
+  category_id?: number | undefined;
   category?: {
     id: number;
     name: string;
@@ -153,55 +166,52 @@ export interface ApiResponse<T> {
   error?: string;
 }
 
-class ApiService {
-  private baseUrl: string;
-  private authToken: string | null = null;
+export class ApiService {
+  private readonly client: ApiClient;
+  private readonly tokenStore: TokenStore;
 
   constructor(baseUrl: string = API_BASE_URL) {
-    this.baseUrl = baseUrl;
-    // Try to load token from localStorage on initialization
-    this.authToken = localStorage.getItem('authToken');
+    // TokenStore degrades to an in memory store when localStorage throws,
+    // which Safari in private mode does, so reading a token cannot break the
+    // application on load.
+    this.tokenStore = new TokenStore(TOKEN_STORAGE_KEY);
+    this.client = createApiClient({
+      baseUrl,
+      // The client defaults to credentials: 'include', which the staging access
+      // gate needs: its CloudFront signed cookies are set on the staging apex,
+      // so a request from the www host to the API host only carries them when
+      // credentials are included. Stated explicitly so it is not lost to a
+      // future default change.
+      credentials: 'include',
+      // Read synchronously on every request, which is what the client requires.
+      getAuthToken: () => this.tokenStore.get(),
+      // The API reissues a token in a response header after a username change.
+      onTokenRefresh: token => {
+        this.tokenStore.set(token);
+      },
+    });
   }
 
-  private async request<T>(
-    endpoint: string,
-    options: RequestInit = {}
+  /**
+   * Runs a call and converts the client's rejection into the `{ data, error }`
+   * envelope this application's call sites read.
+   */
+  private async envelope<T>(
+    call: () => Promise<{ data: T }>
   ): Promise<ApiResponse<T>> {
     try {
-      const url = `${this.baseUrl}${endpoint}`;
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-
-      // Add authorization header if token exists
-      if (this.authToken) {
-        headers['Authorization'] = `Bearer ${this.authToken}`;
-      }
-
-      // Merge with any additional headers from options
-      if (options.headers) {
-        Object.assign(headers, options.headers);
-      }
-
-      // credentials: 'include' so the browser attaches cookies scoped to the
-      // domain the API is served from. Production does not use cookies, but the
-      // staging access gate does: its CloudFront signed cookies are set on the
-      // staging apex, so a same-site request from the www host to the API host
-      // carries them and the API's authorizer accepts the call.
-      const response = await fetch(url, {
-        ...options,
-        headers,
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      return { data };
+      const response = await call();
+      return { data: response.data };
     } catch (error) {
       console.error('API request failed:', error);
+      if (error instanceof ApiError) {
+        // formatApiErrorMessage unpacks the FastAPI `detail` field, including
+        // the validation error array, into one readable line.
+        return {
+          data: null as T,
+          error: formatApiErrorMessage(error.body, error.message),
+        };
+      }
       return {
         data: null as T,
         error:
@@ -210,36 +220,56 @@ class ApiService {
     }
   }
 
+  private request<T>(
+    endpoint: string,
+    options: { method?: string; body?: unknown } = {}
+  ): Promise<ApiResponse<T>> {
+    const method = options.method ?? 'GET';
+    return this.envelope<T>(() =>
+      this.client.request<T>(method, endpoint, {
+        ...(options.body === undefined ? {} : { body: options.body }),
+      })
+    );
+  }
+
   // Authentication methods
   async login(credentials: UserLogin): Promise<ApiResponse<Token>> {
     const response = await this.request<Token>('/admin/login', {
       method: 'POST',
-      body: JSON.stringify(credentials),
+      body: credentials,
     });
 
     if (response.data) {
-      this.authToken = response.data.access_token;
-      localStorage.setItem('authToken', this.authToken);
+      this.tokenStore.set(response.data.access_token);
     }
 
     return response;
   }
 
   logout(): void {
-    this.authToken = null;
-    localStorage.removeItem('authToken');
+    this.tokenStore.clear();
   }
 
   isAuthenticated(): boolean {
-    return !!this.authToken;
+    // Read through on every call rather than caching in a field. The previous
+    // cached copy went stale whenever another tab signed in or out.
+    const token = this.tokenStore.get();
+    return token !== null && token !== '';
   }
 
   // Projects API
   async getProjects(
     featuredOnly: boolean = false
   ): Promise<ApiResponse<Project[]>> {
-    const params = featuredOnly ? '?featured_only=true' : '';
-    return this.request<Project[]>(`/projects${params}/`);
+    // The query goes through the client rather than being concatenated into
+    // the path. The previous form built `/projects?featured_only=true/`, which
+    // put the trailing slash inside the query string, so the filter only ever
+    // worked by the backend ignoring an unparsed value.
+    return this.envelope<Project[]>(() =>
+      this.client.get<Project[]>('/projects/', {
+        ...(featuredOnly ? { query: { featured_only: true } } : {}),
+      })
+    );
   }
 
   async getProject(id: number): Promise<ApiResponse<Project>> {
@@ -261,7 +291,7 @@ class ApiService {
   ): Promise<ApiResponse<Project>> {
     return this.request<Project>('/projects/', {
       method: 'POST',
-      body: JSON.stringify(project),
+      body: project,
     });
   }
 
@@ -271,7 +301,7 @@ class ApiService {
   ): Promise<ApiResponse<Project>> {
     return this.request<Project>(`/projects/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(project),
+      body: project,
     });
   }
 
@@ -287,7 +317,7 @@ class ApiService {
   ): Promise<ApiResponse<Experience>> {
     return this.request<Experience>('/experience/', {
       method: 'POST',
-      body: JSON.stringify(experience),
+      body: experience,
     });
   }
 
@@ -297,7 +327,7 @@ class ApiService {
   ): Promise<ApiResponse<Experience>> {
     return this.request<Experience>(`/experience/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(experience),
+      body: experience,
     });
   }
 
@@ -332,7 +362,7 @@ class ApiService {
   ): Promise<ApiResponse<BlogPost>> {
     return this.request<BlogPost>('/posts/admin', {
       method: 'POST',
-      body: JSON.stringify(post),
+      body: post,
     });
   }
 
@@ -342,7 +372,7 @@ class ApiService {
   ): Promise<ApiResponse<BlogPost>> {
     return this.request<BlogPost>(`/posts/admin/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(post),
+      body: post,
     });
   }
 
@@ -369,7 +399,7 @@ class ApiService {
   ): Promise<ApiResponse<Category>> {
     return this.request<Category>('/posts/categories', {
       method: 'POST',
-      body: JSON.stringify(category),
+      body: category,
     });
   }
 
@@ -379,7 +409,7 @@ class ApiService {
   ): Promise<ApiResponse<Category>> {
     return this.request<Category>(`/posts/categories/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(category),
+      body: category,
     });
   }
 
@@ -399,7 +429,7 @@ class ApiService {
   ): Promise<ApiResponse<Skill>> {
     return this.request<Skill>('/skills/', {
       method: 'POST',
-      body: JSON.stringify(skill),
+      body: skill,
     });
   }
 
@@ -409,7 +439,7 @@ class ApiService {
   ): Promise<ApiResponse<Skill>> {
     return this.request<Skill>(`/skills/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(skill),
+      body: skill,
     });
   }
 
@@ -429,7 +459,7 @@ class ApiService {
   ): Promise<ApiResponse<Education>> {
     return this.request<Education>('/education/', {
       method: 'POST',
-      body: JSON.stringify(entry),
+      body: entry,
     });
   }
 
@@ -439,7 +469,7 @@ class ApiService {
   ): Promise<ApiResponse<Education>> {
     return this.request<Education>(`/education/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(entry),
+      body: entry,
     });
   }
 
@@ -459,7 +489,7 @@ class ApiService {
   ): Promise<ApiResponse<Certification>> {
     return this.request<Certification>('/certifications/', {
       method: 'POST',
-      body: JSON.stringify(entry),
+      body: entry,
     });
   }
 
@@ -469,7 +499,7 @@ class ApiService {
   ): Promise<ApiResponse<Certification>> {
     return this.request<Certification>(`/certifications/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(entry),
+      body: entry,
     });
   }
 
@@ -491,7 +521,7 @@ class ApiService {
   ): Promise<ApiResponse<SiteContent>> {
     return this.request<SiteContent>('/site-content/', {
       method: 'PUT',
-      body: JSON.stringify(patch),
+      body: patch,
     });
   }
 }

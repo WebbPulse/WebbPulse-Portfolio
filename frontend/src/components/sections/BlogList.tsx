@@ -83,7 +83,7 @@ export const BlogList: React.FC = () => {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    void (async () => {
       setLoading(true);
       setError(null);
       const [postsResponse, categoriesResponse] = await Promise.all([

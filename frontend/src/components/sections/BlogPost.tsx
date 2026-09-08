@@ -29,7 +29,7 @@ export const BlogPost: React.FC = () => {
   useEffect(() => {
     if (!slug) return;
     let cancelled = false;
-    (async () => {
+    void (async () => {
       setLoading(true);
       setError(null);
       const response = await apiService.getBlogPostBySlug(slug);
@@ -261,12 +261,17 @@ export const BlogPost: React.FC = () => {
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      onClick={() =>
-                        navigator.share?.({
-                          title: post.title,
-                          url: window.location.href,
-                        })
-                      }
+                      onClick={() => {
+                        // Rejects when the visitor dismisses the share sheet,
+                        // which is a normal outcome rather than a failure, so
+                        // it is swallowed rather than surfaced.
+                        void navigator
+                          .share?.({
+                            title: post.title,
+                            url: window.location.href,
+                          })
+                          .catch(() => {});
+                      }}
                       className="flex-1 px-3 py-2 text-sm rounded-lg bg-gradient-accent text-surface-50"
                       style={{ backgroundSize: '200% 200%' }}
                     >
@@ -274,9 +279,14 @@ export const BlogPost: React.FC = () => {
                     </button>
                     <button
                       type="button"
-                      onClick={() =>
-                        navigator.clipboard.writeText(window.location.href)
-                      }
+                      onClick={() => {
+                        // Rejects when the document is not focused or the
+                        // permission is denied; neither is worth interrupting
+                        // the reader over.
+                        void navigator.clipboard
+                          .writeText(window.location.href)
+                          .catch(() => {});
+                      }}
                       className="flex-1 px-3 py-2 text-sm rounded-lg surface-glass surface-glass-hover text-surface-200"
                     >
                       Copy

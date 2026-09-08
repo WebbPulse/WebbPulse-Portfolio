@@ -183,14 +183,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    loadProjects();
-    loadExperience();
-    loadBlogPosts();
-    loadCategories();
-    loadSkills();
-    loadEducation();
-    loadCertifications();
-    loadSiteContent();
+    void loadProjects();
+    void loadExperience();
+    void loadBlogPosts();
+    void loadCategories();
+    void loadSkills();
+    void loadEducation();
+    void loadCertifications();
+    void loadSiteContent();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
@@ -479,11 +479,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    // Convert empty strings to nullable fields
+    // Convert empty strings to nulls. These fields are `string | null` on the
+    // wire, and null is what clears them; omitting the key would leave the
+    // stored value untouched.
     const payload = {
       ...educationForm,
-      end_date: educationForm.end_date || undefined,
-      description: educationForm.description || undefined,
+      end_date: educationForm.end_date || null,
+      description: educationForm.description || null,
     };
     const r = editingEducation
       ? await apiService.updateEducation(editingEducation.id, payload)
@@ -527,7 +529,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
     setError(null);
     const payload = {
       ...certForm,
-      credential_url: certForm.credential_url || undefined,
+      credential_url: certForm.credential_url || null,
     };
     const r = editingCert
       ? await apiService.updateCertification(editingCert.id, payload)
@@ -743,7 +745,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleProjectDelete(project.id)}
+                            onClick={() => void handleProjectDelete(project.id)}
                             disabled={loading}
                             className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
                           >
@@ -827,7 +829,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleExperienceDelete(exp.id)}
+                            onClick={() => void handleExperienceDelete(exp.id)}
                             disabled={loading}
                             className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
                           >
@@ -910,7 +912,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleSkillDelete(skill.id)}
+                          onClick={() => void handleSkillDelete(skill.id)}
                           disabled={loading}
                           className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
                         >
@@ -992,7 +994,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleEducationDelete(ed.id)}
+                            onClick={() => void handleEducationDelete(ed.id)}
                             disabled={loading}
                             className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
                           >
@@ -1077,7 +1079,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleCertDelete(c.id)}
+                            onClick={() => void handleCertDelete(c.id)}
                             disabled={loading}
                             className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
                           >
@@ -1163,7 +1165,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => handleBlogPostPublish(post.id)}
+                              onClick={() =>
+                                void handleBlogPostPublish(post.id)
+                              }
                               disabled={loading}
                               className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300"
                             >
@@ -1173,7 +1177,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleBlogPostDelete(post.id)}
+                            onClick={() => void handleBlogPostDelete(post.id)}
                             disabled={loading}
                             className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
                           >
@@ -1211,7 +1215,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
                   <CategoryForm
                     form={categoryForm}
                     setForm={setCategoryForm}
-                    onSubmit={handleCategorySubmit}
+                    onSubmit={e => void handleCategorySubmit(e)}
                     onCancel={() => {
                       setShowCategoryForm(false);
                       setEditingCategory(null);
@@ -1253,7 +1257,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleCategoryDelete(category.id)}
+                            onClick={() =>
+                              void handleCategoryDelete(category.id)
+                            }
                             disabled={loading}
                             className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
                           >

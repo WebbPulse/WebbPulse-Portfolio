@@ -29,7 +29,7 @@ export const EducationForm: React.FC<EducationFormProps> = ({
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
         {editingEducation ? 'Edit Education' : 'Add New Education'}
       </h3>
-      <form onSubmit={onSubmit} className="space-y-4">
+      <form onSubmit={e => void onSubmit(e)} className="space-y-4">
         <div>
           <label className={labelClass}>Degree *</label>
           <input
