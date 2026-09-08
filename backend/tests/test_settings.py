@@ -216,3 +216,72 @@ def test_cors_origins_include_localhost(monkeypatch):
     assert any(
         origin.startswith("http://localhost") for origin in settings.CORS_ORIGINS
     )
+
+
+# `ENVIRONMENT=development` used to raise a Literal validation error rather than
+# mapping to "local". `BaseServiceSettings` is case-insensitive, so its
+# `environment` field and Portfolio's `ENVIRONMENT` are the same variable, and
+# the base's Literal was validated against Portfolio's free-text value before
+# the alias map could translate it. Only leaving the variable unset worked, even
+# though "development" is the documented default.
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("development", "local"),
+        ("dev", "local"),
+        ("local", "local"),
+        ("test", "test"),
+        ("testing", "test"),
+        ("staging", "staging"),
+        ("production", "production"),
+        ("prod", "production"),
+    ],
+)
+def test_environment_aliases_map_to_the_base_literal(monkeypatch, raw, expected):
+    monkeypatch.setenv("ENVIRONMENT", raw)
+    settings = Settings(_env_file=None)
+    # Portfolio's own field keeps the value exactly as it was set, so the
+    # environment variable Terraform writes is still readable as written.
+    assert settings.ENVIRONMENT == raw
+    # The base class's field holds the translation, so it satisfies the Literal.
+    assert settings.environment == expected
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("raw", ["DEVELOPMENT", "Dev", "  development  "])
+def test_environment_aliases_ignore_case_and_surrounding_space(monkeypatch, raw):
+    monkeypatch.setenv("ENVIRONMENT", raw)
+    assert Settings(_env_file=None).environment == "local"
+
+
+@pytest.mark.unit
+def test_unrecognised_environment_falls_back_to_local(monkeypatch):
+    """An unknown value lands on "local" rather than failing validation.
+
+    "local" is the safe end of the Literal: it grants the least, and
+    `is_production` stays False for it.
+    """
+    monkeypatch.setenv("ENVIRONMENT", "whatever")
+    settings = Settings(_env_file=None)
+    assert settings.ENVIRONMENT == "whatever"
+    assert settings.environment == "local"
+    assert settings.is_production is False
+
+
+@pytest.mark.unit
+def test_environment_defaults_to_development_when_unset(monkeypatch):
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    settings = Settings(_env_file=None)
+    assert settings.ENVIRONMENT == "development"
+    assert settings.environment == "local"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("raw", "is_production"),
+    [("production", True), ("prod", True), ("staging", False), ("development", False)],
+)
+def test_is_production_follows_the_mapped_environment(monkeypatch, raw, is_production):
+    monkeypatch.setenv("ENVIRONMENT", raw)
+    assert Settings(_env_file=None).is_production is is_production
