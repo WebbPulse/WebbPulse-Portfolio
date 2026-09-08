@@ -13,7 +13,7 @@
 
 module "alarms" {
   source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/api-alarms"
-  version = "~> 2.1"
+  version = "~> 2.4"
 
   name_prefix         = local.prefix
   notification_emails = ["tyler@webbpulse.com", "tylert2610@gmail.com"]
@@ -81,4 +81,30 @@ module "alarms" {
   error_log_groups = {
     for name in keys(local.lambda_domains) : name => module.lambda_domain[name].log_group_name
   }
+
+  # The login limiter in app/core/login_limiter.py allows a request when it
+  # cannot reach "<prefix>-rate-limits", rather than refusing it, because
+  # refusing every login while DynamoDB is unavailable turns a dependency blip
+  # into a full outage. Nothing reported that: the request succeeded, so
+  # AWS/Lambda Errors stays at zero and the API returns 200 while the login
+  # limit is not being enforced. This is one metric filter and one
+  # "<prefix>-rate-limit-failed-open" alarm on the metric it publishes.
+  rate_limit_fail_open_alarm = true
+
+  # Scoped to identity, not defaulted to error_log_groups. The limiter is called
+  # from the identity router's login path only, not from global middleware, and
+  # identity is the one domain granted the rate-limits table above. A filter on
+  # the other three would watch a log group that can never emit the record, and
+  # would read as though those functions were covered.
+  rate_limit_fail_open_log_groups = {
+    identity = module.lambda_domain["identity"].log_group_name
+  }
+
+  # rate_limit_fail_open_filter_pattern keeps its module default of
+  # { $.rate_limit_failed_open IS TRUE }, which matches a top level JSON field.
+  # That holds here: _failed_open passes the flag as a keyword to the Powertools
+  # logger, which writes it as its own field rather than into the message text,
+  # and the domain functions run with log_format = "JSON". CarModPicker's
+  # limiter interpolates the flag into the message instead and has to override
+  # the pattern; this one does not.
 }
