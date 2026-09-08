@@ -737,7 +737,7 @@ jobs:
           ENVIRONMENT: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
           # Edit this line, and only this line, when a cut lands. See the
           # comment above the job.
-          DOMAINS: "public resume content"
+          DOMAINS: "public resume content identity"
         run: |
           set -uo pipefail
 
