@@ -161,3 +161,125 @@ header there.
 
 The list of domains the job verifies lives in one `DOMAINS` variable in that
 job. Cuts 2 through 4 each add one word to it.
+## Cut 2: resume
+
+PR 14. Routes the five resume collections, projects, experience, skills,
+education and certifications, to the `resume` function. Status: **PR open, not
+applied**.
+
+### What changed
+
+`terraform/apigateway.tf`, `scripts/verify_route_cut.sh` and one new test.
+
+- `local.routed_lambda_domains` goes from `["public"]` to
+  `["public", "resume"]`, which is what adds `resume` to the `integrations` map
+  and, through the module, its `aws_lambda_permission`.
+- A new `local.resume_collections` lists the five collections, and the `routes`
+  map gains 15 keys generated from it. The map is now a `merge` of cut 1's four
+  literal `public` keys and the generated `resume` block, so each further cut
+  appends a block rather than editing the existing ones.
+- `scripts/verify_route_cut.sh`'s `resume` case goes from empty to ten GET
+  probe paths, both slash forms of all five collections.
+- `backend/tests/entrypoints/test_gateway_routes.py` is new: it parses the
+  route keys out of `apigateway.tf` and asserts they cover exactly the paths
+  `build_domain_app("resume")` serves.
+
+### The route keys, and why there are three per collection and not two
+
+This is the one place cut 2 departs from section 3.5, and it is worth reading
+before the next cut copies the pattern.
+
+Section 3.5 gives each collection two keys, `ANY /api/v1/projects` and
+`ANY /api/v1/projects/{proxy+}`. The paths this domain actually serves are
+`/api/v1/projects/` and `/api/v1/projects/{item_id}`, because
+`build_crud_router` in `backend/app/domains/resume/crud_router.py` declares its
+collection operations at `/` and the router mounts under `/api/v1/projects`. So
+the collection path carries a trailing slash, and **whether either of section
+3.5's two keys matches it is undocumented**:
+
+- The HTTP API routing documentation gives the precedence order (full match,
+  then a greedy path variable, then `$default`) but has no trailing-slash or
+  empty-remainder example anywhere, and says nothing about whether a trailing
+  slash is normalised before route selection.
+- Whether `{proxy+}` can capture an empty remainder is also unstated for HTTP
+  APIs. The v1 REST API documentation describes `/parent/{proxy+}` as standing
+  for `/parent/*`, which reads as requiring a non-empty remainder, but that
+  sentence is not repeated for v2 and carrying it over is an inference rather
+  than a documented fact.
+
+Rather than depend on unspecified behaviour, each collection gets a third key,
+the literal `ANY /api/v1/projects/`. A full match outranks a greedy one, so the
+extra key is correct whichever way API Gateway actually behaves, and it is
+harmless if AWS turns out to normalise the slash. Five collections times three
+keys is 15.
+
+The bare `ANY /api/v1/projects` is not redundant either. The frontend's
+`getProjects(true)` emits `/projects?featured_only=true/`, whose path component
+is the bare collection with the slash inside the query string
+(`frontend/src/services/api.ts`), and `TrailingSlashMiddleware` is what makes
+that reach the handler once the request has arrived at the function.
+
+`ANY` rather than a method per route: the domain owns every method on these
+prefixes, so `ANY` expresses the 25 routes in 15 keys instead of 75, cannot
+drift when an operation is added to `build_crud_router`, and keeps an
+unsupported method answering from the domain's own 405 rather than from the
+monolith.
+
+### Plan
+
+Not yet applied. The speculative plan on the PR confirms 17 to add, 0 to
+change, 0 to destroy:
+
+- 15 `aws_apigatewayv2_route`, one per generated `resume` route key
+- 1 `aws_apigatewayv2_integration` for `resume`
+- 1 `aws_lambda_permission` for `resume`, whose statement id the module derives
+  as `AllowAPIGatewayInvoke-resume` because `resume` is not the
+  `default_integration`
+
+Every one of the 15 routes plans with `authorization_type = CUSTOM` and the
+same authorizer id the existing `$default`, `GET /`, `GET /health`,
+`GET /robots.txt` and `GET /sitemap.xml` routes already carry, which is the
+check worth making by hand: a route that planned as `NONE` would be a hole
+straight past the staging access gate, and the routes map sets no
+`authorization_type` precisely so the module picks `CUSTOM` for it. Those five
+existing routes plan as no-op.
+
+No destroys this time, unlike cut 1. Cut 1 destroyed the monolith's two
+explicit route keys because `$default` replaced them; that is a one-time cost of
+the first cut and `default_integration` is already `"legacy"`. Nothing about the
+monolith, the `legacy` integration or its permission changes here, so a plan
+showing any destroy on this PR is a reason to stop and read.
+
+### Verification, once applied
+
+`scripts/verify_route_cut.sh staging resume`, with `WEBBPULSE_ORIGIN_VERIFY`
+set. Ten paths, both slash forms of each collection, all expected to report
+`X-WebbPulse-Domain: resume`.
+
+Item paths are deliberately not probed. Ids come from the `COUNTER#` allocator
+in `backend/app/db/repository.py`, so they differ between staging and
+production and no literal id is safe to hard code in the script. The `{proxy+}`
+key that serves them is what the admin panel exercises.
+
+The `/api/v1/projects/` probe is the one that matters most: it is the path whose
+route key section 3.5 would have omitted, so it is the one that would report
+`monolith` if the third key were ever dropped.
+
+**One follow up this PR deliberately does not make.** PR #109 added the
+`verify-route-cuts` job to `.github/workflows/deploy-backend.yml` and put the
+domains it checks in a single `DOMAINS` variable, so that each cut adds one
+word to it. Cut 2 should add `resume` there, and this PR does not: that file was
+being edited concurrently and touching it here would have meant resolving a
+conflict in a workflow this change has no other reason to modify. Until that one
+word is added, CI verifies only `public` after each deploy and `resume` has to
+be checked by running `scripts/verify_route_cut.sh staging resume` by hand.
+The script side of that is ready; only the workflow variable is missing.
+
+### Rollback
+
+Delete the `resume` block from the `routes` map and `"resume"` from
+`local.routed_lambda_domains`, then apply. Both have to move together: the
+module's `every_integration_is_routed` check fails a plan on an integration no
+route can reach, so leaving the name in the list without its route keys does not
+plan. `$default` sends all 25 routes back to the monolith, which still serves
+them because nothing has been deleted from it.
