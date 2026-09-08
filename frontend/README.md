@@ -16,6 +16,39 @@ A modern, responsive personal portfolio website showcasing development work and 
 
 - Node.js 18+
 - npm
+- AWS CLI, signed in to the WebbPulse Identity Center, for the shared packages
+
+### Shared packages from CodeArtifact
+
+This frontend depends on the org's shared TypeScript packages, which are
+published to AWS CodeArtifact rather than the public npm registry:
+
+| Package                    | Used for                                                         |
+| -------------------------- | ---------------------------------------------------------------- |
+| `@webbpulse/api-client`    | The typed fetch client behind `src/services/api.ts`              |
+| `@webbpulse/auth`          | Token storage, which degrades when `localStorage` is unavailable |
+| `@webbpulse/config`        | Validated startup configuration from `import.meta.env`           |
+| `@webbpulse/tsconfig`      | The compiler options `tsconfig.app.json` extends                 |
+| `@webbpulse/eslint-config` | The lint rules `eslint.config.js` extends                        |
+
+`frontend/.npmrc` points the `@webbpulse` scope at the CodeArtifact repository,
+but it deliberately holds no auth token. Before your first `npm install` or
+`npm ci`, fetch a 12 hour token:
+
+```bash
+AWS_PROFILE=WebbPulse-Artifacts/AdministratorAccess AWS_REGION=us-west-2 \
+  aws codeartifact login --tool npm \
+    --domain webbpulse --domain-owner 432410731887 \
+    --repository npm --namespace @webbpulse
+```
+
+That appends the token to your `~/.npmrc`, leaving the checked in
+`frontend/.npmrc` untouched. Re-run it when an install starts returning 401.
+
+Note that a `ReadOnlyAccess` profile is not enough: the AWS managed
+ReadOnlyAccess policy omits `sts:GetServiceBearerToken`, which
+`codeartifact login` requires. CI does not use these profiles at all; it obtains
+a token over OIDC in the workflow.
 
 ### Installation
 
@@ -26,7 +59,7 @@ git clone <repository-url>
 cd Portfolio-Website
 ```
 
-2. Install dependencies:
+2. Log in to CodeArtifact, as above, then install dependencies:
 
 ```bash
 npm install

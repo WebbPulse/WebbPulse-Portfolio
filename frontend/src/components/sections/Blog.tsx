@@ -131,7 +131,7 @@ export const Blog: React.FC = () => {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    void (async () => {
       setLoading(true);
       setError(null);
       const response = await apiService.getBlogPosts();

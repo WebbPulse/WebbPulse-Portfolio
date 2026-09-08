@@ -37,6 +37,32 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      # The @webbpulse scoped packages resolve from CodeArtifact, so npm has to
+      # be logged in before the install. The deploy role in each GitHub
+      # Environment can read CodeArtifact, so this reuses the credentials the
+      # deploy already assumes rather than adding a second role.
+      #
+      # The login writes the registry and token into ~/.npmrc, and it is run
+      # from the repository root rather than frontend/: inside a workspaces
+      # package directory the aws CLI writes the config to the wrong .npmrc.
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to CodeArtifact for npm
+        env:
+          CODEARTIFACT_DOMAIN_OWNER: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
+        run: |
+          set -euo pipefail
+          aws codeartifact login \
+            --tool npm \
+            --domain webbpulse \
+            --domain-owner "$CODEARTIFACT_DOMAIN_OWNER" \
+            --repository npm \
+            --namespace @webbpulse
+
       - name: Install dependencies
         working-directory: frontend
         run: npm ci
@@ -46,12 +72,6 @@ jobs:
         env:
           VITE_API_BASE_URL: ${{ vars.API_BASE_URL != '' && format('{0}/api/v1', vars.API_BASE_URL) || '' }}
         run: npm run build
-
-      - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
 
       - name: Wait for Terraform run to complete
         if: env.TFC_WAIT_ENABLED == 'true'

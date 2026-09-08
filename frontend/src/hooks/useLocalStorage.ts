@@ -4,7 +4,10 @@ export function useLocalStorage<T>(key: string, initialValue: T) {
   const [storedValue, setStoredValue] = useState<T>(() => {
     try {
       const item = window.localStorage.getItem(key);
-      return item ? JSON.parse(item) : initialValue;
+      // JSON.parse is `any`. The cast is the honest expression of what this
+      // hook assumes: whatever was serialised under this key round trips back
+      // as T. Nothing here can verify that at runtime.
+      return item ? (JSON.parse(item) as T) : initialValue;
     } catch (error) {
       console.error(`Error reading localStorage key "${key}":`, error);
       return initialValue;

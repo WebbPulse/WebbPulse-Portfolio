@@ -50,7 +50,7 @@ export function useProjects(
   }, [featuredOnly]);
 
   useEffect(() => {
-    fetchProjects();
+    void fetchProjects();
   }, [fetchProjects]);
 
   return {
@@ -88,7 +88,7 @@ export function useExperience(): UseApiDataReturn<Experience[]> {
   }, []);
 
   useEffect(() => {
-    fetchExperience();
+    void fetchExperience();
   }, [fetchExperience]);
 
   return {
@@ -127,7 +127,7 @@ export function useProject(id: number): UseApiDataReturn<Project> {
 
   useEffect(() => {
     if (id) {
-      fetchProject();
+      void fetchProject();
     }
   }, [fetchProject, id]);
 
@@ -156,7 +156,7 @@ export function useSkills(): UseApiDataReturn<Skill[]> {
   }, []);
 
   useEffect(() => {
-    fetchSkills();
+    void fetchSkills();
   }, [fetchSkills]);
 
   return { ...state, refetch: fetchSkills };
@@ -181,7 +181,7 @@ export function useEducation(): UseApiDataReturn<Education[]> {
   }, []);
 
   useEffect(() => {
-    fetchEducation();
+    void fetchEducation();
   }, [fetchEducation]);
 
   return { ...state, refetch: fetchEducation };
@@ -206,7 +206,7 @@ export function useCertifications(): UseApiDataReturn<Certification[]> {
   }, []);
 
   useEffect(() => {
-    fetchCerts();
+    void fetchCerts();
   }, [fetchCerts]);
 
   return { ...state, refetch: fetchCerts };
@@ -231,7 +231,7 @@ export function useSiteContent(): UseApiDataReturn<SiteContent> {
   }, []);
 
   useEffect(() => {
-    fetchSiteContent();
+    void fetchSiteContent();
   }, [fetchSiteContent]);
 
   return { ...state, refetch: fetchSiteContent };
@@ -267,7 +267,7 @@ export function useExperienceEntry(id: number): UseApiDataReturn<Experience> {
 
   useEffect(() => {
     if (id) {
-      fetchExperienceEntry();
+      void fetchExperienceEntry();
     }
   }, [fetchExperienceEntry, id]);
 

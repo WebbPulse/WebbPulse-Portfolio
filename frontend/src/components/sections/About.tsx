@@ -44,7 +44,7 @@ const StatCard: React.FC<{
 const ValueCard: React.FC<{
   title: string;
   description: string;
-  icon?: string | null;
+  icon?: string | null | undefined;
   index: number;
 }> = ({ title, description, icon, index }) => {
   const { ref, isInView } = useInViewReveal<HTMLDivElement>({

@@ -1,24 +1,13 @@
 {
+  "extends": "@webbpulse/tsconfig/node.json",
   "compilerOptions": {
     "incremental": true,
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
-    "target": "es2022",
-    "lib": ["es2022"],
-    "module": "ESNext",
-    "skipLibCheck": true,
-
-    /* Bundler mode */
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
-    "moduleDetection": "force",
-    "noEmit": true,
-
-    /* Linting */
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    // The Vite and Vitest configs are the only files here and neither imports
+    // Node type definitions, which the shared node config expects to be
+    // installed. Portfolio has no @types/node dependency, so the types array is
+    // emptied rather than adding one just to satisfy the compiler.
+    "types": []
   },
-  "include": ["vite.config.ts"]
+  "include": ["vite.config.ts", "vitest.config.ts"]
 }

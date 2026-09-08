@@ -61,7 +61,8 @@ ruff format --check app tests
 ### Frontend
 
 - **Pages**: `/` (portfolio), `/blog`, `/blog/:slug`, `/admin`
-- **API layer**: All API calls go through `src/services/api.ts` (`apiService`)
+- **API layer**: All API calls go through `src/services/api.ts` (`apiService`). The transport is `@webbpulse/api-client` and the startup configuration is `@webbpulse/config`, both from the org CodeArtifact repository. That client rejects on a non 2xx, so `ApiService` adapts it back into the `{ data, error }` envelope every page component reads; the envelope is Portfolio's own and is unchanged
+- **Shared packages**: `@webbpulse/api-client`, `@webbpulse/auth`, `@webbpulse/config`, `@webbpulse/tsconfig` and `@webbpulse/eslint-config` resolve from CodeArtifact through `frontend/.npmrc`. Run `aws codeartifact login` before installing; see `frontend/README.md`
 - **Dev proxy**: Vite proxies `/api/*` → `http://localhost:8000` in local dev; a production build reads `VITE_API_BASE_URL` (set by `deploy-frontend.yml` from the `API_BASE_URL` environment variable) and falls back to `https://api.webbpulse.com/api/v1`
 
 ### Backend
@@ -105,9 +106,9 @@ ruff format --check app tests
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `.github/workflows/test-backend.yml` | PR to `main`/`staging`, paths `backend/**` | delegates to the org reusable `python-ci.yml@v1`: CodeArtifact login, then pytest on moto (no database service), `ruff check` and `ruff format --check` |
-| `.github/workflows/test-frontend.yml` | PR to `main`/`staging`, paths `frontend/**` | lint, format check, build, Vitest with coverage |
+| `.github/workflows/test-frontend.yml` | PR to `main`/`staging`, paths `frontend/**` | delegates to the org reusable `typescript-ci.yml@v1`: CodeArtifact login, then lint, format check, Vitest with coverage and build |
 | `.github/workflows/deploy-backend.yml` | push to `main`/`staging`, paths `backend/**` | builds the four domain images, pushes them to ECR as `sha-<commit>`, points each function at its digest-pinned URI, smoke tests each one, then verifies the live gateway serves every domain's paths from that domain's function |
-| `.github/workflows/deploy-frontend.yml` | push to `main`/`staging`, paths `frontend/**` | `npm run build` with `VITE_API_BASE_URL`, waits for any active TFC run, `s3 sync --delete`, CloudFront invalidation |
+| `.github/workflows/deploy-frontend.yml` | push to `main`/`staging`, paths `frontend/**` | CodeArtifact login, `npm run build` with `VITE_API_BASE_URL`, waits for any active TFC run, `s3 sync --delete`, CloudFront invalidation. Stays inline rather than using the org `spa-deploy.yml@v1`, which has no TFC wait step |
 
 Deploy workflows pick the `production` or `staging` GitHub Environment from the branch and assume `vars.AWS_DEPLOY_ROLE_ARN` via OIDC. The TFC-polling step keeps a code deploy from racing a Terraform apply that is touching the same function.
 
@@ -119,6 +120,8 @@ Environment-scoped inputs each GitHub Environment must define:
 | `API_BASE_URL` | variable | backend smoke test and the frontend build (terraform output `backend_url`, no trailing slash) |
 | `FRONTEND_S3_BUCKET` | variable | `deploy-frontend.yml` (terraform output `frontend_bucket`) |
 | `CLOUDFRONT_DISTRIBUTION_ID` | variable | `deploy-frontend.yml` (terraform output `cloudfront_distribution_id`) |
+| `CODEARTIFACT_DOMAIN_OWNER` | variable | repository-scoped; the account id owning the `webbpulse` CodeArtifact domain, used by both frontend workflows |
+| `CI_AWS_ROLE_ARN` | variable | repository-scoped; the CI role `test-frontend.yml` assumes to read CodeArtifact |
 | `TFC_API_TOKEN` | secret | both deploy workflows — HCP Terraform token for workspace polling; optional, the wait step is skipped when it is unset |
 
 Deploys on `staging` are gated by the repository-level variable `STAGING_DEPLOY_ENABLED` (`true` once the staging workspace has applied and the Environment variables above exist). It has to be repository-scoped because a job-level `if` is evaluated before the job's Environment is selected, so Environment variables are invisible there.
