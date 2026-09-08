@@ -1,21 +1,38 @@
-# Deploy Backend: the monolith zip deploy, and the per-domain container image
-# build and deploy beside it.
+# Deploy Backend: the per-domain container image build and deploy, and the route
+# cut verification that runs after it.
 #
-# Two independent chains. `deploy` is the existing zip pipeline for the monolith
-# and is unchanged: it still builds `function.zip`, waits on HCP Terraform, calls
-# `update-function-code` and smoke tests `/health`. The image chain is
-# `resolve-env`, `build-images`, `image-map`, `deploy-images`, `smoke-domains`:
-# it builds the four domain images, collects their digest pinned URIs, points the
-# four domain functions at them and probes each one. `deploy` depends on none of
-# it, on purpose: the monolith is what serves traffic until PR 13 moves a route,
-# so an image build or an image deploy that fails must never hold back or roll
-# back the deploy that does.
+# One chain now. `resolve-env`, `build-images`, `image-map`, `deploy-images`,
+# `smoke-domains` builds the four domain images, collects their digest pinned
+# URIs, points the four domain functions at them and probes each one;
+# `verify-route-cuts` then checks the live gateway serves every domain's paths
+# from that domain's own function.
 #
-# Together the image jobs are the plan's section 4 "Per-domain jobs". Two
-# repository variables gate them separately. `BACKEND_IMAGE_BUILD_ENABLED` turns
-# on the build, whose enabled run leaves four images in ECR and changes no
-# behaviour anywhere. `BACKEND_IMAGE_DEPLOY_ENABLED` turns on the deploy, which
-# needs the four functions to exist, so it stays off until PR 9 is applied.
+# The monolith's `deploy` job is gone. It built `function.zip`, waited on HCP
+# Terraform, called `update-function-code` on `${prefix}-api` and smoke tested
+# `/health`, and it ran beside the image chain rather than in it, because the
+# monolith was what served traffic through `$default` while the four cuts were
+# applied one at a time. Section 6's retirement removed the function, the
+# `legacy` integration and `$default` together, so there is nothing for that job
+# to deploy and nothing falling through to it. The four domain functions serve
+# every route.
+#
+# What that removed, and what it did not:
+#
+# - `backend/scripts/build_lambda.sh` is no longer called by anything in CI. It
+#   and the monolith's composition root (`app/main.py`, `app/lambda_handler.py`,
+#   `app/api/v1/api.py`) are still in the tree, because they are what the
+#   existing test suite builds its client from and what `test_route_split.py`
+#   proves the four domains are a partition of. Deleting them is its own PR.
+# - `vars.LAMBDA_FUNCTION_NAME` and the write half of the artifacts bucket grant
+#   are unused. The bucket itself is kept: the last zip in it is what a rollback
+#   would restore the monolith from.
+#
+# The image jobs are the plan's section 4 "Per-domain jobs". Two repository
+# variables gate them separately. `BACKEND_IMAGE_BUILD_ENABLED` turns on the
+# build and `BACKEND_IMAGE_DEPLOY_ENABLED` turns on the deploy. Both are on now,
+# and with the monolith gone they are the only path by which backend code
+# reaches production, so turning either off stops deploys rather than merely
+# pausing an experiment.
 name: Deploy Backend
 
 on:
@@ -302,11 +319,13 @@ jobs:
   # the artifact `image-map` uploads stays what it is: a record on the run for a
   # person to read, and the input comes from the job output.
   #
-  # `smoke-url` is deliberately not passed. The reusable workflow's smoke test
-  # is a `curl` against one URL, and these four functions have no API Gateway
-  # route yet: nothing reaches them over HTTP until PR 13 through 16 flip the
-  # routes. The probes therefore live in `smoke-domains` below, which invokes
-  # each function directly.
+  # `smoke-url` is deliberately not passed. The reusable workflow's smoke test is
+  # a `curl` against one URL, and one URL cannot cover four functions. It was
+  # originally not passed because the functions had no route at all; they have
+  # had routes since the four cuts, but the probes stay where they are because
+  # invoking each function directly proves the freshly shipped image answers
+  # without depending on the gateway, the access gate or DNS. `verify-route-cuts`
+  # is what covers the HTTP path, and it covers it per domain.
   deploy-images:
     needs: [resolve-env, image-map]
     # `image-map` runs under `always()`, so it succeeds with an empty map when
@@ -348,9 +367,10 @@ jobs:
       # assembled from the per leg manifests, so a domain whose build failed is
       # simply absent and the other three still deploy.
       function-image-map: ${{ needs.image-map.outputs.function-image-map }}
-      # Publish a version per deploy, matching what the monolith's
-      # `update-function-code --publish` already does, so a bad image can be
-      # rolled back to a numbered version rather than to a tag.
+      # Publish a version per deploy, so a bad image can be rolled back to a
+      # numbered version rather than to a tag. The monolith's zip deploy did the
+      # same with `update-function-code --publish`; this is the surviving half
+      # of that habit.
       publish-version: true
       # Named rather than left to the default, which is the workflow name plus
       # the ref. Two deploys for the same environment must not overlap, and the
@@ -504,163 +524,25 @@ jobs:
           fi
           echo "All probed domain functions answered GET /health with 200."
 
-  # Unchanged. The monolith zip deploy is what serves traffic, and it must not
-  # gain a dependency on the image build: no `needs`, no shared step.
-  deploy:
-    if: github.ref_name == 'main' || vars.STAGING_DEPLOY_ENABLED == 'true'
-    runs-on: ubuntu-latest
-    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
-
-    env:
-      AWS_REGION: us-west-2
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-      TFC_ORG: WebbPulse
-      TFC_WAIT_ENABLED: ${{ secrets.TFC_API_TOKEN != '' }}
-      TFC_WORKSPACE: ${{ github.ref_name == 'main' && 'WebbPulse-Portfolio' || 'WebbPulse-Portfolio-staging' }}
-      ARTIFACT_KEY: backend/${{ github.sha }}.zip
-
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.13"
-
-      # Moved above the build. `requirements.txt` now pins `webbpulse`, which is
-      # published only to CodeArtifact, so `build_lambda.sh` cannot resolve its
-      # dependencies without a token. The build used to run first, when
-      # everything came from PyPI and nothing before the upload needed AWS.
-      - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      # Writes the CodeArtifact index URL into pip.conf, so it has to run before
-      # the build and not merely before the install inside it. The role needs
-      # both codeartifact:GetAuthorizationToken and sts:GetServiceBearerToken;
-      # without the second, this fails with a denial that names no CodeArtifact
-      # action at all.
-      - name: Log in to CodeArtifact for pip
-        env:
-          CODEARTIFACT_DOMAIN_OWNER: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
-        run: |
-          aws codeartifact login \
-            --tool pip \
-            --domain webbpulse \
-            --domain-owner "$CODEARTIFACT_DOMAIN_OWNER" \
-            --repository python
-
-      - name: Build Lambda package
-        run: bash backend/scripts/build_lambda.sh
-
-      - name: Upload artifact
-        env:
-          LAMBDA_ARTIFACT_BUCKET: ${{ vars.LAMBDA_ARTIFACT_BUCKET }}
-        run: |
-          aws s3 cp backend/dist/function.zip "s3://$LAMBDA_ARTIFACT_BUCKET/$ARTIFACT_KEY"
-
-      - name: Wait for Terraform run to complete
-        if: env.TFC_WAIT_ENABLED == 'true'
-        env:
-          TFC_API_TOKEN: ${{ secrets.TFC_API_TOKEN }}
-        run: |
-          TFC_WORKSPACE_ID=$(curl -sfg \
-            -H "Authorization: Bearer $TFC_API_TOKEN" \
-            -H "Content-Type: application/vnd.api+json" \
-            "https://app.terraform.io/api/v2/organizations/$TFC_ORG/workspaces/$TFC_WORKSPACE" \
-            | python3 -c "import sys, json; print(json.load(sys.stdin)['data']['id'])")
-          echo "Resolved workspace ID: $TFC_WORKSPACE_ID"
-
-          TERMINAL="applied planned_and_finished discarded errored canceled force_canceled"
-          echo "Polling HCP Terraform workspace $TFC_WORKSPACE for active runs..."
-          for i in $(seq 1 40); do
-            RESPONSE=$(curl -sfg \
-              -H "Authorization: Bearer $TFC_API_TOKEN" \
-              -H "Content-Type: application/vnd.api+json" \
-              "https://app.terraform.io/api/v2/workspaces/$TFC_WORKSPACE_ID/runs?page[size]=1")
-            STATUS=$(echo "$RESPONSE" | python3 -c "
-          import sys, json
-          runs = json.load(sys.stdin).get('data', [])
-          print(runs[0]['attributes']['status'] if runs else 'no_runs')
-          ")
-            echo "  Attempt $i/40 — Terraform run status: $STATUS"
-            if echo "$TERMINAL" | grep -qw "$STATUS" || [ "$STATUS" = "no_runs" ]; then
-              echo "Terraform is idle. Proceeding."
-              break
-            fi
-            if [ "$i" -eq 40 ]; then
-              echo "Timed out waiting for Terraform (last status: $STATUS)."
-              exit 1
-            fi
-            sleep 15
-          done
-
-      - name: Update Lambda function code
-        env:
-          LAMBDA_FUNCTION_NAME: ${{ vars.LAMBDA_FUNCTION_NAME }}
-          LAMBDA_ARTIFACT_BUCKET: ${{ vars.LAMBDA_ARTIFACT_BUCKET }}
-        run: |
-          aws lambda wait function-updated-v2 --function-name "$LAMBDA_FUNCTION_NAME"
-          aws lambda update-function-code \
-            --function-name "$LAMBDA_FUNCTION_NAME" \
-            --s3-bucket "$LAMBDA_ARTIFACT_BUCKET" \
-            --s3-key "$ARTIFACT_KEY" \
-            --publish \
-            --query '{Version: Version, CodeSha256: CodeSha256, LastModified: LastModified}' \
-            --output table
-          aws lambda wait function-updated-v2 --function-name "$LAMBDA_FUNCTION_NAME"
-
-      # On staging the health check calls the API host directly: /health sits outside
-      # /api/, so it is not reachable through the site origin, and behind the staging
-      # access gate the API host only answers requests carrying the origin-verify
-      # header, which the deploy role reads from SSM at run time.
-      - name: Smoke test
-        env:
-          API_BASE_URL: ${{ github.ref_name == 'staging' && 'https://api.staging.webbpulse.com' || vars.API_BASE_URL }}
-          ORIGIN_VERIFY_PARAMETER: ${{ github.ref_name == 'staging' && '/webbpulse-staging/access-gate/origin-verify' || '' }}
-        run: |
-          CURL_HEADERS=()
-          if [ -n "$ORIGIN_VERIFY_PARAMETER" ]; then
-            if VALUE=$(aws ssm get-parameter --with-decryption --name "$ORIGIN_VERIFY_PARAMETER" \
-                --query Parameter.Value --output text 2>/dev/null) && [ -n "$VALUE" ]; then
-              echo "::add-mask::$VALUE"
-              CURL_HEADERS=(-H "x-origin-verify: $VALUE")
-              echo "Using the staging access gate origin-verify header."
-            else
-              echo "No origin-verify parameter found; calling the API host without the header."
-            fi
-          fi
-          for i in $(seq 1 10); do
-            BODY=$(curl -sS --max-time 20 -w '\n%{http_code}' "${CURL_HEADERS[@]}" "$API_BASE_URL/health" || true)
-            CODE=$(echo "$BODY" | tail -n1)
-            BODY=$(echo "$BODY" | sed '$d')
-            echo "  Attempt $i/10 — HTTP $CODE $BODY"
-            if [ "$CODE" = "200" ] && echo "$BODY" | grep -q '"database"[[:space:]]*:[[:space:]]*"healthy"'; then
-              echo "Backend is healthy."
-              exit 0
-            fi
-            sleep 6
-          done
-          echo "Backend did not report healthy."
-          exit 1
-
   # Section 6's route flip verification, run on every deploy rather than by hand.
   #
-  # A cut can apply cleanly, return 200, and have moved nothing, because the
-  # route key did not match and API Gateway sent the request to `$default` after
-  # all. `scripts/verify_route_cut.sh` is what tells those apart: it asserts the
-  # `X-WebbPulse-Domain` response header names the domain being verified rather
-  # than `monolith`. Running it here means a regression is caught by the deploy
-  # that caused it instead of by the next person to read the plan.
+  # `scripts/verify_route_cut.sh` asserts the `X-WebbPulse-Domain` response
+  # header names the domain being verified. While the monolith existed, the
+  # failure this caught was a route key that did not match, sending the request
+  # to `$default` and the monolith, which answered 200 and made a cut that moved
+  # nothing look applied.
   #
-  # THE DOMAIN LIST IS THE ONE THING TO EDIT PER CUT. `DOMAINS` below holds the
-  # domains whose routes have actually been cut over. Cut 1 moved `public`, so
-  # that is the whole list today. Cuts 2 through 4 each add one word:
+  # With `$default` gone the same check catches a strictly worse failure. A path
+  # no route key matches now gets API Gateway's own 404 and reaches no function
+  # at all, so a route key that stops matching is an outage rather than a silent
+  # fall-through. Running this on every deploy is what catches it.
   #
-  #   DOMAINS="public resume"            after cut 2
-  #   DOMAINS="public resume content"    after cut 3
-  #   DOMAINS="public resume content identity"   after cut 4
+  # Also the edit that removed the last `if` condition on this job: it used to
+  # require `deploy` to have succeeded, and `deploy` is gone.
+  #
+  # `DOMAINS` below holds every domain the API routes to, which since the
+  # monolith was retired is all four of them and is no longer a list that grows
+  # one word per cut.
   #
   # A domain added here before its paths exist in the script fails the job with
   # "No paths are defined for domain", which is the intended loud failure: the
@@ -671,23 +553,27 @@ jobs:
   # role to run one curl per path. The loop keeps the whole check in one job and
   # still reports every failing domain rather than stopping at the first.
   #
-  # `needs` covers both chains, and the guard is written as three explicit
-  # result tests rather than a bare `always()`:
+  # `needs` used to include the monolith's `deploy` job, on the reasoning that
+  # the monolith served `$default` and verifying routes against a failed deploy
+  # would report a stale surface. There is no `deploy` job and no `$default`
+  # now, so the guard is two result tests over the image chain:
   #
-  # - `deploy` must have succeeded. It is the monolith that serves `$default`,
-  #   so verifying routes against a failed deploy would report a stale surface.
   # - `deploy-images` must not have failed. `smoke-domains` skips when
   #   `deploy-images` fails, so testing only `smoke-domains` would let a broken
   #   image deploy through as a skip.
   # - `smoke-domains` must not have failed. It is allowed to be `skipped`, which
-  #   is the ordinary case while `BACKEND_IMAGE_DEPLOY_ENABLED` is off: the
-  #   routes still need verifying then, because the `public` function they point
-  #   at was deployed by an earlier run.
+  #   is the case on a run where the image chain is gated off: the routes still
+  #   need verifying then, because the functions they point at were deployed by
+  #   an earlier run.
+  #
+  # Both are allowed to be `skipped` and neither is required to have succeeded,
+  # so this job still runs and still verifies the live surface on a push that
+  # builds no image at all. That is deliberate: the check is about the gateway's
+  # routes, which Terraform changes independently of any image.
   verify-route-cuts:
-    needs: [deploy, deploy-images, smoke-domains]
+    needs: [deploy-images, smoke-domains]
     if: >-
       always()
-      && needs.deploy.result == 'success'
       && needs.deploy-images.result != 'failure'
       && needs.smoke-domains.result != 'failure'
     runs-on: ubuntu-latest
@@ -735,8 +621,7 @@ jobs:
       - name: Verify each cut domain
         env:
           ENVIRONMENT: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
-          # Edit this line, and only this line, when a cut lands. See the
-          # comment above the job.
+          # Every domain the API routes to. See the comment above the job.
           DOMAINS: "public resume content identity"
         run: |
           set -uo pipefail

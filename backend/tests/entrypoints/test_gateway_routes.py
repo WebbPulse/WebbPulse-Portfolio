@@ -9,14 +9,21 @@ declare.
 The failure this catches is the quiet one section 6 warns about, and it is quiet
 in both directions:
 
-- **A path with no key** falls through to `$default` and the monolith answers
-  it. Everything returns 200, the cut reads as applied, and nothing has moved.
-  `scripts/verify_route_cut.sh` catches this too, but only after an apply and
-  only for the paths someone remembered to list in it. This catches it in CI,
-  before the apply.
-- **A key with no path** is a route pointing at a function that will 404 it, and
-  the monolith no longer gets a chance because an explicit key outranks
-  `$default`.
+- **A path with no key** is now unreachable. While the monolith existed it fell
+  through to `$default`, everything returned 200, the cut read as applied and
+  nothing had moved. Section 6's retirement set `default_integration = null`, so
+  there is no `$default`: a path no key matches gets API Gateway's own 404 and
+  reaches no function at all. `scripts/verify_route_cut.sh` catches this too,
+  but only after an apply and only for the paths someone remembered to list in
+  it. This catches it in CI, before the apply, which matters more now that the
+  consequence is a 404 to every caller rather than a routing smell.
+- **A key with no path** is a route pointing at a function that will 404 it.
+
+Both directions are exhaustiveness claims, and with `$default` gone the first
+one is what makes `default_integration = null` safe. `test_no_default_route`
+asserts the null directly, so the two halves cannot drift: a `$default` quietly
+re-added would make an unrouted path look fine again, and an unrouted path added
+while `$default` is null is an outage.
 
 The specific edge this exists for is the trailing slash. `build_crud_router`
 mounts its collection operations at `/`, so the served path is
@@ -72,6 +79,19 @@ COLLECTION_LIST = re.compile(
 
 def _terraform_source() -> str:
     return APIGATEWAY_TF.read_text(encoding="utf-8")
+
+
+def _strip_comments(source: str) -> str:
+    """The file with `#` comment lines removed, for checks about configuration.
+
+    apigateway.tf carries a lot of narrative about how the strangler ran, which
+    names things that no longer exist in the configuration. A test asserting a
+    name is gone has to look at what Terraform reads, not at what the file says.
+    Only whole-line comments are stripped, which is every comment in this file.
+    """
+    return "\n".join(
+        line for line in source.splitlines() if not line.lstrip().startswith("#")
+    )
 
 
 def _locals_lists(source: str) -> dict[str, list[str]]:
@@ -307,6 +327,10 @@ def test_routed_domains_and_route_keys_move_together():
     integration no route can reach, so a domain listed there without route keys
     breaks the plan, and route keys without the listing break it on the
     integration lookup. Both halves of a cut land in one commit or neither does.
+
+    Since the monolith was retired this list is the whole integrations map, not
+    the part of it that had been carved off, so `legacy` being absent is the
+    retirement rather than a domain awaiting its cut.
     """
     routed = _locals_lists(_terraform_source())["routed_lambda_domains"]
     keyed = set(gateway_route_keys()) | {"resume", "content"}
@@ -315,6 +339,55 @@ def test_routed_domains_and_route_keys_move_together():
     for domain in routed:
         assert domain in keyed, domain
     assert "legacy" not in routed
+
+
+def test_no_default_route():
+    """`default_integration` is null: section 6's retirement of the monolith.
+
+    This is the assertion the rest of the file leans on. Every other test here
+    proves the route keys cover the paths the applications serve, and that only
+    matters because there is nothing behind them: with a `$default` an uncovered
+    path is served by whatever it names, and the exhaustiveness tests become
+    advisory. With null it is a 404.
+
+    It also pins the direction of the change. Re-adding a `default_integration`
+    is a deliberate rollback of the retirement, and it should fail here rather
+    than quietly restore a fall-through the four cuts spent their whole design
+    removing.
+    """
+    source = _terraform_source()
+
+    assert re.search(r"^\s*default_integration\s*=\s*null\s*$", source, re.MULTILINE), (
+        "default_integration must be null: the monolith is retired and there is "
+        "no integration left to serve $default."
+    )
+    assert not re.search(r'^\s*default_integration\s*=\s*"', source, re.MULTILINE), (
+        "default_integration names an integration, which re-creates $default."
+    )
+
+
+def test_no_legacy_integration():
+    """The monolith's integration is gone from the integrations map.
+
+    `legacy` was the only entry that named `module.lambda_api`, and it carried
+    the one `lambda_permission_statement_id` override in the module call, so its
+    absence is what retires both the integration and the bare
+    `AllowAPIGatewayInvoke` permission. A route key naming it would fail the
+    plan on the module's own precondition, but the integrations map itself is
+    not otherwise covered by any test here.
+
+    Comments are stripped before the check. The file still explains what
+    `legacy` was and why retiring it renames no other permission, and that prose
+    should stay readable without failing a test about configuration.
+    """
+    source = _strip_comments(_terraform_source())
+
+    assert "legacy" not in source, (
+        "apigateway.tf still configures `legacy`, the retired monolith integration."
+    )
+    assert "lambda_api" not in source, (
+        "apigateway.tf still references module.lambda_api, the retired monolith."
+    )
 
 
 def test_content_has_two_route_keys_per_mounted_prefix():

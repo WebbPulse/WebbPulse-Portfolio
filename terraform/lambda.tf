@@ -1,21 +1,25 @@
-locals {
-  lambda_function_name = "${local.prefix}-api"
-
-  # Every table in the environment, which for the monolith is the right answer:
-  # it mounts every domain's routers, so it touches every table. That includes
-  # the new rate-limits table, and it needs to. app/api/v1/api.py includes the
-  # identity router, whose login route calls the limiter in
-  # app/core/login_limiter.py, and the limiter's items moved out of meta and
-  # into rate-limits. Without this grant login throttling on the monolith would
-  # fail open on every attempt, logging rate_limit_failed_open and letting the
-  # request through, which is the fail-open path working as designed but not a
-  # state to leave the monolith in while it is still serving every login.
-  #
-  # Reading the list from the module rather than naming tables is what makes
-  # that grant arrive with the table instead of needing a second change.
-  lambda_table_arns = module.dynamodb.table_arns_list
-  lambda_index_arns = [for arn in module.dynamodb.table_arns_list : "${arn}/index/*"]
-}
+# ---------------------------------------------------------------------------
+# What is left of the monolith's Terraform after section 6's retirement.
+#
+# The monolith function, its execution role, its runtime policy and its log
+# group are gone: module.lambda_api and aws_iam_role_policy.lambda_api were
+# deleted by the PR that retired it, along with the `legacy` integration in
+# apigateway.tf that was the only thing routing to it. The four per-domain
+# functions in lambda_domains.tf serve every route now.
+#
+# The artifacts bucket stays, and stays deliberately. It holds the zips the
+# monolith was deployed from, and the last of them is the rollback vehicle: if
+# the retirement has to be undone, re-adding module.lambda_api and pointing its
+# `code` at the object recorded in docs/migration/cutover-log.md is what brings
+# the monolith back. Destroying the bucket would destroy that. The bucket costs
+# a few cents a month and its lifecycle rule already expires noncurrent
+# versions after 30 days, so keeping it is cheap and deleting it is not
+# reversible. Retire it in a later PR once the rollback window has closed.
+#
+# The placeholder archive stays with it: it is the bucket module's
+# create_placeholder_object source, so removing it would be a change to the
+# bucket rather than a tidy-up.
+# ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
 # The artifacts bucket CI uploads deployment packages to, from the shared
@@ -65,106 +69,4 @@ data "archive_file" "lambda_placeholder" {
           }
     PY
   }
-}
-
-# ---------------------------------------------------------------------------
-# The API Lambda from the shared lambda-function module: the execution role,
-# the log group and the function. The runtime permission policy below stays in
-# the application, because it names this application's tables and secrets.
-# ---------------------------------------------------------------------------
-
-module "lambda_api" {
-  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/lambda-function"
-  version = "~> 1.8"
-
-  function_name = local.lambda_function_name
-  role_name     = "${local.prefix}-api-lambda"
-
-  runtime       = "python3.13"
-  handler       = "app.lambda_handler.handler"
-  architectures = ["arm64"]
-  memory_size   = 512
-  timeout       = 15
-
-  code = {
-    s3_bucket        = module.lambda_artifacts.bucket_id
-    s3_key           = module.lambda_artifacts.placeholder_object_key
-    source_code_hash = data.archive_file.lambda_placeholder.output_base64sha256
-  }
-
-  environment_variables = {
-    DYNAMODB_TABLE_PREFIX = local.prefix
-    # The one secret the backend reads: a JSON object read once at cold start.
-    # Named outright rather than rebuilt from a prefix, so the function and the
-    # secret cannot drift to different names.
-    APP_SECRETS_ARN              = module.app_secrets.arns["app"]
-    ENVIRONMENT                  = var.environment
-    CORS_ORIGINS                 = local.cors_origins
-    SITE_URL                     = local.frontend_url
-    LOG_LEVEL                    = "INFO"
-    POWERTOOLS_SERVICE_NAME      = "webbpulse-api"
-    POWERTOOLS_METRICS_NAMESPACE = "WebbPulse"
-  }
-
-  # JSON rather than Text so the log group's events parse as JSON, which is what
-  # the application errors metric filter in monitoring.tf needs: a JSON filter
-  # pattern is only applied to events that parse as JSON, so under Text the
-  # filter would match nothing and the alarm would sit in OK forever without
-  # anything erroring. The backend logs through AWS Lambda Powertools, which
-  # already writes JSON with a top level "level" key, and Lambda does not
-  # double encode logs that are already JSON encoded, so records keep that
-  # shape and the module default pattern { $.level = "ERROR" } matches them.
-  log_retention_days           = 30
-  log_format                   = "JSON"
-  application_log_level        = "INFO"
-  system_log_level             = "INFO"
-  set_logging_config_log_group = true
-
-  # aws_iam_role_policy.lambda_api below already grants xray:PutTraceSegments
-  # and xray:PutTelemetryRecords, so the module's own inline policy would be
-  # redundant. Turning it off keeps this adoption a zero diff change.
-  attach_xray_write_policy = false
-}
-
-resource "aws_iam_role_policy" "lambda_api" {
-  name = "api-runtime"
-  role = module.lambda_api.role_id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect   = "Allow"
-        Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
-        Resource = "${module.lambda_api.log_group_arn}:*"
-      },
-      {
-        Effect   = "Allow"
-        Action   = ["xray:PutTraceSegments", "xray:PutTelemetryRecords"]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "dynamodb:GetItem",
-          "dynamodb:PutItem",
-          "dynamodb:UpdateItem",
-          "dynamodb:DeleteItem",
-          "dynamodb:Query",
-          "dynamodb:Scan",
-          "dynamodb:BatchGetItem",
-          "dynamodb:BatchWriteItem",
-          "dynamodb:TransactWriteItems",
-          "dynamodb:TransactGetItems",
-          "dynamodb:DescribeTable",
-          "dynamodb:ConditionCheckItem",
-        ]
-        Resource = concat(local.lambda_table_arns, local.lambda_index_arns)
-      },
-      # Read access to the Secrets Manager secrets holding the signing key and
-      # the seeded admin credentials. The module renders the statement so the
-      # policy always names exactly the secrets it creates.
-      module.app_secrets.read_policy_statement,
-    ]
-  })
 }

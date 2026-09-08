@@ -696,3 +696,271 @@ route it moves is the admin login itself: a broken `identity` function means
 nobody can sign in to the admin panel, where a broken `resume` or `content`
 function degrades reads the site can mostly survive. The rollback is still just
 the two edits above and one apply.
+
+## Retirement: the monolith
+
+PR 17, and the last entry in this file. Not a cut: the four cuts moved route
+keys off the monolith one prefix at a time and this deletes what is left of it.
+Status: **not yet applied**, speculative plan below.
+
+Section 6's "Retiring the monolith" is the design. It prescribes four steps and
+this PR does two of them; the other two are a separate PR and the reason is
+recorded under "What section 6 got wrong" below.
+
+### What changed
+
+`terraform/apigateway.tf`, `terraform/lambda.tf`, `terraform/monitoring.tf`,
+`terraform/outputs.tf`, `terraform/iam_github_actions.tf`,
+`.github/workflows/deploy-backend.yml`, `scripts/verify_route_cut.sh` and
+`backend/tests/entrypoints/test_gateway_routes.py`.
+
+- `default_integration` goes from `"legacy"` to `null`, which deletes the
+  `$default` route. Anything the explicit keys do not match now gets API
+  Gateway's own 404 instead of the monolith.
+- The `legacy` entry leaves the `integrations` map, taking its integration and
+  its `aws_lambda_permission` with it. The map is now a plain comprehension over
+  `local.routed_lambda_domains` rather than a `merge` of `legacy` and the
+  domains.
+- `module.lambda_api` and `aws_iam_role_policy.lambda_api` are deleted from
+  `lambda.tf`, which destroys the function, its execution role, both its role
+  policies and its log group. The file keeps only the artifacts bucket.
+- `monitoring.tf` drops the monolith from `lambda_function_names` and drops the
+  `api` key from `error_log_groups`.
+- `outputs.tf` drops `lambda_function_name`.
+- `iam_github_actions.tf` drops the monolith's function ARN from the
+  `UpdateFunctionCode` grant and narrows the artifacts bucket grant to
+  read-only.
+- `deploy-backend.yml` loses the `deploy` job entirely, and `verify-route-cuts`
+  loses its `needs: deploy` and the `needs.deploy.result == 'success'` guard.
+- `verify_route_cut.sh` learns what a fall-through means now. See "The script
+  had to change again" below.
+- `test_gateway_routes.py` gains `test_no_default_route` and
+  `test_no_legacy_integration`.
+
+### What is destroyed, in full
+
+Eleven resources. The list is short enough to read and long enough that it
+belongs in the PR description as well:
+
+- `module.api.aws_apigatewayv2_route.this["$default"]`
+- `module.api.aws_apigatewayv2_integration.this["legacy"]`
+- `module.api.aws_lambda_permission.this["legacy"]`
+- `module.lambda_api.aws_lambda_function.this`
+- `module.lambda_api.aws_iam_role.this`
+- `module.lambda_api.aws_iam_role_policy_attachment.basic_execution`
+- `module.lambda_api.aws_cloudwatch_log_group.this`
+- `aws_iam_role_policy.lambda_api`
+- `module.alarms.aws_cloudwatch_log_metric_filter.application_errors["api"]`
+
+plus whatever the `lambda-function` module attaches alongside the role. The
+speculative plan is the authority on the exact count; this list is what to
+check it against.
+
+**Nothing about the four domain functions is destroyed, and that is the line a
+reviewer should check first.** In particular none of the four
+`aws_lambda_permission.this["<domain>"]` resources is replaced. The module
+derives a permission's statement id as `var.lambda_permission_statement_id`
+verbatim for the `default_integration` and `"<that>-<key>"` for everything else,
+so a reviewer's reasonable worry is that removing the `default_integration`
+moves the bare id onto one of the domains and replaces its permission. It does
+not, because the id is bare only when the integration *is* the
+`default_integration` or when there is exactly one integration, and after this
+change there is neither: `default_integration` is null and there are four
+integrations. All four keep `AllowAPIGatewayInvoke-<domain>`. The bare
+`AllowAPIGatewayInvoke` is destroyed with `legacy` and is not reassigned.
+
+### What is deliberately kept
+
+- **The artifacts bucket** and its placeholder object. It holds the zips the
+  monolith was deployed from and the last one is the rollback vehicle. Section 6
+  does not mention it; keeping it is a judgement call and the reasoning is in
+  `lambda.tf`'s header comment. It costs cents and destroying it would make the
+  rollback below impossible.
+- **The four ECR repositories.** They are the domain functions' image
+  repositories and have nothing to do with the monolith, which was a zip
+  function from S3 and never had an image repository at all. Section 6's
+  retirement list does not mention ECR and the task framing's "check what the
+  plan says about keeping the image repo" has no referent here.
+- **The monolith's Python source.** See below.
+
+### What section 6 got wrong
+
+Section 6 lists four steps. Steps 1 and 2 are this PR. Steps 3 and 4 cannot be
+done here, and one of them is wrong outright.
+
+**Step 4, "drop `mangum` and `aws-lambda-powertools` from the dependencies", is
+wrong for Powertools and would break production.** `mangum` is monolith-only:
+`app/lambda_handler.py` is its only importer and dropping it is safe. Powertools
+is not. `app/core/logging.py` imports `aws_lambda_powertools.Logger`, and three
+of the four *domain* services import that logger:
+
+```
+backend/app/domains/public/service.py:7:   from ...core.logging import logger
+backend/app/domains/content/service.py:3:  from ...core.logging import logger
+backend/app/domains/identity/service.py:2: from ...core.logging import logger
+```
+
+`backend/Dockerfile` installs the same `requirements.txt` the monolith's
+`build_lambda.sh` did, so dropping `aws-lambda-powertools` from it would fail
+`public`, `content` and `identity` at import on their next image build. Section
+5's "Removing Sentry" and the plan's expectation that domain functions log
+through `webbpulse.logging` are true of the entrypoints and the middleware but
+not of these three services, which were never migrated off the Powertools
+logger. Retiring Powertools is a real piece of work on the domain code and is
+not a line in a retirement PR. Neither dependency is dropped here.
+
+**Step 3, deleting `app/main.py`, `app/lambda_handler.py`, `app/api/v1/api.py`
+and `backend/scripts/build_lambda.sh`, is correct but is not this PR.**
+`app.main` is load-bearing for the test suite rather than only for the deployed
+function:
+
+- `backend/tests/conftest.py` builds the shared test client from `app.main`.
+- `backend/tests/entrypoints/test_route_split.py` imports it as `monolith` and
+  proves the four domain applications are exactly a partition of it. That is the
+  invariant the whole split rests on, and deleting `app.main` deletes the
+  reference the partition is measured against rather than merely deleting dead
+  code.
+- `backend/tests/test_openapi_contract.py` and
+  `backend/tests/test_domain_boundaries.py` also name it.
+
+So step 3 is a test-suite rewrite that has to decide what replaces `app.main` as
+the reference surface, most likely `app.composition.app`, which is root A and
+already builds the same whole surface from the domain routers. Folding that into
+the PR that destroys eleven AWS resources would make both halves harder to
+review, and the source is inert once nothing deploys it. It is the next PR.
+
+The infrastructure retirement does not wait on it: `build_lambda.sh` stops being
+called the moment the `deploy` job is deleted, and the source it packages stops
+being deployed the moment the function is destroyed.
+
+### The script had to change again
+
+Cut 4 changed `scripts/verify_route_cut.sh` because `identity` answers 404 and
+405 rather than 200. The retirement changes it again, and for a sharper reason:
+**the meaning of a fall-through inverted.**
+
+The script's whole design was that a route key which fails to match is caught by
+`$default`, reaches the monolith, and comes back stamped
+`X-WebbPulse-Domain: monolith`. That was a wrong-routing-but-working-surface
+signal, which is why the wording throughout was "NOT CUT OVER" rather than
+"broken". There is no `$default` now. A path no key matches is answered by API
+Gateway itself, with a 404 and **no** `X-WebbPulse-Domain` header, and it is
+unreachable rather than misrouted.
+
+Three changes follow:
+
+1. A new `NO ROUTE` verdict, keyed on the pair *404 and no domain header*. The
+   pair is what makes it unambiguous, and `identity` is why it has to be a pair:
+   `identity` legitimately answers 404 from its own function, so the status
+   alone cannot mean "no route matched". A 404 with the header is the function
+   saying it has no such path; a 404 without it is the gateway saying no
+   function was invoked.
+2. That check runs **before** the `EXPECTED_CODES` status test, and has to. For
+   every domain but `identity`, 404 is not an expected code, so the status test
+   would have reported an unrouted path as a generic "expected 200" and buried
+   the one thing worth saying about it. The retry loop also breaks early on the
+   same pair, since an unmatched route key does not become matched by waiting.
+3. The `monolith` verdict is kept but is no longer a fall-through. Reaching a
+   retired function means it and a route to it were re-created, so it reports
+   `MONOLITH SERVING` and says so.
+
+`NO ROUTE` is reported ahead of `FAILED` in the summary because it is the more
+serious of the two: an unrouted path is a 404 to every caller, where a failure
+is usually a stale image or a transient status.
+
+All five verdicts were exercised against a mock `curl` before the PR, the same
+way cut 4's changes were: a healthy domain passes and exits 0; an unrouted
+domain reports `NO ROUTE` and exits 1; a monolith response reports
+`MONOLITH SERVING` and exits 1; a headerless non-404 reports `FAILED`; and
+`identity`'s own 404s still pass.
+
+### Plan
+
+Filled in from the speculative plan on the PR before merging. The shape to
+expect is **0 to add, a small number to change, and the destroy list above**.
+
+The changes are worth naming, because a retirement PR that shows changes rather
+than only destroys invites a second look:
+
+- Both `module.alarms` aggregate Lambda alarms change. The module turns
+  `lambda_function_names` into positional metric math ids, `m0`, `m1` and so on,
+  and the monolith led that list, so dropping it shifts every domain's id down
+  one and rewrites both alarm definitions. It is a metric math rewrite with no
+  behaviour change.
+- The GitHub Actions deploy policy changes: one fewer function ARN on the
+  `UpdateFunctionCode` statement, and the artifacts bucket grant narrowed to
+  read-only.
+
+**The one thing to read the plan for is how `$default` sequences.** It is a
+destroy, not a replace: the route is removed and nothing takes its place, so
+there is no destroy-then-create and no window where `$default` exists pointing
+somewhere wrong. What there is instead is a window, inside the apply, where
+`$default` is gone and the request that would have used it gets a 404. That
+window is only a problem for a request that needed `$default`, and after four
+cuts no request should: every path the four applications serve has an explicit
+route key, which `test_gateway_routes.py` asserts statically in CI. If that
+assertion is wrong, the apply is when it becomes visible.
+
+The 21 explicit route keys plan as no-ops. A plan that shows any of them
+changing or being replaced is a reason to stop: they are addressed by route key,
+and this PR changes no route key.
+
+### Verification, once applied
+
+`verify-route-cuts` runs all four domains on the next deploy and is the check
+that matters, because it probes the live gateway for exactly the paths that
+would have been silently absorbed by `$default` before. A pass is stronger
+evidence after this PR than before it: the same probes that used to prove
+"routed to the right function" now also prove "reachable at all".
+
+The `deploy` job's `/health` smoke test is gone with the job. `public` serves
+`/health` and `verify-route-cuts` probes it as the first of `public`'s four
+paths, so the coverage survives in a job that also checks which function
+answered.
+
+### Rollback
+
+This is the first entry in this file whose rollback is not one map edit, and it
+is worth being honest about that. The four cuts were reversible by deleting a
+routes entry because the monolith still held every route. Nothing holds them
+now.
+
+Rolling back means re-creating the monolith:
+
+1. Revert this PR's Terraform. That restores `module.lambda_api`,
+   `aws_iam_role_policy.lambda_api`, the `legacy` integration and permission,
+   and `default_integration = "legacy"`.
+2. The function is re-created from `module.lambda_artifacts`'s placeholder
+   object, which answers 503, so it has to be pointed at real code before it
+   serves anything:
+
+   ```
+   aws lambda update-function-code \
+     --function-name webbpulse-staging-api \
+     --s3-bucket webbpulse-staging-lambda-artifacts \
+     --s3-key backend/6c6a122a65f1443831255111d30102690d487cb8.zip \
+     --publish
+   ```
+
+   **That key is the rollback artifact and it is why the bucket is kept.**
+   `6c6a122a65f1443831255111d30102690d487cb8` is the commit at the head of
+   `staging` when this PR was opened, which is the last commit whose `deploy`
+   job ran and uploaded a zip. The `deploy` job's `ARTIFACT_KEY` was
+   `backend/${{ github.sha }}.zip`, so every zip it ever uploaded is at that
+   path under its own commit sha, and the bucket's lifecycle rule expires
+   noncurrent versions after 30 days but does not expire the objects
+   themselves.
+3. Restore the `deploy` job in `deploy-backend.yml` if the monolith is to keep
+   receiving deploys, and re-add the write half of the artifacts bucket grant in
+   `iam_github_actions.tf`, which this PR narrowed to read-only.
+
+Steps 1 and 2 are enough to serve traffic again; step 3 is only for a rollback
+that is expected to last.
+
+**The rollback window is the bucket's, not this PR's.** Nothing expires the zip
+on a schedule, but nothing writes a new one either, so the longer the monolith
+stays retired the staler the rollback target gets. Once the four domain
+functions have carried production long enough to trust, the bucket and the
+monolith's Python source go together in one final PR and the rollback stops
+existing. That is the right time to close it out, and it is deliberately not
+now.
