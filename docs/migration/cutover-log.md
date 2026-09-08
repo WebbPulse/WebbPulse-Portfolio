@@ -403,8 +403,19 @@ keys stand in for all 14 routes and cannot drift when an operation is added.
 
 ### Plan
 
-Not yet applied. The speculative plan on the PR confirms 6 to add, 0 to change,
-0 to destroy:
+Not yet applied. The speculative plan on the PR, `run-gvWxhtzEWDhfwsXX`, reads
+11 to add, 0 to change, 0 to destroy. Six of those eleven are this cut; the
+other five are the resume trailing-slash keys, which are in the plan only
+because the branch was cut before the fix removing them landed and which
+disappear on rebase.
+
+**Those five plan perfectly cleanly, which is the detail worth carrying into
+cut 4.** Terraform has no idea API Gateway will reject them; the
+`BadRequestException` appears only at apply. A green plan is therefore not
+evidence that a route key is valid, which is why `test_gateway_routes.py`
+asserts the shape statically instead.
+
+This cut's six:
 
 - 4 `aws_apigatewayv2_route`, one per generated `content` route key
 - 1 `aws_apigatewayv2_integration` for `content`
@@ -412,11 +423,13 @@ Not yet applied. The speculative plan on the PR confirms 6 to add, 0 to change,
   as `AllowAPIGatewayInvoke-content` because `content` is not the
   `default_integration`
 
-Every one of the four routes plans with `authorization_type = CUSTOM` and the
-same authorizer id the existing routes already carry, which is the check worth
-making by hand for the same reason as cut 2: a route that planned as `NONE`
-would be a hole straight past the staging access gate, and the routes map sets
-no `authorization_type` precisely so the module picks `CUSTOM` for it.
+Confirmed from the plan's JSON output: every one of the four routes plans with
+`authorization_type = "CUSTOM"` and `authorizer_id = "p5vo7t"`, the same
+authorizer the existing `$default`, `GET /`, `GET /health`, `GET /robots.txt`
+and `GET /sitemap.xml` routes already carry. This is the check worth making by
+hand for the same reason as cut 2: a route that planned as `NONE` would be a
+hole straight past the staging access gate, and the routes map sets no
+`authorization_type` precisely so the module picks `CUSTOM` for it.
 
 No destroys, as in cut 2. Nothing about the monolith, the `legacy` integration
 or its permission changes here, so a plan showing any destroy on this PR is a
