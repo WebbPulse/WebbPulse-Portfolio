@@ -13,7 +13,7 @@ module "staging_access_gate" {
   count = local.staging_gate_count
 
   source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/staging-access-gate"
-  version = "~> 1.1"
+  version = "~> 2.3"
 
   name             = local.prefix
   cookie_domain    = local.domain
