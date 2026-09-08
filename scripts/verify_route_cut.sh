@@ -96,9 +96,9 @@ esac
 # terraform/apigateway.tf's routes map for that domain, or this script will
 # correctly report it as still on the monolith.
 #
-# `public` and `resume` are cut today. The other two are filled in by cuts 3 and
-# 4 and are listed as empty so the script fails loudly with "no paths" instead
-# of silently passing on an empty loop.
+# `public`, `resume` and `content` are cut today. `identity` is filled in by
+# cut 4 and is listed as empty so the script fails loudly with "no paths"
+# instead of silently passing on an empty loop.
 case "$DOMAIN" in
 public)
   PATHS=(/health / /sitemap.xml /robots.txt)
@@ -139,8 +139,48 @@ resume)
   )
   ;;
 content)
-  # Cut 3.
-  PATHS=()
+  # Cut 3. Two mounted prefixes, `posts` and `site-content`, two keys each in
+  # the routes map, and both slash forms of both prefixes probed here.
+  #
+  # Both forms are probed because which key serves the trailing slash is an
+  # open question that only the real gateway can answer. Each router declares a
+  # route at `/`, so /api/v1/posts/ and /api/v1/site-content/ are paths the
+  # application really serves, and the routes map cannot name them directly:
+  # API Gateway rejects a route key with a trailing slash outright, which cut
+  # 2's apply found the hard way with "BadRequestException: Part of the given
+  # route key path is empty". So the trailing slash is served by either the
+  # bare key or the greedy one, AWS documents neither case, and these probes
+  # are what establish which. Both are expected to report `content`; a trailing
+  # slash reporting `monolith` would mean neither key matches it and the cut is
+  # incomplete.
+  #
+  # GET only. Every other method on these prefixes writes, and the two GETs
+  # listed are the domain's unauthenticated reads: /api/v1/posts/ is the
+  # published post list and /api/v1/site-content/ is the singleton the front
+  # page renders from.
+  #
+  # The deeper posts paths are deliberately not probed, and there are two
+  # separate reasons rather than one.
+  #
+  #   - Item paths carry ids and slugs that differ per environment.
+  #     /api/v1/posts/{slug} and /api/v1/posts/category/{category_slug} need
+  #     content that exists in that environment, and /api/v1/posts/admin/
+  #     {post_id} ids come from the COUNTER# allocator in
+  #     backend/app/db/repository.py, so no literal is safe to hard code here.
+  #   - The /admin paths require an admin bearer token on top of the gate
+  #     credential, so an unauthenticated GET would answer 401 from the domain
+  #     and fail the HTTP 200 check while telling us nothing about routing.
+  #
+  # Both sets are served by the ANY /api/v1/posts/{proxy+} key. That key is
+  # covered instead by backend/tests/entrypoints/test_gateway_routes.py, which
+  # asserts in CI that every path the content application declares is matched
+  # by some content route key, and by the admin panel's own traffic.
+  PATHS=(
+    /api/v1/posts/
+    /api/v1/posts
+    /api/v1/site-content/
+    /api/v1/site-content
+  )
   ;;
 identity)
   # Cut 4.

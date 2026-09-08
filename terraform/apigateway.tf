@@ -24,9 +24,9 @@ locals {
   # every_integration_is_routed check fails the plan on an integration no route
   # can reach, so this list and the routes map below move together.
   #
-  # Cut 1 is `public`, cut 2 is `resume`. Cuts 3 and 4 append content and
+  # Cut 1 is `public`, cut 2 is `resume`, cut 3 is `content`. Cut 4 appends
   # identity.
-  routed_lambda_domains = ["public", "resume"]
+  routed_lambda_domains = ["public", "resume", "content"]
 
   # The five collections the `resume` domain owns. Every one of them is built by
   # build_crud_router in backend/app/domains/resume/crud_router.py and so serves
@@ -39,6 +39,23 @@ locals {
     "skills",
     "education",
     "certifications",
+  ]
+
+  # The two prefixes the `content` domain mounts, from
+  # backend/app/domains/content/router.py: `posts_router` under `/posts` and
+  # `site_content_router` under `/site-content`. Both are plain APIRouters
+  # whose own routes are declared at `/` and below, so both take the same two
+  # keys, bare and greedy, and the names here are the router prefixes with
+  # their leading slash stripped.
+  #
+  # These are not five sibling collections the way `resume`'s are. `posts` is a
+  # deep tree (`/admin/{post_id}/publish` is three segments below the prefix)
+  # and `site-content` is a singleton with one path. What they share is the
+  # only thing the route keys care about: everything the domain serves under
+  # each name belongs to the domain, so one greedy key per prefix covers it.
+  content_prefixes = [
+    "posts",
+    "site-content",
   ]
 }
 
@@ -55,8 +72,8 @@ module "api" {
   #
   # Only the domains that have a route are reachable. The module's
   # every_integration_is_routed check refuses an integration nothing can reach,
-  # so the two domains still waiting for their cut are deliberately not listed
-  # yet: they arrive with their routes in cuts 3 and 4.
+  # so the one domain still waiting for its cut is deliberately not listed yet:
+  # identity arrives with its routes in cut 4.
   integrations = merge(
     {
       legacy = {
@@ -139,6 +156,71 @@ module "api" {
       for collection in local.resume_collections : {
         "ANY /api/v1/${collection}"          = { integration = "resume" }
         "ANY /api/v1/${collection}/{proxy+}" = { integration = "resume" }
+      }
+    ]...),
+
+    # Cut 3. `content`: posts, categories and the site-content singleton, 14
+    # application routes across two mounted prefixes, in four keys.
+    #
+    # Two keys per prefix, not cut 2's three. Cut 2 added a literal
+    # trailing-slash key per collection to settle an ambiguity the AWS
+    # documentation leaves open, and applying it settled the ambiguity a
+    # different way: API Gateway rejects the key outright. Every
+    # `ANY /api/v1/<collection>/` key failed the apply with
+    #
+    #   BadRequestException: Part of the given route key path is empty
+    #
+    # so a route key path segment may not be empty and the trailing-slash form
+    # is not a route key that can exist. That is a stronger answer than either
+    # reading cut 2 weighed: the question was never which of the two candidate
+    # keys matches `/api/v1/posts/`, because the third option is not available.
+    # A separate PR removes those five keys from the resume block; this cut is
+    # written to the corrected shape from the start and must not reintroduce it.
+    #
+    # What serves the trailing slash is therefore one of the two keys below,
+    # and which one is now an empirical question rather than a design choice.
+    # The verify script probes both slash forms of both prefixes against the
+    # real gateway for exactly that reason, and the answer gets written into
+    # docs/migration/cutover-log.md once the apply lands. Whichever key wins,
+    # the path is served by `content` rather than falling through to the
+    # monolith, which is what this cut has to guarantee.
+    #
+    # `content` is shaped differently from `resume` and it is worth saying why
+    # two keys per prefix still cover it. `resume`'s five collections are five
+    # flat sibling CRUD routers. `content` is one deep tree plus one singleton:
+    # `posts` serves `/`, `/admin`, `/admin/{post_id}`,
+    # `/admin/{post_id}/publish`, `/categories`, `/categories/{category_id}`,
+    # `/category/{category_slug}` and `/{slug}`, while `site-content` serves
+    # only `/`. The greedy `ANY /api/v1/posts/{proxy+}` key matches every one of
+    # those sub-paths regardless of depth, because `{proxy+}` captures the whole
+    # remainder rather than a single segment, so the depth never turns into
+    # extra keys. What makes that safe is ownership, not shape: the domain owns
+    # every path under both prefixes, so there is nothing under them that should
+    # still reach the monolith.
+    #
+    # This is also why the three literal sibling paths that section 1 of the
+    # plan flags for ordering, `/api/v1/posts/categories`, `/api/v1/posts/admin`
+    # and the `/api/v1/posts/{slug}` catch-all, need no keys of their own. They
+    # resolve inside the function, by FastAPI's declaration order in
+    # backend/app/domains/content/posts.py, exactly as they do in the monolith.
+    # Giving them separate gateway keys would move that disambiguation into API
+    # Gateway for no benefit and would be the one way to get it wrong.
+    #
+    # `site-content` is a singleton and still gets both keys. Its only served
+    # path is `/api/v1/site-content/`, so the `{proxy+}` key matches nothing the
+    # application declares today unless it is what serves the trailing slash. It
+    # stays either way: a future sub-path cannot then land on the monolith by
+    # omission, and an unmatched greedy key costs one route resource and answers
+    # from the domain's own 404 rather than from the monolith, which is the
+    # behaviour this cut wants anyway.
+    #
+    # ANY rather than a method per route, as in cut 2: the domain owns every
+    # method on both prefixes, GET and the admin writes alike, so four keys
+    # stand in for all 14 routes and cannot drift when an operation is added.
+    merge([
+      for prefix in local.content_prefixes : {
+        "ANY /api/v1/${prefix}"          = { integration = "content" }
+        "ANY /api/v1/${prefix}/{proxy+}" = { integration = "content" }
       }
     ]...),
   )

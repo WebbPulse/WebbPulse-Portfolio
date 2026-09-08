@@ -298,3 +298,166 @@ module's `every_integration_is_routed` check fails a plan on an integration no
 route can reach, so leaving the name in the list without its route keys does not
 plan. `$default` sends all 25 routes back to the monolith, which still serves
 them because nothing has been deleted from it.
+
+## Cut 3: content
+
+PR 15. Routes the two prefixes the `content` domain mounts, `posts` and
+`site-content`, to the `content` function. Status: **PR open, not applied**.
+
+### What changed
+
+`terraform/apigateway.tf`, `scripts/verify_route_cut.sh` and
+`backend/tests/entrypoints/test_gateway_routes.py`.
+
+- `local.routed_lambda_domains` goes from `["public", "resume"]` to
+  `["public", "resume", "content"]`, which adds `content` to the `integrations`
+  map and, through the module, its `aws_lambda_permission`.
+- A new `local.content_prefixes` lists the two mounted prefixes, and the
+  `routes` map gains four keys generated from it, appended as a third block
+  rather than editing cut 1's or cut 2's.
+- `scripts/verify_route_cut.sh`'s `content` case goes from empty to four GET
+  probe paths, both slash forms of both prefixes.
+- `test_gateway_routes.py` gains the content half, including a test that no
+  route key anywhere in the file ends in a trailing slash.
+
+### Two keys per prefix, not three: what cut 2's apply proved
+
+This is the one thing to read before cut 4, and it reverses cut 2's reasoning
+above rather than extending it.
+
+Cut 2 gave each collection a third route key, the literal
+`ANY /api/v1/<collection>/`, on the grounds that the trailing-slash path is what
+the application really serves and that AWS documents neither whether a trailing
+slash is normalised before route selection nor whether `{proxy+}` can capture an
+empty remainder. The argument was that a literal key is correct whichever way
+API Gateway behaves.
+
+**Applying it proved the key cannot exist.** Every one of the five trailing-slash
+keys failed the apply with:
+
+```
+BadRequestException: Part of the given route key path is empty
+```
+
+A route key path segment may not be empty, so `ANY /api/v1/projects/` is not a
+route key API Gateway will accept at all. That is a stronger answer than either
+reading cut 2 weighed, and it retires the question rather than settling it: the
+third option was never available. A separate PR removes those five keys from the
+resume block; cut 3 is written to the corrected shape from the start.
+
+So `content` gets two keys per prefix, the bare `ANY /api/v1/posts` and the
+greedy `ANY /api/v1/posts/{proxy+}`, and the same pair for `site-content`. Four
+keys for 14 application routes.
+
+**What now serves the trailing slash is an open question, and it is deliberately
+left to the apply.** `/api/v1/posts/` and `/api/v1/site-content/` are real served
+paths. Since no literal key can name them, one of the two remaining keys must
+match, either because API Gateway normalises the slash away and the bare key
+matches, or because `{proxy+}` does capture an empty remainder. Both remain
+undocumented and the two candidate behaviours are not distinguishable by reading.
+The verify script therefore probes both slash forms of both prefixes, and the
+answer gets written into this section once the apply lands. Either way the path
+is served by `content` rather than falling through to the monolith, which is
+what the cut has to guarantee; what is unknown is only which key does it.
+
+`test_gateway_routes.py` reflects that honestly rather than picking a side. Its
+`matches` helper still encodes the strict reading inherited from cut 2, so the
+content coverage test asserts that the only paths it leaves unrouted are the two
+collection roots, which keeps a genuinely missing key failing while not
+asserting a gateway behaviour nobody has observed yet. The deep paths, which are
+routed under any reading, are asserted unconditionally in their own test.
+
+### Why the deep tree needs no more keys than a flat collection
+
+`resume`'s five collections are five flat sibling CRUD routers. `content` is not
+shaped like that, and it is worth stating why the same two keys still cover it.
+
+`posts` serves eight paths at three different depths: `/`, `/admin`,
+`/admin/{post_id}`, `/admin/{post_id}/publish`, `/categories`,
+`/categories/{category_id}`, `/category/{category_slug}` and `/{slug}`.
+`site-content` serves one, `/`. The greedy `ANY /api/v1/posts/{proxy+}` key
+matches every one of the sub-paths regardless of depth, because `{proxy+}`
+captures the whole remainder rather than a single segment. Depth never turns
+into extra keys. What makes that safe is ownership rather than shape: the domain
+owns every path under both prefixes, so nothing under them should still reach
+the monolith.
+
+This is also why the sibling-ordering problem section 1 of the plan flags needs
+no gateway involvement. `/api/v1/posts/categories` and `/api/v1/posts/admin` are
+literal siblings of the `/api/v1/posts/{slug}` catch-all, and all three stay
+inside `content`, so FastAPI's declaration order in
+`backend/app/domains/content/posts.py` resolves them exactly as it does in the
+monolith. Giving them separate route keys would move that disambiguation into
+API Gateway for no benefit and is the one way to get this cut wrong.
+
+`site-content` is a singleton and still gets both keys. Its greedy key matches
+nothing the application declares today, unless it turns out to be what serves
+the trailing slash. It stays either way: a future sub-path then cannot land on
+the monolith by omission, and an unmatched greedy key costs one route resource
+and answers from the domain's own 404 rather than from the monolith, which is
+the behaviour this cut wants.
+
+`ANY` rather than a method per route, as in cut 2. The domain owns every method
+on both prefixes, the unauthenticated GETs and the admin writes alike, so four
+keys stand in for all 14 routes and cannot drift when an operation is added.
+
+### Plan
+
+Not yet applied. The speculative plan on the PR confirms 6 to add, 0 to change,
+0 to destroy:
+
+- 4 `aws_apigatewayv2_route`, one per generated `content` route key
+- 1 `aws_apigatewayv2_integration` for `content`
+- 1 `aws_lambda_permission` for `content`, whose statement id the module derives
+  as `AllowAPIGatewayInvoke-content` because `content` is not the
+  `default_integration`
+
+Every one of the four routes plans with `authorization_type = CUSTOM` and the
+same authorizer id the existing routes already carry, which is the check worth
+making by hand for the same reason as cut 2: a route that planned as `NONE`
+would be a hole straight past the staging access gate, and the routes map sets
+no `authorization_type` precisely so the module picks `CUSTOM` for it.
+
+No destroys, as in cut 2. Nothing about the monolith, the `legacy` integration
+or its permission changes here, so a plan showing any destroy on this PR is a
+reason to stop and read.
+
+### Verification, once applied
+
+`scripts/verify_route_cut.sh staging content`, with `WEBBPULSE_ORIGIN_VERIFY`
+set. Four paths, both slash forms of both prefixes, all expected to report
+`X-WebbPulse-Domain: content`.
+
+The two trailing-slash probes are the ones that matter, and for a different
+reason than cut 2's did. There they proved a key worked; here they establish
+which of the two keys serves a path that no key names. `/api/v1/posts/` is the
+published post list and `/api/v1/site-content/` is the singleton the front page
+renders from, so both are unauthenticated reads and both are load-bearing for
+the site.
+
+The deeper posts paths are deliberately not probed, for two separate reasons.
+Item paths carry ids and slugs that differ per environment: `{slug}` and
+`category/{category_slug}` need content that exists there, and
+`admin/{post_id}` ids come from the `COUNTER#` allocator in
+`backend/app/db/repository.py`. And the `/admin` paths need an admin bearer
+token on top of the gate credential, so an unauthenticated GET would answer 401
+from the domain and fail the script's HTTP 200 check while saying nothing about
+routing. Both sets are served by the `ANY /api/v1/posts/{proxy+}` key, which
+`test_gateway_routes.py` covers in CI and the admin panel exercises in practice.
+
+**The same follow up cut 2 left open applies here.** The `verify-route-cuts` job
+in `.github/workflows/deploy-backend.yml` keeps the domains it checks in one
+`DOMAINS` variable, and cut 3 should add `content` to it. This PR does not touch
+that file: a separate one-line PR is handling the variable for both cuts, and
+editing a workflow this change has no other reason to modify would have meant
+resolving a conflict in it. Until that lands, CI verifies only `public` after
+each deploy and `content` has to be checked by running
+`scripts/verify_route_cut.sh staging content` by hand.
+
+### Rollback
+
+Delete the `content` block from the `routes` map and `"content"` from
+`local.routed_lambda_domains`, then apply. Both have to move together: the
+module's `every_integration_is_routed` check fails a plan on an integration no
+route can reach. `$default` sends all 14 routes back to the monolith, which
+still serves them because nothing has been deleted from it.
