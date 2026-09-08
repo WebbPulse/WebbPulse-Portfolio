@@ -82,3 +82,9 @@ variable "admin_email" {
   type        = string
   sensitive   = true
 }
+
+variable "manage_spans_log_group" {
+  description = "Adopt the aws/spans log group into state and apply the platform's 7 day retention to it. Leave false until Transaction Search has applied in this environment and X-Ray has written its first span: the group cannot be created by Terraform (CloudWatch reserves the aws/ prefix), so an import of it before it exists fails the plan. Set to true on the workspace and apply again once the group is there."
+  type        = bool
+  default     = false
+}

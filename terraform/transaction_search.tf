@@ -33,7 +33,8 @@
 # rejects the name with "Log groups starting with AWS/ are reserved for AWS"
 # (staging run-92rtoN8KYFoD7sWA, 2026-09-08). Retention is therefore applied in
 # a second step, once the group exists, through the `import` block and resource
-# below the destination.
+# below the destination, gated on var.manage_spans_log_group so a fresh
+# environment can apply the destination first and adopt the group afterwards.
 
 # Lets X-Ray put spans into the two log groups Transaction Search writes to. The
 # source conditions are the confused deputy guard from the AWS setup docs: they
@@ -83,18 +84,39 @@ resource "aws_xray_trace_segment_destination" "main" {
   depends_on = [aws_cloudwatch_log_resource_policy.transaction_search_spans]
 }
 
-# Step two: the destination above has applied and X-Ray created aws/spans (with
-# its own 30 day default), so adopt the group into state and put the platform's
-# 7 day retention on it. The import block is a no-op once the group is in state
-# and stays here so a fresh environment converges in one apply after X-Ray has
-# created the group.
+# Step two, and it is a separate apply in a new environment. Once the
+# destination above has applied and X-Ray has written its first span, the group
+# exists (with X-Ray's own 30 day default), so set var.manage_spans_log_group to
+# true on the workspace and apply again to adopt it into state and put the
+# platform's 7 day retention on it. Leaving the variable false in the first
+# apply is what keeps the plan from failing on an import of a group that does
+# not exist yet.
+#
+# The for_each on both blocks is what makes the gate possible: an unconditional
+# import block is planned whether or not the target exists, and there is no
+# `count` on an import block. Terraform 1.7 added for_each here and
+# required_version is >= 1.10, so the empty set simply plans nothing.
 import {
-  to = aws_cloudwatch_log_group.spans
-  id = "aws/spans"
+  for_each = var.manage_spans_log_group ? toset(["aws/spans"]) : toset([])
+
+  to = aws_cloudwatch_log_group.spans[each.key]
+  id = each.value
+}
+
+# Migrates the pre-gate address for environments that already adopted the group
+# (staging, since 2026-09-08) so the switch to for_each is a state move rather
+# than a destroy and recreate. `moved` and `import` may name the same address in
+# one plan: where the resource is already in state at the old address the move
+# wins and the import is a no-op, which plans as 0 add / 0 change / 0 destroy.
+moved {
+  from = aws_cloudwatch_log_group.spans
+  to   = aws_cloudwatch_log_group.spans["aws/spans"]
 }
 
 resource "aws_cloudwatch_log_group" "spans" {
-  name              = "aws/spans"
+  for_each = var.manage_spans_log_group ? toset(["aws/spans"]) : toset([])
+
+  name              = each.value
   retention_in_days = 7
 
   depends_on = [aws_xray_trace_segment_destination.main]

@@ -83,6 +83,27 @@ Two of the registry modules do not fit this stack yet and their resources stay h
 - `spa-frontend` (`frontend.tf`) applies its `cache_mode` to the `/index.html` SPA-shell behavior as well as the default behavior. This distribution serves the shell from the managed CachingOptimized policy while the default behavior uses legacy forwarded values, and the module has no input for that split, so adopting it would rewrite the live behavior.
 - `github-actions-role` (`iam_github_actions.tf`) validates `policy_statements` with `coalesce(s.sid, "")`, which errors on any statement without a `sid`. None of the statements here carry one, and adding sids would change the rendered policy document.
 
+### Transaction Search and the `aws/spans` log group
+
+`terraform/transaction_search.tf` switches X-Ray trace storage to CloudWatch
+Logs, which is what the X-Ray OTLP endpoint requires. It is account-wide for the
+region rather than per environment, and removing the resources does not revert
+it: reverting is an explicit change of `destination` back to `"XRay"`.
+
+Standing it up in a new environment takes **two applies**. X-Ray creates the
+`aws/spans` log group itself on the first span, and Terraform cannot create it
+ahead of time because CloudWatch reserves the `aws/` prefix. So the import and
+the log group resource are gated on `manage_spans_log_group`:
+
+| Apply | `manage_spans_log_group` | What happens |
+| --- | --- | --- |
+| First | `false` (the default, leave it unset) | The resource policy, the trace segment destination and the `Default` indexing rule are created. `aws/spans` is untouched |
+| Second, after the first span | `true` on the workspace | The existing `aws/spans` group is imported and its retention set to the platform's 7 days, replacing X-Ray's 30 day default |
+
+Setting the variable before the group exists fails the plan on the import.
+Staging adopted the group before the gate existed; a `moved` block migrates its
+state onto the `for_each` address, so it plans no change.
+
 ### Staging access gate
 
 Staging sits behind the shared `staging-access-gate` module (`app.terraform.io/WebbPulse/platform-modules/aws//modules/staging-access-gate`) when the workspace variables `staging_access_gate = true` and `staging_access_users = [<emails>]` are set. WebbPulse-Platform sets them on the staging workspace only; production never receives them, so its plan is a no-op.

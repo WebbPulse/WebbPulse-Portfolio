@@ -1035,6 +1035,18 @@ staging 2026-09-08: application spans from all four domains (FastAPI server span
 DynamoDB client spans, outbound HTTP) arrive in `aws/spans` next to the Lambda
 platform spans, with no exporter errors in the function logs.
 
+That adoption is a fourth resource and it is gated, because the import cannot be
+planned before the group exists. `var.manage_spans_log_group` (default false)
+drives a `for_each` on both the `import` block and
+`aws_cloudwatch_log_group.spans`, so standing Transaction Search up in a new
+environment is two applies: the first with the variable false brings up the
+policy, the destination and the indexing rule, and once X-Ray has written its
+first span the variable goes to true on the workspace and the second apply
+adopts the group and sets 7 day retention. Staging adopted the group before the
+gate existed, so a `moved` block carries its state from
+`aws_cloudwatch_log_group.spans` to `aws_cloudwatch_log_group.spans["aws/spans"]`
+rather than destroying and recreating it.
+
 Two things worth knowing. It is account-wide for the region rather than per
 environment, so it changes trace storage for everything in the account that
 writes segments. And spans are stored as structured logs in `aws/spans` under
