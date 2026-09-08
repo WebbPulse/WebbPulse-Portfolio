@@ -70,7 +70,7 @@ from ..core.middleware import (
 )
 from ..version import VERSION
 from .settings import Settings, get_settings
-from .wiring import DOMAINS
+from .wiring import DOMAINS, check_required_secrets
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from fastapi import FastAPI
@@ -83,6 +83,13 @@ def build_app(settings: Settings | None = None) -> "FastAPI":
     the `paths` map keeps the order the published document has always had.
     """
     resolved = settings if settings is not None else get_settings()
+
+    # Every domain's secrets, because this root serves every domain. Nothing
+    # deploys this module, so in practice this is the warning path: a checkout
+    # with no signing key gets told once, at startup, rather than on the first
+    # request that verifies a token. It raises only if someone runs the whole
+    # surface with ENVIRONMENT=staging or production.
+    check_required_secrets(DOMAINS.values(), settings=resolved)
 
     app = create_app(
         title=resolved.APP_NAME,

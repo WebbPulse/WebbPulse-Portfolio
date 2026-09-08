@@ -1364,6 +1364,24 @@ blob on first read, and a domain that needs one calls
 `Domain.requires_secrets` on the descriptor records which domain needs what, and
 `public` names none, which is the least-privilege claim the split rests on.
 
+**And then something has to actually call it.** Laziness alone moves the failure
+from import to whichever request first verifies a token, which presents as an
+intermittent 500 rather than as the misconfiguration it is.
+`check_required_secrets` in `app/composition/wiring.py` closes that: it reads
+`requires_secrets` across the domains a root serves and calls `require_secrets`
+for exactly those, once, in each entrypoint's `main` after logging is configured
+and before the application is built. On `staging` and `production` a missing
+secret is a cold start failure naming the field; anywhere else it is a warning,
+because a checkout with no AWS has to stay runnable and the suite has to stay
+green without a signing key.
+
+Resolution stays lazy underneath, so the property the split needs is unchanged:
+`build_app` reads nothing, every entrypoint imports with no credentials, and
+`public` declares no secret so it never calls `require_secrets`, never reaches
+Secrets Manager, and still needs no grant. `tests/test_app_secrets.py` asserts
+both halves, the import-time silence in a fresh interpreter under `env -i` and
+the startup failure per environment.
+
 ### `identity` mounts at `/api/v1/admin`, and the prefix lives on the descriptor
 
 `domains/identity/router.py` declares a bare `POST /login`. The `/admin` prefix
@@ -1443,28 +1461,45 @@ Section 1 gives `content` read only access to `users`, and gives `identity`
 nothing at all on `site-content`. Neither survives contact with
 `app/core/middleware.py`.
 
-`SeedMiddleware` calls `ensure_admin_seeded()` and `ensure_site_content_seeded()
-` together, in that order, on the first HTTP request in a process. It is one
-middleware, not two, and `app/composition/wiring.py` adds it to every domain
-whose descriptor sets `seeds = True`, which is `content` and `identity`. So on
-its first request `content` writes the `users` table and `identity` writes the
-`site-content` singleton, whichever domain the ownership table says owns them.
+`SeedMiddleware` used to call `ensure_admin_seeded()` and
+`ensure_site_content_seeded()` together, in that order, on the first HTTP
+request in a process. It was one middleware doing both jobs, and
+`app/composition/wiring.py` added it to every domain whose descriptor set
+`seeds = True`, which was `content` and `identity`. So on its first request
+`content` wrote the `users` table and `identity` wrote the `site-content`
+singleton, whichever domain the ownership table said owned them.
 
-Denying either write would fail the first request of every cold start, on a
-table the domain does not own, with a message about the seeder rather than about
-the route the caller asked for. Both are therefore granted, and the ownership
-table's column for those two domains is wider than section 1 states. The
-narrower shape is reachable, but it needs a code change first: splitting
-`SeedMiddleware` so a domain seeds only what it owns, or moving seeding out of
-the request path entirely. That is a separate change, not an IAM one.
+Denying either write would have failed the first request of every cold start, on
+a table the domain does not own, with a message about the seeder rather than
+about the route the caller asked for. Both were therefore granted, and the
+ownership table's column for those two domains was wider than section 1 states.
 
-The same middleware is why `content`'s function reads more than `SECRET_KEY`.
-`seed_admin_user()` reads `ADMIN_USERNAME`, `ADMIN_EMAIL` and `ADMIN_PASSWORD`
-off the settings object, so `content` resolves all four secret fields at
-runtime even though `Domain.requires_secrets` names one. This costs nothing in
-IAM, because all four are keys of the single `webbpulse-<env>/app` secret and
-one `secretsmanager:GetSecretValue` grant covers the blob, but the descriptor
-and the runtime disagree and the descriptor is the optimistic one.
+**That is now fixed in code, so section 1's narrower shape is the true one.**
+`Domain.seeds` is a tuple of seeder names rather than a boolean,
+`app.core.middleware.SEEDERS` registers `admin` and `site_content` separately,
+and `build_domain_app` passes only the names the domain declares. `identity`
+seeds `admin` and `content` seeds `site_content`, so neither writes a table it
+does not own and the grants can narrow to match section 1: `content` loses
+`dynamodb:PutItem`/`TransactWriteItems` on `users`, and `identity` loses them on
+`site-content`. `tests/test_app_secrets.py` asserts the per-domain seed lists and
+drives a request through each built application to confirm which seeders run.
+
+The same middleware used to be why `content`'s function read more than
+`SECRET_KEY`. `seed_admin_user()` reads `ADMIN_USERNAME`, `ADMIN_EMAIL` and
+`ADMIN_PASSWORD` off the settings object, and `SeedMiddleware` ran both seeders
+wherever it was added, so `content` resolved all four secret fields and wrote a
+table `identity` owns even though `Domain.requires_secrets` named one. It cost
+nothing in IAM, because all four are keys of the single `webbpulse-<env>/app`
+secret and one `secretsmanager:GetSecretValue` grant covers the blob, but the
+descriptor and the runtime disagreed and the descriptor was the optimistic one.
+
+That is the code change this section said was needed, and it has been made.
+`Domain.seeds` names *which* seeders a domain runs rather than merely whether it
+runs any, `SeedMiddleware` takes that list, and the seeders are registered
+individually in `app.core.middleware.SEEDERS`. `identity` owns `users` and seeds
+the admin; `content` owns the singleton and seeds that; `resume` and `public`
+seed nothing. The descriptor and the runtime now agree, which is what makes the
+`requires_secrets` map safe to derive IAM from.
 
 `public` is unaffected, and the least privilege claim the split rests on is
 intact: it sets `seeds = False`, adds no `SeedMiddleware`, holds no
