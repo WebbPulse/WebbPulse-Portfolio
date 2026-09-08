@@ -225,15 +225,24 @@ drift when an operation is added to `build_crud_router`, and keeps an
 unsupported method answering from the domain's own 405 rather than from the
 monolith.
 
-### Expected plan
+### Plan
 
-Not yet applied. Expected roughly 17 to add, 0 to change, 0 to destroy:
+Not yet applied. The speculative plan on the PR confirms 17 to add, 0 to
+change, 0 to destroy:
 
 - 15 `aws_apigatewayv2_route`, one per generated `resume` route key
 - 1 `aws_apigatewayv2_integration` for `resume`
 - 1 `aws_lambda_permission` for `resume`, whose statement id the module derives
   as `AllowAPIGatewayInvoke-resume` because `resume` is not the
   `default_integration`
+
+Every one of the 15 routes plans with `authorization_type = CUSTOM` and the
+same authorizer id the existing `$default`, `GET /`, `GET /health`,
+`GET /robots.txt` and `GET /sitemap.xml` routes already carry, which is the
+check worth making by hand: a route that planned as `NONE` would be a hole
+straight past the staging access gate, and the routes map sets no
+`authorization_type` precisely so the module picks `CUSTOM` for it. Those five
+existing routes plan as no-op.
 
 No destroys this time, unlike cut 1. Cut 1 destroyed the monolith's two
 explicit route keys because `$default` replaced them; that is a one-time cost of
