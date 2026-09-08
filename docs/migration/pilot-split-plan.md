@@ -1016,6 +1016,33 @@ and `OTEL_TRACES_SAMPLER_ARG` are the knobs, and the right value is a judgement
 call: a low rate on low-traffic staging can leave an incident with no trace at
 all. See section 9.
 
+#### Transaction Search, the OTLP prerequisite
+
+2026-09-07. Enabled in Terraform, in `terraform/transaction_search.tf`, because
+AWS requires it before the X-Ray OTLP endpoint will accept spans: "If you are
+using traces, make sure Transaction Search is enabled to send spans to the X-Ray
+OTLP endpoint." It is the prerequisite for the collector-less export this
+section describes, and it landed ahead of the PR that points the functions at
+the endpoint.
+
+Four resources: the `aws/spans` log group at the standard 7 day retention, a
+CloudWatch Logs resource policy letting `xray.amazonaws.com` write to it, the
+trace segment destination set to `CloudWatchLogs`, and the `Default` indexing
+rule at 1 percent.
+
+Two things worth knowing. It is account-wide for the region rather than per
+environment, so it changes trace storage for everything in the account that
+writes segments. And spans are stored as structured logs in `aws/spans` under
+CloudWatch Logs pricing rather than as X-Ray traces, with 1 percent of traceIds
+indexed for trace summaries, which is the free tier and the AWS default.
+
+Neither X-Ray resource reverts anything when it is removed from Terraform, so
+turning this back off is an explicit change of the destination to `XRay` and
+not a destroy.
+
+The provider bump this needed, `~> 5.0` to `~> 6.46`, is what made those two
+X-Ray resources available: both were added in 6.46.0.
+
 ### Logging
 
 `configure_logging(level=..., service=..., environment=...)`, keyword-only,
