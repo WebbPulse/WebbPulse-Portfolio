@@ -5,9 +5,12 @@
 #
 # Extras, and why each one: `fastapi` for `create_app` and `run_uvicorn`,
 # `dynamodb` for the secret loader and the repository base, `otel` for
-# `configure_tracing`. `testing` is a dev dependency and is in
-# requirements-dev.txt.
-webbpulse[fastapi,dynamodb,otel]==0.1.0
+# `configure_tracing`, and `aws-otel` for the SigV4-signing exporter that the
+# CloudWatch X-Ray OTLP endpoint requires. Without `aws-otel` the package falls
+# back to an unsigned exporter, whose 403s the OTLP exporter retries in silence,
+# so the failure looks exactly like having no traffic. `testing` is a dev
+# dependency and is in requirements-dev.txt.
+webbpulse[fastapi,dynamodb,otel,aws-otel]==0.2.0
 
 fastapi==0.115.12
 mangum==0.19.0

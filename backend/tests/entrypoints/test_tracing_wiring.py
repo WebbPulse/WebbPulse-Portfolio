@@ -1,0 +1,101 @@
+"""What `instrument_fastapi` leaves on a domain app, and where the ratio comes from.
+
+Two properties, and both fail silently in production if they regress, which is
+why they are asserted here rather than left to the deploy smoke test.
+
+**The flush wrapper is installed exactly once.** Sampling in `webbpulse` 0.2.0 is
+tail based: nothing is exported until a flush, and under the Web Adapter the only
+flush that runs before the execution environment freezes is the one this wrapper
+performs when the response completes. No wrapper means no traces at all, and two
+wrappers means two flushes and two thread hops per request. The wrapper is
+outermost by design, so it is not reachable through `app.user_middleware`; the
+sentinel attribute `webbpulse.otel` sets is what both this test and the package's
+own idempotency guard key on.
+
+**The ratio comes from `WEBBPULSE_OTEL_SAMPLE_RATIO`.** That is the whole
+environment variable contract 0.2.0 kept, and it is what `terraform/lambda_domains.tf`
+sets to 1.0 on staging and 0.1 on production. A typo there degrades to more traces
+rather than fewer, but a variable that is not read at all degrades to full price on
+production, which nothing else in the suite would notice.
+
+Neither test calls `configure_tracing`. It installs a global tracer provider that
+is set-once per process and would leak into every test after it; `instrument_fastapi`
+touches only the application it is handed.
+"""
+
+import pytest
+from webbpulse.otel import SAMPLE_RATIO_ENV, instrument_fastapi, resolve_sample_ratio
+
+from app.composition.wiring import DOMAIN_NAMES, build_domain_app
+
+# The private sentinel `_wrap_with_flush` sets. Reading a private name is the point:
+# the wrapper is installed outside the middleware stack, so there is no public
+# surface that reports it, and asserting on the observable behaviour instead would
+# mean starting a server and exporting a span.
+FLUSH_WRAPPED_ATTR = "_webbpulse_flush_wrapped"
+
+
+@pytest.mark.parametrize("domain", sorted(DOMAIN_NAMES))
+def test_instrumenting_a_domain_app_installs_the_flush_wrapper_once(domain):
+    """One wrapper after one call, and still one after a second call."""
+    app = build_domain_app(domain)
+    assert not getattr(app, FLUSH_WRAPPED_ATTR, False), (
+        "build_domain_app should not instrument; the entrypoint's main does that"
+    )
+
+    # `flush_per_request` explicitly rather than relying on auto-detection, which
+    # keys on AWS_LAMBDA_FUNCTION_NAME and would make this test depend on whether
+    # the suite happens to run inside Lambda.
+    instrument_fastapi(app, flush_per_request=True)
+    assert getattr(app, FLUSH_WRAPPED_ATTR, False)
+
+    stack = app.build_middleware_stack()
+    assert type(stack).__name__ == "_FlushTracingASGIMiddleware"
+    # The wrapper is outermost, so exactly one layer of it: the thing it wraps must
+    # not be another one.
+    assert type(stack.app).__name__ != "_FlushTracingASGIMiddleware"
+
+    # Idempotent. Two calls on the same app would otherwise nest two flush layers
+    # and flush twice per request.
+    instrument_fastapi(app, flush_per_request=True)
+    restack = app.build_middleware_stack()
+    assert type(restack).__name__ == "_FlushTracingASGIMiddleware"
+    assert type(restack.app).__name__ != "_FlushTracingASGIMiddleware"
+
+
+def test_the_flush_wrapper_is_off_when_not_running_under_lambda(monkeypatch):
+    """A local run flushes on its own schedule, so it gets no per-request flush."""
+    monkeypatch.delenv("AWS_LAMBDA_FUNCTION_NAME", raising=False)
+    app = build_domain_app("public")
+    instrument_fastapi(app)
+    assert not getattr(app, FLUSH_WRAPPED_ATTR, False)
+
+
+def test_the_sample_ratio_is_read_from_the_environment(monkeypatch):
+    """`WEBBPULSE_OTEL_SAMPLE_RATIO` is what Terraform sets per environment."""
+    monkeypatch.setenv(SAMPLE_RATIO_ENV, "0.1")
+    assert resolve_sample_ratio() == pytest.approx(0.1)
+
+    monkeypatch.setenv(SAMPLE_RATIO_ENV, "1.0")
+    assert resolve_sample_ratio() == pytest.approx(1.0)
+
+
+def test_the_sample_ratio_defaults_to_keeping_everything(monkeypatch):
+    """No variable means 1.0, so a function that lost its env var over-traces."""
+    monkeypatch.delenv(SAMPLE_RATIO_ENV, raising=False)
+    monkeypatch.delenv("OTEL_TRACES_SAMPLER", raising=False)
+    monkeypatch.delenv("OTEL_TRACES_SAMPLER_ARG", raising=False)
+    assert resolve_sample_ratio() == pytest.approx(1.0)
+
+
+def test_an_unusable_sample_ratio_falls_back_rather_than_raising(monkeypatch):
+    """A typo in a Terraform variable must cost money, not availability.
+
+    An exception here would be raised during `main`, before uvicorn binds, so the
+    function would fail its readiness check with no application logs at all.
+    """
+    monkeypatch.delenv("OTEL_TRACES_SAMPLER", raising=False)
+    monkeypatch.delenv("OTEL_TRACES_SAMPLER_ARG", raising=False)
+    for bad in ("", "  ", "not-a-number", "-0.5", "1.5"):
+        monkeypatch.setenv(SAMPLE_RATIO_ENV, bad)
+        assert resolve_sample_ratio() == pytest.approx(1.0)
