@@ -105,25 +105,24 @@ module "api" {
     # real paths are `/api/v1/projects/` and `/api/v1/projects/123`. Section
     # 3.5's snippet gives each collection only `ANY /api/v1/projects` and
     # `ANY /api/v1/projects/{proxy+}`, and whether either of those matches
-    # `/api/v1/projects/` is genuinely unspecified:
+    # `/api/v1/projects/` is not something the routes map can name directly.
     #
-    #   - The routing doc's precedence list (full match, then greedy variable,
-    #     then $default) has no trailing-slash or empty-remainder example, and
-    #     nothing in the HTTP API documentation says whether a trailing slash is
-    #     normalised away before route selection.
-    #   - Whether `{proxy+}` can capture an empty remainder is likewise
-    #     undocumented for HTTP APIs. The v1 REST API doc describes
-    #     `/parent/{proxy+}` as standing for `/parent/*`, which reads as
-    #     requiring a non-empty remainder, but that sentence is not restated for
-    #     v2 and carrying it across is an inference.
+    # The first cut 2 apply tried a literal `ANY /api/v1/projects/` key for it
+    # and API Gateway rejected every one with "BadRequestException: Part of the
+    # given route key path is empty" (HCP run run-wejfhcFYu9riFnvc, 2026-09-07).
+    # A route key may not end in a slash, so the trailing-slash request has to
+    # be matched by the bare key or by the greedy key, and which of those the
+    # gateway picks is undocumented: nothing says a trailing slash is normalised
+    # away before route selection, and nothing says whether `{proxy+}` may
+    # capture an empty remainder.
     #
-    # So the behaviour is not something to depend on in either direction. A full
-    # match takes documented priority over a greedy one, which makes the literal
-    # `ANY /api/v1/projects/` key safe to add and removes the ambiguity: the
-    # collection GET the site's front page depends on lands on `resume` whatever
-    # API Gateway does with the slash. Without it, the failure mode is the quiet
-    # one, a cut that applies cleanly while its collection reads keep being
-    # answered by the monolith through $default.
+    # That question is settled empirically rather than by reading. The
+    # verify-route-cuts job in deploy-backend.yml probes both slash forms of
+    # every collection after each deploy and fails if either one is still
+    # answered by the monolith through $default, which is the quiet failure mode
+    # this comment exists to warn about. Until the monolith is retired, a
+    # trailing-slash request that falls through is still served correctly, so
+    # the probe is a signal and not an outage.
     #
     # The bare key is not redundant either: the frontend's getProjects(true)
     # emits `/projects?featured_only=true/`, whose path component is the bare
@@ -133,13 +132,12 @@ module "api" {
     #
     # ANY rather than a method per route. The 25 routes are five methods across
     # five collections and the domain owns every method on its prefixes, so ANY
-    # names them in three keys instead of fifteen and cannot drift when a sixth
+    # names them in two keys instead of ten and cannot drift when a sixth
     # operation is added to build_crud_router. It also keeps an unsupported
     # method answering from the domain's own 405 rather than from the monolith.
     merge([
       for collection in local.resume_collections : {
         "ANY /api/v1/${collection}"          = { integration = "resume" }
-        "ANY /api/v1/${collection}/"         = { integration = "resume" }
         "ANY /api/v1/${collection}/{proxy+}" = { integration = "resume" }
       }
     ]...),

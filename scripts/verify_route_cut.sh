@@ -104,16 +104,17 @@ public)
   PATHS=(/health / /sitemap.xml /robots.txt)
   ;;
 resume)
-  # Cut 2. Three keys per collection in the routes map, and the two probed here
-  # are the two that are easy to get wrong.
+  # Cut 2. Two keys per collection in the routes map, bare and {proxy+}. A
+  # trailing-slash key is not legal: API Gateway rejected "ANY /api/v1/<c>/"
+  # with "Part of the given route key path is empty" on the first cut 2 apply.
   #
   # The collection path this application serves carries a trailing slash, and
   # AWS does not document whether "ANY /api/v1/projects" or
   # "ANY /api/v1/projects/{proxy+}" matches it: nothing says a trailing slash is
   # normalised before route selection, and nothing says a greedy variable can
-  # capture an empty remainder. The routes map therefore carries an explicit
-  # "ANY /api/v1/projects/" key, and this is the probe that proves it works
-  # against the real gateway rather than against a reading of the docs.
+  # capture an empty remainder. The trailing-slash probe below is what settles
+  # that against the real gateway. If it reports "monolith", the routes map is
+  # not wrong, the application is: the fix is serving the bare collection path.
   #
   # The bare form is probed too. It is what the frontend's getProjects(true)
   # actually requests: it emits /projects?featured_only=true/, whose path

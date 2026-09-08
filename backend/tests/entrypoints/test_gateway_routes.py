@@ -20,17 +20,19 @@ in both directions:
 
 The specific edge this exists for is the trailing slash. `build_crud_router`
 mounts its collection operations at `/`, so the served path is
-`/api/v1/projects/`, and whether either of section 3.5's two keys matches that
-path is undocumented: AWS does not say that a trailing slash is normalised away
-before route selection, and does not say whether `{proxy+}` can capture an empty
-remainder. So the routes map carries an explicit `ANY /api/v1/projects/` key and
-these tests hold it in place, because the alternative is a cut that depends on
-unspecified behaviour and fails silently by falling through to the monolith.
+`/api/v1/projects/`. A literal `ANY /api/v1/projects/` key cannot exist: the
+first cut 2 apply proved API Gateway rejects any route key ending in a slash
+("Part of the given route key path is empty"). So the trailing-slash path can
+only be reached through the bare key or the greedy key, and AWS documents
+neither trailing-slash normalisation nor whether `{proxy+}` may capture an empty
+remainder.
 
-`matches` below therefore encodes the *conservative* reading, the one the extra
-route key makes irrelevant: no normalisation, and a greedy variable needs at
-least one character. If AWS is in fact more lenient the extra key is harmless,
-since a full match outranks a greedy one either way.
+`matches` below therefore models the reading the routes map depends on: a
+trailing slash on the request is normalised away before comparison, so the bare
+collection key covers `/api/v1/projects/`, and a greedy variable needs at least
+one character. That reading is an assumption, not a promise from AWS, and it is
+checked against the real gateway after every deploy by the verify-route-cuts job,
+which probes both slash forms of every collection.
 
 Terraform is parsed rather than planned. A plan needs credentials and a
 workspace; the route keys are static text in the module call, and a regex over
@@ -172,10 +174,16 @@ def matches(route_key: str, path: str) -> bool:
     """
     key_path = route_key.split(" ", 1)[1]
 
+    # The modelled assumption: a trailing slash on the request is normalised
+    # away before route selection. A key can never carry one, so without this
+    # the served collection path could match nothing. Verified against the real
+    # gateway by scripts/verify_route_cut.sh, not by this test.
+    if len(path) > 1 and path.endswith("/"):
+        path = path[:-1]
+
     if key_path.endswith("/{proxy+}"):
         prefix = key_path[: -len("{proxy+}")]
-        # Greedy, and it needs at least one character to capture. This is the
-        # whole reason the collection needs its own trailing-slash key.
+        # Greedy, and it needs at least one character to capture.
         return path.startswith(prefix) and len(path) > len(prefix)
 
     key_segments = key_path.split("/")
@@ -201,8 +209,8 @@ def test_public_route_keys_are_the_four_literal_paths():
     }
 
 
-def test_resume_has_three_route_keys_per_collection():
-    """Three, not section 3.5's two. The third is the trailing-slash form."""
+def test_resume_has_two_route_keys_per_collection():
+    """Two, as section 3.5 lists. A trailing-slash key is not a legal route key."""
     collections = resume_collections()
     keys = expand_for_expression_keys("resume")
 
@@ -211,9 +219,21 @@ def test_resume_has_three_route_keys_per_collection():
     )
     for collection in collections:
         assert f"ANY /api/v1/{collection}" in keys
-        assert f"ANY /api/v1/{collection}/" in keys
         assert f"ANY /api/v1/{collection}/{{proxy+}}" in keys
-    assert len(keys) == 3 * len(collections) == 15
+    assert len(keys) == 2 * len(collections) == 10
+
+
+def test_no_route_key_ends_in_a_slash():
+    """API Gateway rejects a route key whose path ends in a slash.
+
+    "BadRequestException: Part of the given route key path is empty" on every
+    `ANY /api/v1/<collection>/` key in the first cut 2 apply. The root `GET /`
+    is the one legal exception, because its path is only the slash.
+    """
+    for domain, keys in gateway_route_keys().items():
+        for key in expand_for_expression_keys(domain) if domain == "resume" else keys:
+            key_path = key.split(" ", 1)[1]
+            assert key_path == "/" or not key_path.endswith("/"), key
 
 
 @pytest.mark.parametrize(
@@ -231,18 +251,18 @@ def test_a_resume_path_is_matched_by_some_resume_route_key(path):
     assert any(matches(key, path) for key in keys), path
 
 
-def test_the_bare_collection_key_does_not_cover_the_trailing_slash():
-    """The conservative reading of route matching, pinned as a property of `matches`.
+def test_the_bare_collection_key_covers_the_trailing_slash_under_normalisation():
+    """The modelled reading, pinned as a property of `matches`.
 
-    This asserts what `matches` models, not what AWS promises. AWS documents
-    neither trailing-slash normalisation nor whether a greedy variable may
-    capture an empty remainder, so the routes map is written to be correct under
-    the strictest reading and this pins that reading in place. It is why the
-    explicit trailing-slash key exists and why removing it has to fail a test.
+    This asserts what `matches` models, not what AWS promises: the trailing
+    slash is normalised away, so the bare key covers the served collection path
+    and the greedy key still needs a non-empty remainder. If the CI probe ever
+    shows the gateway sending `/api/v1/projects/` to the monolith, this model is
+    wrong and the fix is in the application (serve the bare path), not here.
     """
-    assert not matches("ANY /api/v1/projects", "/api/v1/projects/")
+    assert matches("ANY /api/v1/projects", "/api/v1/projects/")
     assert not matches("ANY /api/v1/projects/{proxy+}", "/api/v1/projects/")
-    assert matches("ANY /api/v1/projects/", "/api/v1/projects/")
+    assert matches("ANY /api/v1/projects/{proxy+}", "/api/v1/projects/1")
 
 
 def test_every_resume_route_the_app_serves_has_a_gateway_route_key():
