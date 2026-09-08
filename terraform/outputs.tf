@@ -53,13 +53,12 @@ output "api_custom_domain" {
   value       = module.api.custom_domain_target_domain_name
 }
 
-output "lambda_function_name" {
-  description = "Lambda function name — CI/CD updates its code after each backend push"
-  value       = module.lambda_api.function_name
-}
+# The monolith's `lambda_function_name` output is gone with the function. The
+# deploy job that read it through vars.LAMBDA_FUNCTION_NAME is gone too; the
+# four domain functions are named by `domain_lambda_function_names` below.
 
 output "lambda_artifact_bucket" {
-  description = "S3 bucket CI/CD uploads Lambda deployment packages to"
+  description = "S3 bucket the monolith's deployment zips were uploaded to. Kept after the monolith was retired because the last zip is what a rollback would restore the function from; nothing writes to it now."
   value       = module.lambda_artifacts.bucket_id
 }
 
@@ -84,7 +83,7 @@ output "github_actions_ci_role_arn" {
 }
 
 output "domain_lambda_function_names" {
-  description = "Per-domain Lambda function name keyed by domain, for the function-image map the image deploy step passes to UpdateFunctionCode. The monolith is not in here; it keeps its own lambda_function_name output while it still serves the default route."
+  description = "Per-domain Lambda function name keyed by domain, for the function-image map the image deploy step passes to UpdateFunctionCode. Since the monolith was retired these are every Lambda the API routes to."
   value       = { for name, fn in module.lambda_domain : name => fn.function_name }
 }
 

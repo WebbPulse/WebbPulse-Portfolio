@@ -12,22 +12,26 @@
 # route53.tf, because production writes DNS through aws.dns.
 #
 # Section 3.5 and section 6 of docs/migration/pilot-split-plan.md: the strangler
-# runs through this file. Each cut adds route keys for one domain and the
-# monolith keeps everything else through $default, so a cut is one map edit and
-# a rollback is deleting it again. The cuts so far are recorded in
-# docs/migration/cutover-log.md.
+# ran through this file. Each cut added route keys for one domain and the
+# monolith kept everything else through $default. All four cuts are applied and
+# the monolith is retired, so there is no $default and no fall-through left:
+# every route key below names the domain function that serves it, and a path no
+# key matches gets API Gateway's own 404. The cuts and the retirement are
+# recorded in docs/migration/cutover-log.md.
 # ---------------------------------------------------------------------------
 
 locals {
-  # Domains that have been cut over, in cut order. A domain belongs here only
-  # once apigateway.tf's routes map names it: the http-api module's
+  # Every deployable domain, in cut order. A domain belongs here only once
+  # apigateway.tf's routes map names it: the http-api module's
   # every_integration_is_routed check fails the plan on an integration no route
   # can reach, so this list and the routes map below move together.
   #
-  # Cut 1 is `public`, cut 2 is `resume`, cut 3 is `content`, cut 4 is
-  # `identity`. With identity routed, every domain in local.lambda_domains has
-  # an integration and the strangler's add phase is complete: what remains in
-  # section 6 is retiring the monolith, not carving more off it.
+  # Cut 1 was `public`, cut 2 `resume`, cut 3 `content`, cut 4 `identity`. With
+  # the monolith retired this list is the whole integrations map rather than the
+  # part of it that had been carved off, so it now has to equal
+  # keys(local.lambda_domains) exactly: a domain missing from here has no
+  # integration and no route at all, where before the retirement it would still
+  # have been served by the monolith on $default.
   routed_lambda_domains = ["public", "resume", "content", "identity"]
 
   # The five collections the `resume` domain owns. Every one of them is built by
@@ -67,43 +71,58 @@ module "api" {
 
   name = "${local.prefix}-api"
 
-  # The monolith plus the four per-domain functions from lambda_domains.tf. The
-  # per-domain entries are generated from module.lambda_domain rather than
-  # written out one at a time, so a domain added to local.lambda_domains cannot
-  # be left without an integration here.
+  # The four per-domain functions from lambda_domains.tf, and nothing else. The
+  # `legacy` entry that named the monolith is gone with it; the entries are
+  # generated from module.lambda_domain rather than written out one at a time,
+  # so a domain added to local.lambda_domains cannot be left without an
+  # integration here.
   #
-  # Only the domains that have a route are reachable. The module's
-  # every_integration_is_routed check refuses an integration nothing can reach,
-  # which is what kept each domain out of this map until its own cut. As of cut
-  # 4 all four are listed, because all four are routed.
-  integrations = merge(
-    {
-      legacy = {
-        lambda_function_name           = module.lambda_api.function_name
-        lambda_invoke_arn              = module.lambda_api.invoke_arn
-        lambda_permission_statement_id = "AllowAPIGatewayInvoke"
-      }
-    },
-    {
-      for name in local.routed_lambda_domains : name => {
-        lambda_function_name = module.lambda_domain[name].function_name
-        lambda_invoke_arn    = module.lambda_domain[name].invoke_arn
-      }
-    },
-  )
+  # The module's every_integration_is_routed check refuses an integration
+  # nothing can reach, which is what kept each domain out of this map until its
+  # own cut and is now what keeps this map and the routes map in step.
+  #
+  # Every statement id is derived by the module as
+  # "AllowAPIGatewayInvoke-<domain>", because with default_integration null
+  # there is no integration that takes var.lambda_permission_statement_id
+  # verbatim. That is the id each of the four permissions already carries: they
+  # were created after `legacy` had claimed the bare id, so retiring `legacy`
+  # renames none of them and destroys only its own permission.
+  integrations = {
+    for name in local.routed_lambda_domains : name => {
+      lambda_function_name = module.lambda_domain[name].function_name
+      lambda_invoke_arn    = module.lambda_domain[name].invoke_arn
+    }
+  }
 
-  # Cut 1. The monolith moves off its two explicit route keys and onto $default,
-  # which is what lets a prefix be carved off it one cut at a time: API Gateway
-  # matches a full route key first, then a greedy {proxy+}, then $default last,
-  # so everything not named in routes keeps falling through to the monolith and
-  # a rollback is deleting the routes entry again.
-  default_integration = "legacy"
+  # No $default. Section 6's retirement step, and the module's own words for it:
+  # "Setting default_integration = null creates no $default route at all, so
+  # anything the explicit routes do not match gets a 404 from API Gateway. That
+  # is the end state of a finished migration, not somewhere to be during one."
+  #
+  # It is null rather than a domain on purpose. Pointing $default at `public`
+  # would keep a fall-through working, and a fall-through working is exactly
+  # what the strangler spent four cuts making impossible to rely on: a path that
+  # no route key matches would answer 200-shaped from a function that does not
+  # own it, or 404 from a function whose 404 is indistinguishable from a routing
+  # mistake. With null, an unmatched path is API Gateway's own 404 with no
+  # X-WebbPulse-Domain header, which is a distinct and readable signal, and it
+  # is the signal scripts/verify_route_cut.sh now keys its fall-through check
+  # off. It also costs nothing to reverse: naming a domain here is a one line
+  # edit if the 404s ever turn out to be wrong.
+  #
+  # The routes map below has to be exhaustive for this to be correct, and
+  # backend/tests/entrypoints/test_gateway_routes.py is what proves it is: it
+  # asserts every path the four applications declare is matched by some key.
+  # The four documentation paths are the deliberate exception, section 9
+  # question 4 of the plan, and they 404 here rather than being routed.
+  default_integration = null
 
   # No authorization_type is set on any entry below, which means the module's
   # own choice, CUSTOM whenever authorizer_id is set, so every one of them stays
-  # behind the staging access gate exactly as $default does. Setting NONE on any
-  # of them, including on a read-only GET to make a probe simpler, would punch a
-  # hole straight past the gate.
+  # behind the staging access gate. Setting NONE on any of them, including on a
+  # read-only GET to make a probe simpler, would punch a hole straight past the
+  # gate. With $default gone these are the only routes on the API, so this is
+  # the whole of its authorization surface.
   routes = merge(
     # Cut 1. `public`'s four routes, all literal, all unauthenticated in the
     # application and none of them writing.
@@ -137,11 +156,17 @@ module "api" {
     #
     # That question is settled empirically rather than by reading. The
     # verify-route-cuts job in deploy-backend.yml probes both slash forms of
-    # every collection after each deploy and fails if either one is still
-    # answered by the monolith through $default, which is the quiet failure mode
-    # this comment exists to warn about. Until the monolith is retired, a
-    # trailing-slash request that falls through is still served correctly, so
-    # the probe is a signal and not an outage.
+    # every collection after each deploy and fails if either one is not answered
+    # by this domain's own function.
+    #
+    # **That probe stopped being a warning and became an outage check when the
+    # monolith was retired.** While $default existed, a trailing-slash request
+    # that matched neither key fell through to the monolith, which served it
+    # correctly, so the probe reported a routing mistake against a surface that
+    # still worked. There is no $default now: a request neither key matches gets
+    # API Gateway's own 404 and the caller gets nothing. The keys below are
+    # unchanged and the probes have passed on every deploy since cut 2, so the
+    # empirical answer is in hand; what changed is the cost of it being wrong.
     #
     # The bare key is not redundant either: the frontend's getProjects(true)
     # emits `/projects?featured_only=true/`, whose path component is the bare

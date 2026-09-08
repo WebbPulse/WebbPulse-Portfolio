@@ -1,32 +1,56 @@
 #!/usr/bin/env bash
 #
-# Verify that one domain's routes were actually cut over to that domain's
-# function, rather than still falling through to the monolith on $default.
+# Verify that each of one domain's paths is served by that domain's own
+# function.
 #
 # Section 6 of docs/migration/pilot-split-plan.md, "Verifying a route flip on
-# staging". Each cut in section 3.5 moves a set of route keys off the monolith,
-# and the failure this script exists to catch is the quiet one: a cut that
-# applies cleanly, returns 200, and changes nothing, because the route key did
-# not match and API Gateway sent the request to $default after all. A 200 alone
-# cannot tell those apart. The X-WebbPulse-Domain response header can.
+# staging". Each cut in section 3.5 moved a set of route keys off the monolith,
+# and the failure this script was written to catch was the quiet one: a cut that
+# applied cleanly, returned 200, and changed nothing, because the route key did
+# not match and API Gateway sent the request to $default and the monolith after
+# all. A 200 alone cannot tell those apart. The X-WebbPulse-Domain response
+# header can.
 #
 #   scripts/verify_route_cut.sh <env> <domain>
 #
 #     env      staging or production
 #     domain   public, resume, content or identity
 #
+# WHAT A FALL-THROUGH MEANS NOW
+# -----------------------------
+# The monolith is retired and default_integration is null, so there is no
+# $default route on the API at all. That changes what this script is looking
+# for, and it makes the check stricter rather than obsolete.
+#
+# Before: a path whose route key did not match fell through to $default, reached
+# the monolith, and was served correctly. The response carried
+# X-WebbPulse-Domain: monolith. Wrong routing, working surface, and this script
+# reported "NOT CUT OVER".
+#
+# After: a path whose route key does not match matches nothing. API Gateway
+# answers it itself, with {"message":"Not Found"} and HTTP 404, and no
+# X-WebbPulse-Domain header, because no application was involved. Wrong routing
+# is now a broken path, and the signal for it is the absence of the header on a
+# 404 rather than the presence of "monolith".
+#
+# So the "monolith" verdict below is kept but is no longer the expected way for
+# this to fail. Seeing it would mean something re-created the monolith and
+# pointed a route or a $default back at it, which is worth reporting loudly and
+# distinctly from a route that matches nothing.
+#
 # How it decides
 # --------------
 # Every application stamps X-WebbPulse-Domain on its responses
-# (backend/app/core/middleware.py). A per-domain function reports its own name;
-# both whole-surface roots, including the deployed monolith that serves
-# $default, report "monolith". So for each path this script expects:
+# (backend/app/core/middleware.py). A per-domain function reports its own name.
+# So for each path this script expects:
 #
-#   X-WebbPulse-Domain: <domain>   the cut worked
-#   X-WebbPulse-Domain: monolith   the route fell through to $default
-#   (absent)                       an older image that predates the header, or
-#                                  an unhandled 500, which Starlette answers
+#   X-WebbPulse-Domain: <domain>   the path is served by its own function
+#   (absent), HTTP 404             the gateway matched no route key and answered
+#                                  itself: the path is unreachable
+#   (absent), any other status     an image that predates the header, or an
+#                                  unhandled 500, which Starlette answers
 #                                  outside every user middleware
+#   X-WebbPulse-Domain: monolith   a retired monolith is serving traffic again
 #
 # The header is the primary signal because it is synchronous and needs no
 # CloudWatch read. The access log's routeKey field says the same thing and is
@@ -102,7 +126,8 @@ esac
 # The paths each cut moves, kept in the same order as section 3.5's routes map
 # so the two can be read side by side. A path listed here must appear in
 # terraform/apigateway.tf's routes map for that domain, or this script will
-# correctly report it as still on the monolith.
+# correctly report it as unreachable: with the monolith retired and no $default,
+# a path no key matches is answered by API Gateway itself with a 404.
 #
 # All four domains are cut as of cut 4, so every case below is populated and
 # the "no paths" guard is now unreachable. It stays as a guard rather than
@@ -130,8 +155,11 @@ resume)
   # "ANY /api/v1/projects/{proxy+}" matches it: nothing says a trailing slash is
   # normalised before route selection, and nothing says a greedy variable can
   # capture an empty remainder. The trailing-slash probe below is what settles
-  # that against the real gateway. If it reports "monolith", the routes map is
-  # not wrong, the application is: the fix is serving the bare collection path.
+  # that against the real gateway. If it reports NO ROUTE, neither key matches
+  # the trailing-slash form and that path is a 404 to every caller. Before the
+  # monolith was retired the same miss fell through to $default and was served
+  # correctly, so this probe went from a warning to an outage check without its
+  # assertion changing.
   #
   # The bare form is probed too. It is what the frontend's getProjects(true)
   # actually requests: it emits /projects?featured_only=true/, whose path
@@ -168,8 +196,8 @@ content)
   # route key path is empty". So the trailing slash is served by either the
   # bare key or the greedy one, AWS documents neither case, and these probes
   # are what establish which. Both are expected to report `content`; a trailing
-  # slash reporting `monolith` would mean neither key matches it and the cut is
-  # incomplete.
+  # slash reporting NO ROUTE would mean neither key matches it, which with no
+  # $default left is an unreachable path rather than a fall-through.
   #
   # GET only. Every other method on these prefixes writes, and the two GETs
   # listed are the domain's unauthenticated reads: /api/v1/posts/ is the
@@ -213,12 +241,19 @@ identity)
   #   GET /api/v1/admin/login  -> 405, from the identity function
   #   GET /api/v1/admin        -> 404, from the identity function
   #
-  # Both are the *correct* answers and both prove the cut worked, because both
-  # carry X-WebbPulse-Domain: identity. A request that fell through to $default
-  # would carry `monolith` instead, and the monolith declares the same single
-  # POST route, so it would answer the same 404s and 405s with a different
-  # header. The header is what separates them; the status tells us nothing here
+  # Both are the *correct* answers and both prove the routing is right, because
+  # both carry X-WebbPulse-Domain: identity. The header is what separates them
+  # from a 404 that means something is wrong; the status tells us nothing here
   # and cannot be allowed to fail the run.
+  #
+  # **This domain is why the unrouted check is written as a pair of conditions
+  # and not as a status test.** `identity` is the one domain whose own function
+  # legitimately answers 404, so "404" alone cannot mean "no route matched"
+  # here. A 404 carrying the header is the identity function saying it has no
+  # such path; a 404 with no header is API Gateway saying no route key matched
+  # and no function was invoked at all. Those are opposite verdicts on the same
+  # status code, and only the header tells them apart. While the monolith
+  # existed the second case did not arise, because $default caught it.
   #
   # Hence EXPECTED_CODES below. 404 and 405 are the real expected answers; 200
   # stays in the set so that adding a GET under this prefix later does not
@@ -237,8 +272,10 @@ identity)
   # sits one segment below the prefix, so the greedy key matches it with a
   # non-empty remainder under any reading. The trailing-slash forms are probed
   # anyway because they are cheap and they pin the bare key's behaviour: a
-  # /api/v1/admin/ that reported `monolith` would mean the prefix root is still
-  # falling through, which is exactly what the bare key exists to prevent.
+  # /api/v1/admin/ that reported NO ROUTE would mean the bare key does not match
+  # the prefix root after all. With the monolith gone that is a 404 from the
+  # gateway rather than a fall-through, so the bare key now prevents an
+  # unreachable path rather than a misrouted one.
   PATHS=(
     /api/v1/admin/login
     /api/v1/admin/login/
@@ -303,6 +340,7 @@ echo
 
 FAILURES=0
 NOT_CUT=0
+UNROUTED=0
 
 # Print one header's value from a curl -D dump. Header names are matched case
 # insensitively because HTTP/2 lowercases them and HTTP/1.1 does not have to.
@@ -345,6 +383,23 @@ for path in "${PATHS[@]}"; do
   trap - EXIT
 
   label="  ${path}"
+  # The unrouted case is diagnosed before the status check, and it has to be.
+  # A 404 with no domain header is API Gateway answering a path no route key
+  # matches, and for every domain but `identity` 404 is not in EXPECTED_CODES,
+  # so the status check below would report it as a generic "expected 200" and
+  # bury the one thing worth saying about it. The pair of conditions is what
+  # makes it unambiguous: `identity` legitimately answers 404 from its own
+  # function, but that response carries the header and this one does not.
+  if [ "$code" = "404" ] && [ -z "$served_by" ]; then
+    echo "$label -> HTTP 404, no $DOMAIN_HEADER header  NO ROUTE"
+    echo "      No route key in terraform/apigateway.tf matches this path, so"
+    echo "      API Gateway answered it rather than any function. There is no"
+    echo "      \$default to catch it since the monolith was retired, so this"
+    echo "      path is unreachable and not merely misrouted."
+    UNROUTED=$((UNROUTED + 1))
+    continue
+  fi
+
   if ! is_expected_code "$code"; then
     echo "$label -> HTTP $code, served by '${served_by:-unknown}'  FAIL"
     echo "      Expected one of: $EXPECTED_CODES"
@@ -357,13 +412,24 @@ for path in "${PATHS[@]}"; do
     echo "$label -> HTTP $code, served by '$DOMAIN'  OK"
     ;;
   "$MONOLITH")
-    echo "$label -> HTTP $code, served by '$MONOLITH'  NOT CUT OVER"
+    # No longer a fall-through: $default does not exist. Reaching the monolith
+    # means it was re-created and something is routing to it again.
+    echo "$label -> HTTP $code, served by '$MONOLITH'  FAIL"
+    echo "      The monolith was retired and there is no \$default route. A"
+    echo "      response from it means the function and a route to it were"
+    echo "      re-created, which is only ever a deliberate rollback. If that"
+    echo "      is what happened, this path is on the rolled-back surface."
     NOT_CUT=$((NOT_CUT + 1))
     ;;
   "")
+    # The 404-with-no-header case is already handled above, so anything
+    # reaching here answered with some other status and still stamped no
+    # header.
     echo "$label -> HTTP $code, no $DOMAIN_HEADER header  FAIL"
-    echo "      The function is running an image from before the header was"
-    echo "      added. Redeploy the backend, then run this again."
+    echo "      A function answered but stamped no header, so it is running an"
+    echo "      image from before the header was added, or the response came"
+    echo "      from outside the middleware stack (an unhandled 500)."
+    echo "      Redeploy the backend, then run this again."
     FAILURES=$((FAILURES + 1))
     ;;
   *)
@@ -414,14 +480,29 @@ if [ "$ENV_NAME" = "staging" ] && [ ${#GATE_ARGS[@]} -gt 0 ]; then
 fi
 
 echo
+# UNROUTED is reported before FAILURES because it is the more actionable of the
+# two and, since the monolith was retired, the more serious: an unrouted path is
+# a 404 to every caller, where a failure is usually a stale image or a transient
+# status.
+if [ "$UNROUTED" -gt 0 ]; then
+  echo "NO ROUTE: $UNROUTED path(s) match no route key and are unreachable."
+  echo "API Gateway answered them itself with a 404. Before the monolith was"
+  echo "retired these would have fallen through to \$default and been served"
+  echo "correctly; there is no \$default now, so this is an outage on those"
+  echo "paths and not a routing warning."
+  echo "The Terraform apply has not landed, or the routes map in"
+  echo "terraform/apigateway.tf does not name these paths. Cross-check routeKey"
+  echo "in /aws/apigateway/webbpulse-${ENV_NAME}-api."
+  exit 1
+fi
 if [ "$FAILURES" -gt 0 ]; then
   echo "FAILED: $FAILURES path(s) did not verify."
   exit 1
 fi
 if [ "$NOT_CUT" -gt 0 ]; then
-  echo "NOT CUT OVER: $NOT_CUT path(s) are still served by the monolith."
-  echo "The Terraform apply has not landed, or the routes map does not name"
-  echo "these paths. Cross-check routeKey in /aws/apigateway/webbpulse-${ENV_NAME}-api."
+  echo "MONOLITH SERVING: $NOT_CUT path(s) were answered by the monolith."
+  echo "It was retired, so this means it and a route to it were re-created."
+  echo "Cross-check routeKey in /aws/apigateway/webbpulse-${ENV_NAME}-api."
   exit 1
 fi
 
