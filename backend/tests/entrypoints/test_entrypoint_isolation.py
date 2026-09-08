@@ -138,15 +138,19 @@ def test_an_entrypoint_exposes_the_runtime_wiring(domain):
     assert callable(module.build_app)
 
 
-def test_no_entrypoint_imports_the_monolith_composition_root():
-    """The split does not run through `app.main`.
+def test_no_entrypoint_imports_a_whole_surface_root():
+    """A deployed entrypoint builds one domain, never all four.
 
-    `app.main` keeps the historical app the monolith Lambda serves. If an
-    entrypoint imported it, every domain image would build the whole surface at
-    import time and the isolation above would be accidental rather than
-    structural.
+    `app.composition.app` is root A, the whole surface on one application. It is
+    what local development and the test client run, and importing it from an
+    entrypoint would make every domain image build all four domains at import
+    time, so the isolation above would be accidental rather than structural.
+
+    `app.main` was the monolith's root and is deleted. It stays in this list so
+    a restored import is caught here, with the reason, rather than as a bare
+    `ModuleNotFoundError` from an image build.
     """
     for domain in DOMAIN_NAMES:
         source = (BACKEND / "app" / "entrypoints" / f"{domain}.py").read_text()
-        assert "app.main" not in source
-        assert "from ..main" not in source
+        for forbidden in ("app.main", "from ..main", "composition.app", "from .app"):
+            assert forbidden not in source, f"{domain} imports {forbidden}"

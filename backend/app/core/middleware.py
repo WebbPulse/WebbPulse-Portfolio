@@ -92,11 +92,13 @@ class RequestLoggingMiddleware:
 #: what scripts/verify_route_cut.sh asserts on.
 DOMAIN_HEADER = "x-webbpulse-domain"
 
-#: The value both whole-surface roots report: `app.main`, which is the
-#: deployed monolith, and `app.composition.app`, which is the same surface
-#: built from the domain routers. Neither is one of the four domain names,
-#: and seeing it on a path that was supposed to be cut over is exactly the
-#: signal section 6 is looking for: the request fell through to $default.
+#: What the whole-surface root reports. `app.composition.app` is every domain's
+#: routers on one application, so no single domain name is true of it. The name
+#: is historical: it is the value the deployed monolith reported, and during the
+#: four cuts seeing it on a path meant the request had fallen through to
+#: $default. Nothing deploys it now, and it is kept because it is still what
+#: distinguishes a response from the local whole-surface app from one a real
+#: domain function produced.
 MONOLITH_DOMAIN = "monolith"
 
 
@@ -104,10 +106,11 @@ class DomainHeaderMiddleware:
     """Stamp every response with the name of the application that produced it.
 
     The value is the domain name for a per-domain function (`public`, `resume`,
-    `content`, `identity`) and `monolith` for root A and `app.main`, so a
-    response tells you which of the five functions served it without reading a
-    log group. During the strangler that is the difference between a route flip
-    that worked and one that silently did nothing.
+    `content`, `identity`) and `monolith` for root A, so a response tells you
+    which application served it without reading a log group. During the
+    strangler that was the difference between a route flip that worked and one
+    that silently did nothing; now it is what `scripts/verify_route_cut.sh`
+    reads to confirm each path is served by the function that owns it.
 
     Written on `http.response.start`, so it lands on every response including
     the error envelopes, and it is a pure ASGI middleware for the same reason

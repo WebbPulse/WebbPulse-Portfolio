@@ -278,7 +278,13 @@ class TestClientIp:
 
     @pytest.mark.unit
     def test_mangum_scope_still_works(self):
-        """The monolith runs under Mangum until the last cut, so both paths live."""
+        """Nothing runs under Mangum now, but `client_ip` still reads the scope.
+
+        The monolith is deleted and all four functions are Web Adapter images,
+        so this branch is unreachable in production. It is the last fallback in
+        `client_ip` and costs nothing, so it stays covered rather than being
+        removed in the same change that removes the runtime it was written for.
+        """
         request = self.request(
             {"aws.event": {"requestContext": {"http": {"sourceIp": "1.1.1.1"}}}}
         )

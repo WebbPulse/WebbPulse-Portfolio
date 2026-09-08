@@ -981,3 +981,94 @@ functions have carried production long enough to trust, the bucket and the
 monolith's Python source go together in one final PR and the rollback stops
 existing. That is the right time to close it out, and it is deliberately not
 now.
+
+## Source removal: the monolith's Python
+
+Not a cut and not an infrastructure change: no Terraform runs and no AWS
+resource is touched. The retirement above destroyed the monolith's function, its
+integration and `$default`, and deliberately left the source in the tree because
+the test suite was built on it. This is the PR that finishes step 3 of section 6,
+which the retirement entry called out as "a test-suite rewrite" and "the next
+PR".
+
+### Deleted
+
+| Path | Why it could go |
+| --- | --- |
+| `backend/app/main.py` | The monolith's application. Nothing deploys or imports it |
+| `backend/app/lambda_handler.py` | The Mangum handler. The four functions run under the Web Adapter and have no handler |
+| `backend/app/api/v1/api.py`, `app/api/` | The monolith's composition root. `app/composition/wiring.py` is the live one |
+| `backend/scripts/build_lambda.sh` | Built `dist/function.zip` for a function that no longer exists. `build_image.sh` replaced it |
+| `backend/tests/test_lambda_handler.py` | Drove API Gateway v2 events through Mangum. There is no Mangum |
+| `mangum==0.19.0` | `app/lambda_handler.py` was its only importer |
+
+**`aws-lambda-powertools` stays**, for the reason the retirement entry gives at
+length: `app/core/logging.py` imports its `Logger` and the `content`, `identity`
+and `public` services import that logger. Dropping it would fail three of the
+four images at import. Section 6's step 4 is still wrong about it, and moving
+those services onto `webbpulse.logging` is its own piece of work.
+
+### What replaced `app.main` as the reference surface
+
+Two things, because `app.main` was doing two jobs.
+
+**As the application the test client is built from**, root A replaced it.
+`tests/conftest.py`'s `client` fixture now calls
+`app.composition.app.build_app()`. Root A is every domain's routers on one
+application, assembled from the same `wiring.DOMAINS` list the four deployed
+entrypoints read, so a route the test client reaches is a route some domain
+function serves. That was never true by construction of `app.main`, which held
+its own second copy of the router list.
+
+**As the thing the split was measured against**, a recorded fixture replaced it.
+`tests/fixtures/route_contract.json` holds the 44 (method, path) pairs and the
+42 documented operations with their ids and tags, generated from the contract
+`tests/test_openapi_contract.py` already pinned.
+
+The fixture is a stronger reference than the module was, which is worth stating
+because deleting a test's reference usually weakens it. `app.main` was code: a
+change that broke the published contract could be made to the monolith and the
+domains in one commit, and `union == monolith` would still hold while the
+contract moved underneath it. A JSON file cannot be edited by a refactor. Moving
+it takes a deliberate edit to a file whose only purpose is to say what the API
+publishes, which is exactly the review the contract deserves.
+
+`test_route_split.py` keeps all four of its properties (subset, no overlap,
+union, counts) against the fixture, and gains two: the fixture is checked for
+shape before anything is measured against it, so a truncated contract fails
+loudly rather than passing everything; and root A's route set is asserted equal
+to the union of the four, which is the root A / root B drift check that
+`app.main` was trusted to provide and never actually gave.
+
+### Local development
+
+`uvicorn app.main:app` is gone from `CLAUDE.md` and both READMEs. There are three
+ways to run the backend locally now, in increasing order of fidelity:
+
+```bash
+uvicorn app.composition.app:app --reload      # root A, all 44 routes, one process
+PORT=8010 python -m app.entrypoints.content   # root B, one domain, as the image runs it
+docker compose --profile domains up --build   # all four images, under the Web Adapter
+```
+
+The middle one is what the Dockerfile's `CMD` runs (`python -m
+app.entrypoints.${DOMAIN}`), and `run_uvicorn` binds `AWS_LWA_PORT`, then
+`PORT`, then 8080. The last needs a CodeArtifact token, since the image installs
+`webbpulse`.
+
+### The rollback got weaker, on purpose
+
+The retirement entry's rollback restores the monolith by pointing
+`default_integration` back at a rebuilt `legacy` integration and calling
+`update-function-code` with the last zip in the artifacts bucket. That zip is
+untouched and step 1 and 2 of that procedure still work, because they are
+Terraform and a Lambda API call and neither reads this repository.
+
+What no longer works is rebuilding that zip from the tree: `build_lambda.sh` and
+the source it packaged are gone, so a rollback is now pinned to the artifact in
+the bucket rather than reproducible from source. That is the intended direction.
+The four domain functions have served every route since the retirement, and
+keeping a second composition root compiling forever to preserve a rollback
+nobody expects to use is the cost the retirement entry said it was not willing
+to keep paying. Restoring the source is a `git revert` of this PR if it ever
+comes to that.

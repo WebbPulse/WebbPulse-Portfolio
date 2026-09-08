@@ -12,10 +12,11 @@ Three properties:
 - **Every per-domain application stamps its own name.** A response from the
   `public` function says `public`, so the script can tell it apart from a
   response the monolith produced for the same path.
-- **Both whole-surface roots stamp `monolith`.** `app.main` is the deployed
-  monolith and `app.composition.app` is the same surface built from the domain
-  routers. Neither is one domain, and seeing `monolith` on a path that was
-  supposed to be cut over is the signal that the flip did nothing.
+- **The whole-surface root stamps `monolith`.** `app.composition.app` is every
+  domain's routers on one application: the local development app and the one
+  the test client is built from. No single domain name is true of it, so it
+  reports `monolith`, the value that used to mean "this response came from the
+  monolith rather than a cut-over function".
 - **The header survives a handled error and a 404.** A cut that answers 503 or
   404 still has to say which function answered, otherwise a broken image looks
   exactly like a route that never moved.
@@ -125,10 +126,8 @@ def test_a_non_http_scope_passes_straight_through():
     Driven through `TestClient`, whose context manager sends the lifespan
     startup and shutdown messages through the whole stack. Deliberately not
     `asyncio.run`: that closes its loop and leaves the main thread with no
-    current one, and `tests/test_lambda_handler.py` later calls Mangum, whose
-    `asyncio.get_event_loop()` then raises "There is no current event loop".
-    A test must not leave process-wide state worse than it found it, and this
-    file sorts ahead of that one.
+    current one, which a later test in the same process then trips over. A test
+    must not leave process-wide state worse than it found it.
     """
     seen = []
 
@@ -161,18 +160,15 @@ def test_each_domain_application_reports_its_own_name(domain):
     assert response.headers[DOMAIN_HEADER] == domain
 
 
-def test_the_monolith_reports_monolith():
-    """Both whole-surface roots report the same non-domain value.
+def test_the_whole_surface_root_reports_monolith():
+    """Root A reports a value that is not any one domain's name.
 
-    `app.main` is what serves `$default` until the last cut, so this is the
-    value the verification script treats as "not cut over yet".
+    Nothing deploys this application: the four domain functions serve every
+    route, and root A is the local and test-suite surface. The header still
+    matters here, because it is what stops a response from the whole-surface
+    app being mistaken for one from a real domain function while debugging.
     """
     from app.composition.app import build_app
-    from app.main import app as deployed_monolith
-
-    with TestClient(deployed_monolith) as client:
-        response = client.get("/openapi.json")
-    assert response.headers[DOMAIN_HEADER] == MONOLITH_DOMAIN
 
     with TestClient(build_app()) as client:
         response = client.get("/openapi.json")

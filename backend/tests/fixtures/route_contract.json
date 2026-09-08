@@ -1,0 +1,520 @@
+{
+  "routes": [
+    {
+      "method": "DELETE",
+      "path": "/api/v1/certifications/{item_id}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/education/{item_id}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/experience/{item_id}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/posts/admin/{post_id}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/posts/categories/{category_id}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/projects/{item_id}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/skills/{item_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/certifications/"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/certifications/{item_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/education/"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/education/{item_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/experience/"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/experience/{item_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/posts/"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/posts/admin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/posts/categories"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/posts/category/{category_slug}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/posts/{slug}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{item_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/site-content/"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/skills/"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/skills/{item_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/health"
+    },
+    {
+      "method": "GET",
+      "path": "/robots.txt"
+    },
+    {
+      "method": "GET",
+      "path": "/sitemap.xml"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/login"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/certifications/"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/education/"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/experience/"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/posts/admin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/posts/admin/{post_id}/publish"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/posts/categories"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/skills/"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/certifications/{item_id}"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/education/{item_id}"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/experience/{item_id}"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/posts/admin/{post_id}"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/posts/categories/{category_id}"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/projects/{item_id}"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/site-content/"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/skills/{item_id}"
+    }
+  ],
+  "operations": [
+    {
+      "method": "GET",
+      "path": "/api/v1/posts/",
+      "operationId": "get_posts_api_v1_posts__get",
+      "tags": [
+        "posts"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/posts/admin",
+      "operationId": "get_all_posts_api_v1_posts_admin_get",
+      "tags": [
+        "posts"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/posts/admin",
+      "operationId": "create_post_api_v1_posts_admin_post",
+      "tags": [
+        "posts"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/posts/categories",
+      "operationId": "get_categories_api_v1_posts_categories_get",
+      "tags": [
+        "posts"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/posts/categories",
+      "operationId": "create_category_api_v1_posts_categories_post",
+      "tags": [
+        "posts"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/posts/{slug}",
+      "operationId": "get_post_api_v1_posts__slug__get",
+      "tags": [
+        "posts"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/posts/category/{category_slug}",
+      "operationId": "get_posts_by_category_api_v1_posts_category__category_slug__get",
+      "tags": [
+        "posts"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/posts/admin/{post_id}",
+      "operationId": "update_post_api_v1_posts_admin__post_id__put",
+      "tags": [
+        "posts"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/posts/admin/{post_id}",
+      "operationId": "delete_post_api_v1_posts_admin__post_id__delete",
+      "tags": [
+        "posts"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/posts/admin/{post_id}/publish",
+      "operationId": "publish_post_api_v1_posts_admin__post_id__publish_post",
+      "tags": [
+        "posts"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/posts/categories/{category_id}",
+      "operationId": "update_category_api_v1_posts_categories__category_id__put",
+      "tags": [
+        "posts"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/posts/categories/{category_id}",
+      "operationId": "delete_category_api_v1_posts_categories__category_id__delete",
+      "tags": [
+        "posts"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/login",
+      "operationId": "login_api_v1_admin_login_post",
+      "tags": [
+        "admin"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{item_id}",
+      "operationId": "get_item_api_v1_projects__item_id__get",
+      "tags": [
+        "projects"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/projects/{item_id}",
+      "operationId": "update_item_api_v1_projects__item_id__put",
+      "tags": [
+        "projects"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/projects/{item_id}",
+      "operationId": "delete_item_api_v1_projects__item_id__delete",
+      "tags": [
+        "projects"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/",
+      "operationId": "create_item_api_v1_projects__post",
+      "tags": [
+        "projects"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/",
+      "operationId": "get_projects_api_v1_projects__get",
+      "tags": [
+        "projects"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/experience/",
+      "operationId": "list_items_api_v1_experience__get",
+      "tags": [
+        "experience"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/experience/",
+      "operationId": "create_item_api_v1_experience__post",
+      "tags": [
+        "experience"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/experience/{item_id}",
+      "operationId": "get_item_api_v1_experience__item_id__get",
+      "tags": [
+        "experience"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/experience/{item_id}",
+      "operationId": "update_item_api_v1_experience__item_id__put",
+      "tags": [
+        "experience"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/experience/{item_id}",
+      "operationId": "delete_item_api_v1_experience__item_id__delete",
+      "tags": [
+        "experience"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/skills/",
+      "operationId": "list_items_api_v1_skills__get",
+      "tags": [
+        "skills"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/skills/",
+      "operationId": "create_item_api_v1_skills__post",
+      "tags": [
+        "skills"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/skills/{item_id}",
+      "operationId": "get_item_api_v1_skills__item_id__get",
+      "tags": [
+        "skills"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/skills/{item_id}",
+      "operationId": "update_item_api_v1_skills__item_id__put",
+      "tags": [
+        "skills"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/skills/{item_id}",
+      "operationId": "delete_item_api_v1_skills__item_id__delete",
+      "tags": [
+        "skills"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/education/",
+      "operationId": "list_items_api_v1_education__get",
+      "tags": [
+        "education"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/education/",
+      "operationId": "create_item_api_v1_education__post",
+      "tags": [
+        "education"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/education/{item_id}",
+      "operationId": "get_item_api_v1_education__item_id__get",
+      "tags": [
+        "education"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/education/{item_id}",
+      "operationId": "update_item_api_v1_education__item_id__put",
+      "tags": [
+        "education"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/education/{item_id}",
+      "operationId": "delete_item_api_v1_education__item_id__delete",
+      "tags": [
+        "education"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/certifications/",
+      "operationId": "list_items_api_v1_certifications__get",
+      "tags": [
+        "certifications"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/certifications/",
+      "operationId": "create_item_api_v1_certifications__post",
+      "tags": [
+        "certifications"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/certifications/{item_id}",
+      "operationId": "get_item_api_v1_certifications__item_id__get",
+      "tags": [
+        "certifications"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/certifications/{item_id}",
+      "operationId": "update_item_api_v1_certifications__item_id__put",
+      "tags": [
+        "certifications"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/certifications/{item_id}",
+      "operationId": "delete_item_api_v1_certifications__item_id__delete",
+      "tags": [
+        "certifications"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/site-content/",
+      "operationId": "get_site_content_api_v1_site_content__get",
+      "tags": [
+        "site-content"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/site-content/",
+      "operationId": "update_site_content_api_v1_site_content__put",
+      "tags": [
+        "site-content"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/",
+      "operationId": "root__get",
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "path": "/health",
+      "operationId": "health_check_health_get",
+      "tags": []
+    }
+  ],
+  "counts": {
+    "content": 14,
+    "resume": 25,
+    "identity": 1,
+    "public": 4
+  }
+}

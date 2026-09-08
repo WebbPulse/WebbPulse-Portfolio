@@ -18,11 +18,14 @@
 #
 # What that removed, and what it did not:
 #
-# - `backend/scripts/build_lambda.sh` is no longer called by anything in CI. It
-#   and the monolith's composition root (`app/main.py`, `app/lambda_handler.py`,
-#   `app/api/v1/api.py`) are still in the tree, because they are what the
-#   existing test suite builds its client from and what `test_route_split.py`
-#   proves the four domains are a partition of. Deleting them is its own PR.
+# - `backend/scripts/build_lambda.sh` and the monolith's composition root
+#   (`app/main.py`, `app/lambda_handler.py`, `app/api/v1/api.py`) are deleted.
+#   That was its own PR, because it is a test suite change rather than an
+#   infrastructure one: the suite built its client from `app.main` and
+#   `test_route_split.py` proved the four domains were a partition of it. The
+#   test client is now `app.composition.app`, root A, and the partition is
+#   measured against `backend/tests/fixtures/route_contract.json`, the recorded
+#   44 routes and 42 operations.
 # - `vars.LAMBDA_FUNCTION_NAME` and the write half of the artifacts bucket grant
 #   are unused. The bucket itself is kept: the last zip in it is what a rollback
 #   would restore the monolith from.
