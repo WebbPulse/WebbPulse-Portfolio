@@ -55,6 +55,24 @@ locals {
   # The base layer every domain image is built FROM, pulled cross account at build time.
   shared_base_image_repository_arn = "arn:aws:ecr:${var.aws_region}:${local.artifacts_account_id}:repository/webbpulse/python-lambda-base"
 
+  # The four domain function ARNs, composed from their names rather than read
+  # out of module.lambda_domain[*].function_arn. Referencing the module outputs
+  # made this role depend on the functions themselves, and that ordering cannot
+  # be satisfied on a fresh environment: the functions are container image
+  # functions, so they cannot be created until an image has been pushed to ECR,
+  # and nothing can push one until this role exists to carry the EcrAuth and
+  # EcrPushDomainImages statements. A targeted apply of the role pulled the
+  # function creation in with it and deadlocked the promotion. Composing the
+  # ARNs breaks the cycle, and it is valid IAM either way: a policy may name the
+  # ARN of a resource that does not exist yet, it simply grants nothing until it
+  # does. The name here is the same expression lambda_domains.tf passes as
+  # function_name, and the module uses it verbatim, so the two cannot drift
+  # without this file changing too.
+  lambda_domain_function_arns = [
+    for name in sort(keys(local.lambda_domains)) :
+    "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${local.prefix}-${name}"
+  ]
+
   # Reading the shared webbpulse package during the container build. Three separate statements
   # because the three actions take three different resources: GetAuthorizationToken is domain
   # level, the read actions are per repository, and sts:GetServiceBearerToken has no resource of
@@ -128,7 +146,7 @@ module "github_actions_role" {
         "lambda:GetFunctionConfiguration",
         "lambda:PublishVersion",
       ]
-      resources = [for name in sort(keys(local.lambda_domains)) : module.lambda_domain[name].function_arn]
+      resources = local.lambda_domain_function_arns
     },
     # Lambda: invoke the four domain functions directly for the post deploy
     # smoke probes. An Invoke with a synthetic HTTP API event proves a freshly
@@ -136,7 +154,7 @@ module "github_actions_role" {
     # which is why it stayed after the routes were cut over.
     {
       actions   = ["lambda:InvokeFunction"]
-      resources = [for name in sort(keys(local.lambda_domains)) : module.lambda_domain[name].function_arn]
+      resources = local.lambda_domain_function_arns
     },
     # S3: read the artifacts bucket. Nothing writes to it since the monolith's
     # zip deploy was retired, and the grant is kept read-only so a rollback can
