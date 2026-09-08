@@ -24,6 +24,7 @@ on:
     branches: [main, staging]
     paths:
       - "backend/**"
+      - "scripts/verify_route_cut.sh"
       - ".github/workflows/deploy-backend.yml"
 
 permissions:
@@ -736,7 +737,7 @@ jobs:
           ENVIRONMENT: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
           # Edit this line, and only this line, when a cut lands. See the
           # comment above the job.
-          DOMAINS: "public"
+          DOMAINS: "public resume"
         run: |
           set -uo pipefail
 
