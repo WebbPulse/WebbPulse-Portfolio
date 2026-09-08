@@ -33,6 +33,14 @@
 # the cross-check to reach for when a response looks wrong; the log group is
 # /aws/apigateway/webbpulse-<env>-api.
 #
+# The status code is not the signal, and cut 4 is where that distinction starts
+# to matter. What this script asks is "which function answered", and the header
+# answers it on an error response just as well as on a 200: a 405 carrying
+# X-WebbPulse-Domain: identity proves the request reached the identity function,
+# which is the whole question. The status is only used to tell a real answer
+# apart from a cold-start blip worth retrying, so each domain declares the codes
+# it expects rather than every domain being held to 200.
+#
 # The staging access gate
 # -----------------------
 # Behind the gate the API host answers only an OPTIONS preflight, a request
@@ -96,9 +104,18 @@ esac
 # terraform/apigateway.tf's routes map for that domain, or this script will
 # correctly report it as still on the monolith.
 #
-# `public`, `resume` and `content` are cut today. `identity` is filled in by
-# cut 4 and is listed as empty so the script fails loudly with "no paths"
-# instead of silently passing on an empty loop.
+# All four domains are cut as of cut 4, so every case below is populated and
+# the "no paths" guard is now unreachable. It stays as a guard rather than
+# being deleted: a future domain added to the case with an empty list should
+# fail loudly rather than silently pass on an empty loop.
+#
+# EXPECTED_CODES is the set of HTTP status codes that count as "the function
+# answered" for this domain, as a space separated list. It defaults to 200,
+# which is what cuts 1 to 3 all want because every path they probe is an
+# unauthenticated GET that really does return a body. Cut 4 overrides it: see
+# the identity case for why.
+EXPECTED_CODES="200"
+
 case "$DOMAIN" in
 public)
   PATHS=(/health / /sitemap.xml /robots.txt)
@@ -183,8 +200,52 @@ content)
   )
   ;;
 identity)
-  # Cut 4.
-  PATHS=()
+  # Cut 4. One prefix, /api/v1/admin, two keys in the routes map, and both
+  # slash forms of the prefix plus both slash forms of the served route probed
+  # here.
+  #
+  # This is the one domain whose probes cannot expect a 200, and the reason is
+  # the domain's shape rather than anything about routing. `identity` serves
+  # exactly one route, POST /api/v1/admin/login
+  # (backend/app/domains/identity/router.py). There is no GET anywhere under
+  # this prefix and no route at the prefix root at all, so:
+  #
+  #   GET /api/v1/admin/login  -> 405, from the identity function
+  #   GET /api/v1/admin        -> 404, from the identity function
+  #
+  # Both are the *correct* answers and both prove the cut worked, because both
+  # carry X-WebbPulse-Domain: identity. A request that fell through to $default
+  # would carry `monolith` instead, and the monolith declares the same single
+  # POST route, so it would answer the same 404s and 405s with a different
+  # header. The header is what separates them; the status tells us nothing here
+  # and cannot be allowed to fail the run.
+  #
+  # Hence EXPECTED_CODES below. 404 and 405 are the real expected answers; 200
+  # stays in the set so that adding a GET under this prefix later does not
+  # require editing this line to keep the script honest.
+  #
+  # The login route is deliberately probed with GET rather than POST. A POST
+  # would exercise the real login handler: it would touch the rate limiter in
+  # backend/app/core/login_limiter.py, which is keyed on client IP, so a CI job
+  # running on every deploy would spend the deploy pipeline's own IP budget of
+  # failed attempts and could lock out a real login from the same egress
+  # address. A GET reaches the same route key, gets the same routing verdict
+  # from the same function, and touches no application state at all.
+  #
+  # Both slash forms of both paths, as in cuts 2 and 3, though the open
+  # question those cuts were probing does not arise here. `/api/v1/admin/login`
+  # sits one segment below the prefix, so the greedy key matches it with a
+  # non-empty remainder under any reading. The trailing-slash forms are probed
+  # anyway because they are cheap and they pin the bare key's behaviour: a
+  # /api/v1/admin/ that reported `monolith` would mean the prefix root is still
+  # falling through, which is exactly what the bare key exists to prevent.
+  PATHS=(
+    /api/v1/admin/login
+    /api/v1/admin/login/
+    /api/v1/admin
+    /api/v1/admin/
+  )
+  EXPECTED_CODES="200 404 405"
   ;;
 *)
   echo "Unknown domain: $DOMAIN" >&2
@@ -228,6 +289,15 @@ fi
 DOMAIN_HEADER=x-webbpulse-domain
 MONOLITH=monolith
 
+# Is this status code one the domain under test expects? Word matched against
+# EXPECTED_CODES so that "40" never matches "404".
+is_expected_code() {
+  case " $EXPECTED_CODES " in
+  *" $1 "*) return 0 ;;
+  *) return 1 ;;
+  esac
+}
+
 echo "Verifying the '$DOMAIN' cut against $BASE_URL"
 echo
 
@@ -263,7 +333,7 @@ for path in "${PATHS[@]}"; do
     # A cold start on a freshly created image can 502 or 503 for a moment. A
     # wrong route does not fix itself, so retrying only helps the transient
     # case and costs nothing in the case this script is really checking.
-    if [ "$code" = "200" ]; then
+    if is_expected_code "$code"; then
       break
     fi
     if [ "$attempt" -lt "$RETRIES" ]; then
@@ -275,28 +345,29 @@ for path in "${PATHS[@]}"; do
   trap - EXIT
 
   label="  ${path}"
-  if [ "$code" != "200" ]; then
+  if ! is_expected_code "$code"; then
     echo "$label -> HTTP $code, served by '${served_by:-unknown}'  FAIL"
+    echo "      Expected one of: $EXPECTED_CODES"
     FAILURES=$((FAILURES + 1))
     continue
   fi
 
   case "$served_by" in
   "$DOMAIN")
-    echo "$label -> HTTP 200, served by '$DOMAIN'  OK"
+    echo "$label -> HTTP $code, served by '$DOMAIN'  OK"
     ;;
   "$MONOLITH")
-    echo "$label -> HTTP 200, served by '$MONOLITH'  NOT CUT OVER"
+    echo "$label -> HTTP $code, served by '$MONOLITH'  NOT CUT OVER"
     NOT_CUT=$((NOT_CUT + 1))
     ;;
   "")
-    echo "$label -> HTTP 200, no $DOMAIN_HEADER header  FAIL"
+    echo "$label -> HTTP $code, no $DOMAIN_HEADER header  FAIL"
     echo "      The function is running an image from before the header was"
     echo "      added. Redeploy the backend, then run this again."
     FAILURES=$((FAILURES + 1))
     ;;
   *)
-    echo "$label -> HTTP 200, served by '$served_by'  FAIL"
+    echo "$label -> HTTP $code, served by '$served_by'  FAIL"
     echo "      Expected '$DOMAIN'. Another domain answering this path means"
     echo "      two routes claim it, or the routes map names the wrong key."
     FAILURES=$((FAILURES + 1))
@@ -311,12 +382,31 @@ echo
 # the gate, and it is invisible to a check that always sends the credential.
 if [ "$ENV_NAME" = "staging" ] && [ ${#GATE_ARGS[@]} -gt 0 ]; then
   probe=${PATHS[0]}
-  bare=$(curl -sS --max-time "$TIMEOUT" -o /dev/null -w '%{http_code}' \
-    "${BASE_URL}${probe}" 2>/dev/null || echo 000)
-  if [ "$bare" = "200" ]; then
-    echo "Gate check: ${probe} returned 200 with no credential  FAIL"
-    echo "  That route is past the access gate. Check that its routes entry"
-    echo "  sets no authorization_type, so the module applies CUSTOM."
+  headers_gate=$(mktemp)
+  bare=$(curl -sS --max-time "$TIMEOUT" -o /dev/null -D "$headers_gate" \
+    -w '%{http_code}' "${BASE_URL}${probe}" 2>/dev/null || echo 000)
+  gate_served_by=$(header_value "$DOMAIN_HEADER" "$headers_gate")
+  rm -f "$headers_gate"
+
+  # What a hole looks like has to be stated in terms of the application header,
+  # not the status code. The original check read "a 200 without a credential is
+  # a hole", which is right for every path cuts 1 to 3 probe because those all
+  # return 200 when they are reached. It is wrong for identity: PATHS[0] here is
+  # a GET against a POST-only route, so a route created with
+  # authorization_type = NONE would answer 405 and sail past a 200 test while
+  # being exactly the hole this check exists to find.
+  #
+  # The reliable signal is the same one the loop above uses. If the request
+  # reached the application at all it carries X-WebbPulse-Domain, whatever the
+  # status; the gate's own rejection is a Cognito redirect or a 401 from the
+  # authorizer and carries no such header. So: header present means the gate did
+  # not stop it.
+  if [ -n "$gate_served_by" ]; then
+    echo "Gate check: ${probe} reached '$gate_served_by' with no credential  FAIL"
+    echo "  That route is past the access gate: it answered HTTP $bare and"
+    echo "  stamped $DOMAIN_HEADER, so the request reached the application."
+    echo "  Check that its routes entry sets no authorization_type, so the"
+    echo "  module applies CUSTOM."
     FAILURES=$((FAILURES + 1))
   else
     echo "Gate check: ${probe} without a credential returned HTTP $bare  OK"

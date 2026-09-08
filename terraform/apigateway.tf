@@ -24,9 +24,11 @@ locals {
   # every_integration_is_routed check fails the plan on an integration no route
   # can reach, so this list and the routes map below move together.
   #
-  # Cut 1 is `public`, cut 2 is `resume`, cut 3 is `content`. Cut 4 appends
-  # identity.
-  routed_lambda_domains = ["public", "resume", "content"]
+  # Cut 1 is `public`, cut 2 is `resume`, cut 3 is `content`, cut 4 is
+  # `identity`. With identity routed, every domain in local.lambda_domains has
+  # an integration and the strangler's add phase is complete: what remains in
+  # section 6 is retiring the monolith, not carving more off it.
+  routed_lambda_domains = ["public", "resume", "content", "identity"]
 
   # The five collections the `resume` domain owns. Every one of them is built by
   # build_crud_router in backend/app/domains/resume/crud_router.py and so serves
@@ -72,8 +74,8 @@ module "api" {
   #
   # Only the domains that have a route are reachable. The module's
   # every_integration_is_routed check refuses an integration nothing can reach,
-  # so the one domain still waiting for its cut is deliberately not listed yet:
-  # identity arrives with its routes in cut 4.
+  # which is what kept each domain out of this map until its own cut. As of cut
+  # 4 all four are listed, because all four are routed.
   integrations = merge(
     {
       legacy = {
@@ -223,6 +225,54 @@ module "api" {
         "ANY /api/v1/${prefix}/{proxy+}" = { integration = "content" }
       }
     ]...),
+
+    # Cut 4. `identity`: the whole `/api/v1/admin` prefix, in two keys. This is
+    # the last cut, and the smallest one by application surface: the domain
+    # serves exactly one route, `POST /api/v1/admin/login`
+    # (backend/app/domains/identity/router.py declares a bare `POST /login`, and
+    # the `/admin` prefix comes from the descriptor's `router_prefix` in
+    # backend/app/composition/wiring.py rather than from the router itself).
+    #
+    # Written literally rather than generated from a list. Cuts 2 and 3 each
+    # looped over a local because they had five collections and two prefixes to
+    # cover; `identity` has one prefix, so a `local.identity_prefixes` list of
+    # one element would be indirection with nothing to factor out.
+    #
+    # The bare key and the greedy key still both appear, but their roles are the
+    # reverse of the earlier cuts and it is worth being precise about which one
+    # is load-bearing.
+    #
+    # `ANY /api/v1/admin/{proxy+}` is the key that carries the traffic. The only
+    # served path is `/api/v1/admin/login`, one segment below the prefix, so the
+    # greedy key matches it under any reading of route selection: the remainder
+    # `login` is non-empty, which is the one property the empty-remainder
+    # question from cuts 2 and 3 left open. Nothing about this cut depends on
+    # that open question, which makes it the least uncertain of the four.
+    #
+    # `ANY /api/v1/admin` is the bare key, and here it matches nothing the
+    # application declares. There is no route at the prefix root: the domain has
+    # no `GET /` the way `resume`'s collections and `content`'s prefixes do, so
+    # `/api/v1/admin` and `/api/v1/admin/` are both 404s from the identity
+    # function. It is kept anyway, for the same reason `site-content` keeps a
+    # greedy key that matches nothing today: the prefix belongs to this domain,
+    # so a request to its root should answer from the domain's own 404 rather
+    # than fall through to the monolith on `$default`, and a future route added
+    # at the root cannot then be left on the monolith by omission.
+    #
+    # ANY rather than POST. The one route today is a POST, so `POST
+    # /api/v1/admin/{proxy+}` would cover it exactly and nothing else. `ANY` is
+    # still the right key for the same reason it was in cuts 2 and 3: the domain
+    # owns every method on this prefix, so a GET to `/api/v1/admin/login` should
+    # answer 405 from `identity` rather than be routed to the monolith, which
+    # would serve it from its own copy of the same endpoint and make the cut
+    # look complete while half of it was not. This one matters more than it did
+    # for the earlier cuts, because it is what the verify script's GET probes
+    # actually observe: they read the domain header off a 405, which only exists
+    # if the method reached this function at all.
+    {
+      "ANY /api/v1/admin"          = { integration = "identity" }
+      "ANY /api/v1/admin/{proxy+}" = { integration = "identity" }
+    },
   )
 
   throttling_burst_limit = 200

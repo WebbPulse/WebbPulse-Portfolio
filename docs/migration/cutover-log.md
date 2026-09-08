@@ -302,7 +302,11 @@ them because nothing has been deleted from it.
 ## Cut 3: content
 
 PR 15. Routes the two prefixes the `content` domain mounts, `posts` and
-`site-content`, to the `content` function. Status: **PR open, not applied**.
+`site-content`, to the `content` function. Status: **Applied on staging**
+(PR #112), HCP Terraform run `run-pjWK9LRzZz4JL891`: **6 added, 0 changed, 0
+destroyed**, exactly the speculative plan below. CI verification is still
+pending, because the `verify-route-cuts` job's `DOMAINS` variable does not yet
+name `content`; see the follow up noted under "Verification, once applied".
 
 ### What changed
 
@@ -474,3 +478,214 @@ Delete the `content` block from the `routes` map and `"content"` from
 module's `every_integration_is_routed` check fails a plan on an integration no
 route can reach. `$default` sends all 14 routes back to the monolith, which
 still serves them because nothing has been deleted from it.
+
+## Cut 4: identity
+
+PR 16. Routes the `/api/v1/admin` prefix to the `identity` function. Status:
+**PR open, not applied**.
+
+This is the last cut. With `identity` routed, every domain in
+`local.lambda_domains` has an integration and a route key, and what remains in
+section 6 is retiring the monolith rather than carving anything further off it.
+
+### What changed
+
+`terraform/apigateway.tf`, `scripts/verify_route_cut.sh` and
+`backend/tests/entrypoints/test_gateway_routes.py`.
+
+- `local.routed_lambda_domains` goes from `["public", "resume", "content"]` to
+  `["public", "resume", "content", "identity"]`, which adds `identity` to the
+  `integrations` map and, through the module, its `aws_lambda_permission`.
+- The `routes` map gains two literal keys, `ANY /api/v1/admin` and
+  `ANY /api/v1/admin/{proxy+}`, appended as a fourth block.
+- `scripts/verify_route_cut.sh`'s `identity` case goes from empty to four GET
+  probe paths, and the script gains a per-domain `EXPECTED_CODES` set. See
+  "The script had to change, and why" below; this is the one place cut 4 needed
+  more than a copy of cut 3.
+- `test_gateway_routes.py` gains the identity half, seven tests.
+
+### The route keys, written literally rather than generated
+
+Cuts 2 and 3 each generated their keys from a `local` list, because they had
+five collections and two prefixes respectively. `identity` mounts one prefix, so
+there is no `local.identity_prefixes`: a one element list would be indirection
+with nothing to factor out. The two keys are written out in the routes map.
+
+The expected keys from section 3.5 line 753 are exactly what landed:
+
+```
+ANY /api/v1/admin
+ANY /api/v1/admin/{proxy+}
+```
+
+Two keys per prefix, no trailing-slash key, matching cut 3's corrected shape.
+
+### Where the router code and the plan document agree, and one place the shape differs
+
+Section 1 of the plan says `identity` is "1 route", `POST /api/v1/admin/login`,
+and the code agrees exactly. `backend/app/domains/identity/router.py` declares a
+single bare `POST /login`; the `/admin` prefix comes from the descriptor's
+`router_prefix` in `backend/app/composition/wiring.py`, not from the router, as
+the plan's own note at "identity mounts at /api/v1/admin" describes. Building
+the application confirms it: `build_domain_app("identity")` serves
+`POST /api/v1/admin/login` and nothing else outside `/health` and the FastAPI
+documentation paths. **Nothing identity serves lies outside `/api/v1/admin`**,
+so the two keys above are the whole cut.
+
+What is different from the earlier cuts is not the key list but which key does
+the work, and it is worth stating because it inverts the pattern:
+
+- **The greedy key carries all of the traffic.** `/api/v1/admin/login` is one
+  segment below the prefix, so `ANY /api/v1/admin/{proxy+}` matches it with a
+  non-empty remainder. **Cut 4 therefore rests on no undocumented gateway
+  behaviour at all.** The empty-remainder and trailing-slash questions that cuts
+  2 and 3 had to leave to the apply simply do not arise: no served path here
+  ends in a slash, because the domain declares no route at its prefix root.
+- **The bare key matches nothing the application serves.** There is no `GET /`
+  under `/api/v1/admin` the way `resume`'s collections and `content`'s prefixes
+  have, so `/api/v1/admin` and `/api/v1/admin/` are both 404s from the identity
+  function. It is kept for the same reason `content` keeps `site-content`'s
+  unmatched greedy key: the prefix belongs to this domain, so its root should
+  answer from the domain's own 404 rather than fall through to `$default`, and a
+  route added at the root later cannot then be left on the monolith by omission.
+
+`ANY` rather than `POST`, even though the only route is a POST. The domain owns
+every method on the prefix, so a GET to `/api/v1/admin/login` should answer 405
+from `identity`. Routing it to the monolith instead would be the worst kind of
+failure here, because the monolith declares the same login endpoint and would
+answer plausibly. It is also what makes the verify script's GET probes
+meaningful at all.
+
+### The script had to change, and why
+
+This is cut 4's counterpart to cut 2's trailing-slash lesson, and the next
+person to add a domain should read it.
+
+`scripts/verify_route_cut.sh` judged every probe against HTTP 200: it retried
+until it saw one and failed the path otherwise. That was correct for cuts 1 to
+3, where every probed path is an unauthenticated GET that really does return a
+body. **It is wrong for `identity`, and it would have failed the cut while the
+cut was working.** The only route under this prefix is a POST, so the honest
+answers to the script's own GET probes are:
+
+```
+GET /api/v1/admin/login  -> 405, from the identity function
+GET /api/v1/admin        -> 404, from the identity function
+```
+
+Both prove the cut worked. Both would have been reported `FAIL`.
+
+The fix is small and it clarifies what the script was always doing. The script's
+verdict comes from the `X-WebbPulse-Domain` header, not from the status: a 405
+carrying `X-WebbPulse-Domain: identity` answers the only question being asked,
+which is which function served the request. The status is only useful for
+telling a real answer apart from a cold-start blip worth retrying. So each
+domain now declares an `EXPECTED_CODES` set, defaulting to `200` so cuts 1 to 3
+are untouched, and `identity` sets `200 404 405`. Both messages and the retry
+loop report the code they actually saw instead of a hardcoded 200.
+
+**One further change, and it fixes a real hole rather than an inconvenience.**
+The script's final authorizer check sends one request with no credential and
+failed if it got a 200, on the reasoning that a route created with
+`authorization_type = NONE` would answer normally. For `identity` that test is
+useless: its first probe path is a GET against a POST-only route, so a route
+genuinely past the gate would answer 405 and the check would have reported `OK`.
+The check now keys off the same domain header as the main loop. If a request
+with no credential comes back carrying `X-WebbPulse-Domain` at all, whatever the
+status, it reached the application and the gate did not stop it; the gate's own
+rejection is a Cognito redirect or a 401 from the authorizer and carries no such
+header. This is strictly stronger than the old test for every domain, not only
+for `identity`.
+
+Both behaviours were exercised against a local mock before the PR: the healthy
+case passes on 404s and 405s, a monolith fall-through still reports `NOT CUT
+OVER` and exits 1, a simulated `authorization_type = NONE` is now caught on a
+405 where the old check passed it, and `content`'s probes are unchanged.
+
+The login route is probed with GET rather than POST deliberately. A POST would
+run the real login handler and its rate limiter
+(`backend/app/core/login_limiter.py`), which is keyed on client IP, so a CI job
+running on every deploy would spend the pipeline's egress IP budget of failed
+attempts and could lock out a real login from the same address. A GET reaches
+the same route key and the same function, and touches no application state.
+
+### Plan
+
+Not yet applied. The speculative plan on the PR, `run-d2rLq7jSou8rkcUc`, reads
+**4 to add, 0 to change, 0 to destroy**:
+
+- 2 `aws_apigatewayv2_route`, one per literal `identity` route key
+- 1 `aws_apigatewayv2_integration` for `identity`, pointing at
+  `webbpulse-staging-identity`
+- 1 `aws_lambda_permission` for `identity`, whose statement id the module
+  derives as `AllowAPIGatewayInvoke-identity` because `identity` is not the
+  `default_integration`
+
+Section 8 row 16 estimates "2 to add" for this cut. The estimate counts only the
+route keys; the integration and the permission come with any domain's first
+route, exactly as they did in cuts 2 and 3, so 4 is the expected number and not
+a surprise.
+
+Confirmed from `/plans/plan-jE3ZQ7MrQavNnCgg/json-output`: both new routes plan
+with `authorization_type = "CUSTOM"` and `authorizer_id = "p5vo7t"`, the same
+authorizer every existing route already carries. This is the check worth making
+by hand for the same reason as cuts 2 and 3: a route that planned as `NONE`
+would be a hole straight past the staging access gate, and the routes map sets
+no `authorization_type` precisely so the module picks `CUSTOM` for it.
+
+It matters more here than it did on the earlier cuts. The route being added is
+the admin login, so a route that skipped the gate would expose the one endpoint
+that accepts credentials. It is also the case the verify script's old
+authorizer check could not have caught, which is why that check was rewritten in
+this PR to key off the domain header rather than a 200.
+
+The other 153 resources in the workspace plan as no-ops, including all 19
+existing routes and `$default`.
+
+No destroys, as in cuts 2 and 3. Nothing about the monolith, the `legacy`
+integration or its permission changes here, so a plan showing any destroy on
+this PR is a reason to stop and read.
+
+Cut 3's warning still applies and is worth repeating because it is the one thing
+a green plan cannot tell you: Terraform cannot see that API Gateway will reject
+a route key with an empty path segment, so a trailing-slash key plans perfectly
+cleanly and fails only at apply. That is why `test_gateway_routes.py` asserts key
+shape statically across the whole routes map, and cut 4 keeps that test.
+
+### Verification, once applied
+
+`scripts/verify_route_cut.sh staging identity`, with `WEBBPULSE_ORIGIN_VERIFY`
+set. Four paths, both slash forms of the served route and of the prefix root,
+all expected to report `X-WebbPulse-Domain: identity` with a 404 or a 405 rather
+than a 200.
+
+The two `/api/v1/admin` probes are the ones worth watching. They are the paths
+the bare key exists for, and they are the only thing that would show that key
+doing its job, since it matches nothing the application serves.
+
+A real login is not probed, by design. It needs credentials this script must
+never carry, and it would consume the rate limiter's budget for the runner's IP.
+The `{proxy+}` key that serves it is covered by `test_gateway_routes.py` in CI
+and by the admin panel's own traffic.
+
+**The same follow up cuts 2 and 3 left open applies here.** The
+`verify-route-cuts` job in `.github/workflows/deploy-backend.yml` keeps the
+domains it checks in one `DOMAINS` variable, and cut 4 should add `identity` to
+it. This PR does not touch that file: a separate PR is handling the variable for
+all the cuts at once. Until that lands, CI verifies only `public` after each
+deploy and `identity` has to be checked by running
+`scripts/verify_route_cut.sh staging identity` by hand.
+
+### Rollback
+
+Delete the `identity` block from the `routes` map and `"identity"` from
+`local.routed_lambda_domains`, then apply. Both have to move together: the
+module's `every_integration_is_routed` check fails a plan on an integration no
+route can reach. `$default` sends `POST /api/v1/admin/login` back to the
+monolith, which still serves it because nothing has been deleted from it.
+
+Rolling this cut back is the one with the sharpest user-visible edge, since the
+route it moves is the admin login itself: a broken `identity` function means
+nobody can sign in to the admin panel, where a broken `resume` or `content`
+function degrades reads the site can mostly survive. The rollback is still just
+the two edits above and one apply.

@@ -311,7 +311,7 @@ def test_routed_domains_and_route_keys_move_together():
     routed = _locals_lists(_terraform_source())["routed_lambda_domains"]
     keyed = set(gateway_route_keys()) | {"resume", "content"}
 
-    assert routed == ["public", "resume", "content"]
+    assert routed == ["public", "resume", "content", "identity"]
     for domain in routed:
         assert domain in keyed, domain
     assert "legacy" not in routed
@@ -450,3 +450,114 @@ def test_no_content_route_key_points_at_a_path_the_app_does_not_serve():
         if key_path in bare_prefixes or key_path.endswith("/{proxy+}"):
             continue
         assert any(matches(key, path) for path in paths), key
+
+
+def identity_route_keys() -> set[str]:
+    """`identity`'s keys, which are literal rather than generated.
+
+    Cuts 2 and 3 loop over a local, so their keys have to be expanded with
+    `expand_for_expression_keys`. Cut 4 covers one prefix and writes both keys
+    out, so `gateway_route_keys` reads them straight from the file.
+    """
+    keys = gateway_route_keys()["identity"]
+    assert keys, "no identity route keys were parsed out of apigateway.tf"
+    return keys
+
+
+def test_identity_has_two_route_keys_for_its_single_prefix():
+    """The prefix is `/api/v1/admin`, and it takes the same two keys as cut 3.
+
+    Not three: a trailing-slash key is not a legal route key, as cut 2's apply
+    proved. Not one: the bare key is kept even though nothing is served at the
+    prefix root, for the reason spelled out in `apigateway.tf` and pinned by
+    `test_the_bare_admin_key_is_deliberate_and_matches_nothing_served` below.
+    """
+    assert identity_route_keys() == {
+        "ANY /api/v1/admin",
+        "ANY /api/v1/admin/{proxy+}",
+    }
+
+
+def test_identity_serves_exactly_one_route_and_it_is_the_login_post():
+    """The premise the two keys are sized against.
+
+    `identity` is the smallest domain: `backend/app/domains/identity/router.py`
+    declares a bare `POST /login` and the descriptor in
+    `app/composition/wiring.py` mounts it under `/api/v1/admin`. If a second
+    route is ever added, this fails and whoever added it has to confirm the
+    greedy key still covers it, which it will for anything below the prefix.
+    """
+    assert domain_paths("identity") == {"/api/v1/admin/login"}
+
+
+def test_every_identity_route_the_app_serves_has_a_gateway_route_key():
+    """The cut is complete: no identity path falls through to `$default`.
+
+    Unlike `content`, this one asserts an empty leftover set with no exception
+    carved out for a collection root. `identity` declares no route at its prefix
+    root, so there is no trailing-slash path to leave open, and the single
+    served path sits one segment below the prefix where the greedy key matches
+    it under every reading of route selection.
+    """
+    keys = identity_route_keys()
+    unrouted = sorted(
+        path
+        for path in domain_paths("identity")
+        if not any(matches(k, path) for k in keys)
+    )
+    assert unrouted == []
+
+
+def test_the_greedy_admin_key_is_what_carries_the_login_route():
+    """Which of the two keys does the work, stated rather than implied.
+
+    `/api/v1/admin/login` has a non-empty remainder below the prefix, so the
+    greedy key matches it without depending on the empty-remainder question that
+    cuts 2 and 3 had to leave to the apply. This cut rests on no undocumented
+    gateway behaviour, and this test is what says so.
+    """
+    assert matches("ANY /api/v1/admin/{proxy+}", "/api/v1/admin/login")
+    assert not matches("ANY /api/v1/admin", "/api/v1/admin/login")
+
+
+def test_the_bare_admin_key_is_deliberate_and_matches_nothing_served():
+    """The one identity key that points at no served path, kept on purpose.
+
+    This is cut 4's counterpart to `content`'s unmatched `site-content` greedy
+    key, and it is why there is no `test_no_identity_route_key_points_at_a_path_
+    the_app_does_not_serve` in the shape cuts 2 and 3 have: for `identity` the
+    bare key is *expected* to match nothing. `/api/v1/admin` and
+    `/api/v1/admin/` are 404s from the identity function, and the key exists so
+    that they are the identity function's 404 rather than a fall-through to the
+    monolith, and so that a future route at the prefix root is not left behind.
+    """
+    paths = domain_paths("identity")
+    assert not any(matches("ANY /api/v1/admin", path) for path in paths)
+    assert "/api/v1/admin" not in paths
+    assert "/api/v1/admin/" not in paths
+
+
+def test_no_identity_route_key_reaches_outside_the_admin_prefix():
+    """The other direction, in the form that is meaningful for this domain.
+
+    A key that claimed more than `/api/v1/admin` would take paths off the
+    monolith that `identity` cannot serve, and unlike a merely unmatched key
+    that is an outage rather than a 404. Both keys must stay under the prefix.
+    """
+    for key in identity_route_keys():
+        key_path = key.split(" ", 1)[1]
+        assert key_path == "/api/v1/admin" or key_path.startswith("/api/v1/admin/"), key
+
+
+def test_the_identity_keys_use_any_rather_than_post():
+    """ANY, so a wrong method answers 405 from `identity`, not from the monolith.
+
+    The only served route is a POST, so a `POST` key would cover today's traffic
+    exactly. ANY is still correct: the domain owns every method on this prefix,
+    and the monolith serves its own copy of the same login endpoint, so a GET
+    routed to `$default` would succeed in a way that makes the cut look complete
+    when it is not. It is also what makes the verify script's GET probes
+    meaningful, since they read the domain header off the 405.
+    """
+    for key in identity_route_keys():
+        assert key.startswith("ANY "), key
