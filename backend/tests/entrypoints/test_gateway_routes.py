@@ -118,6 +118,12 @@ def resume_collections() -> list[str]:
     return collections
 
 
+def content_prefixes() -> list[str]:
+    prefixes = _locals_lists(_terraform_source())["content_prefixes"]
+    assert prefixes, "local.content_prefixes is empty or was renamed"
+    return prefixes
+
+
 def expand_for_expression_keys(integration: str) -> set[str]:
     """Route keys written inside a `for collection in local.<list>` expression.
 
@@ -303,9 +309,144 @@ def test_routed_domains_and_route_keys_move_together():
     integration lookup. Both halves of a cut land in one commit or neither does.
     """
     routed = _locals_lists(_terraform_source())["routed_lambda_domains"]
-    keyed = set(gateway_route_keys()) | {"resume"}
+    keyed = set(gateway_route_keys()) | {"resume", "content"}
 
-    assert routed == ["public", "resume"]
+    assert routed == ["public", "resume", "content"]
     for domain in routed:
         assert domain in keyed, domain
     assert "legacy" not in routed
+
+
+def test_content_has_two_route_keys_per_mounted_prefix():
+    """Two, not the three cut 2 used. The trailing-slash key cannot exist.
+
+    Cut 2 added a literal `ANY /api/v1/<collection>/` key per collection to
+    settle an ambiguity the AWS documentation leaves open. Applying it settled
+    the ambiguity a different way: API Gateway rejected every one of those keys
+    with "BadRequestException: Part of the given route key path is empty". A
+    route key path segment may not be empty, so the trailing-slash form is not a
+    key that can be created at all, and `content` is written to two keys per
+    prefix from the start. This test is what stops it being reintroduced.
+    """
+    prefixes = content_prefixes()
+    keys = expand_for_expression_keys("content")
+
+    assert sorted(prefixes) == ["posts", "site-content"]
+    for prefix in prefixes:
+        assert f"ANY /api/v1/{prefix}" in keys
+        assert f"ANY /api/v1/{prefix}/{{proxy+}}" in keys
+        assert f"ANY /api/v1/{prefix}/" not in keys
+    assert len(keys) == 2 * len(prefixes) == 4
+
+
+def test_no_route_key_anywhere_in_the_file_ends_in_a_trailing_slash():
+    """The rejection is a property of API Gateway, so it binds every domain.
+
+    Scoped to the whole routes map rather than to `content`, because the next
+    cut copies whatever shape it finds here and the apply-time failure is the
+    same for `identity` as it was for `resume`.
+    """
+    offenders = sorted(
+        key
+        for keys in gateway_route_keys().values()
+        for key in keys
+        if key.endswith("/") and key.split(" ", 1)[1] != "/"
+    )
+    assert offenders == []
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/v1/posts",
+        "/api/v1/posts/admin",
+        "/api/v1/posts/admin/1",
+        "/api/v1/posts/admin/1/publish",
+        "/api/v1/posts/categories",
+        "/api/v1/posts/categories/2",
+        "/api/v1/posts/category/engineering",
+        "/api/v1/posts/some-slug",
+        "/api/v1/site-content",
+    ],
+)
+def test_a_content_path_is_matched_by_some_content_route_key(path):
+    keys = expand_for_expression_keys("content")
+    assert any(matches(key, path) for key in keys), path
+
+
+def test_the_greedy_posts_key_covers_the_whole_subtree_however_deep():
+    """`{proxy+}` captures the remainder, not one segment.
+
+    This is why `content`'s deep tree needs no more keys than `resume`'s flat
+    collections: `/admin/{post_id}/publish` is three segments below the prefix
+    and still lands on the same key.
+    """
+    key = "ANY /api/v1/posts/{proxy+}"
+    assert matches(key, "/api/v1/posts/admin")
+    assert matches(key, "/api/v1/posts/admin/1/publish")
+    assert not matches(key, "/api/v1/posts")
+
+
+def test_every_content_route_the_app_serves_has_a_gateway_route_key():
+    """The cut is complete: no content path is left falling through to $default.
+
+    Split in two, because the two mounted prefixes serve two kinds of path and
+    only one kind can be settled by reading text.
+
+    Every path with at least one segment below its prefix is matched by that
+    prefix's greedy key under any reading of route matching, so those are
+    asserted unconditionally.
+
+    The two collection roots, `/api/v1/posts/` and `/api/v1/site-content/`, are
+    the open case. No literal key can cover them: API Gateway rejects a route
+    key ending in a slash. So each is served by the bare key or by the greedy
+    one, and which is a question about the gateway that no amount of parsing
+    answers. `matches` encodes the strict reading, in which neither matches, and
+    this test does not assert that reading either way. What it does assert is
+    that the only paths left over are those two, so a genuinely missing key
+    still fails here. `scripts/verify_route_cut.sh` probes both slash forms
+    against the real gateway and is what closes this gap after the apply.
+    """
+    keys = expand_for_expression_keys("content")
+    collection_roots = {f"/api/v1/{prefix}/" for prefix in content_prefixes()}
+
+    unrouted = sorted(
+        path
+        for path in domain_paths("content")
+        if not any(matches(k, path) for k in keys)
+    )
+    assert set(unrouted) <= collection_roots, unrouted
+
+
+def test_the_deep_content_paths_are_routed_under_any_reading():
+    """The part of the cut that does not depend on the trailing-slash question."""
+    keys = expand_for_expression_keys("content")
+    deep = [
+        path
+        for path in domain_paths("content")
+        if not path.endswith("/") and path.startswith("/api/v1/")
+    ]
+    assert deep, "content serves no path below a prefix, which cannot be right"
+    for path in deep:
+        assert any(matches(key, path) for key in keys), path
+
+
+def test_no_content_route_key_points_at_a_path_the_app_does_not_serve():
+    """The other direction: a key the content function would 404.
+
+    The bare prefix keys are the deliberate exception, as they are for `resume`:
+    their path component is what a request whose slash lands in the query string
+    arrives as, and `TrailingSlashMiddleware` is what makes it reach the
+    handler. `site-content`'s greedy key is the second exception. The singleton
+    declares no sub-path today, so the key matches nothing the application
+    serves; it is kept so that adding one cannot silently leave it on the
+    monolith.
+    """
+    paths = domain_paths("content")
+    bare_prefixes = {f"/api/v1/{prefix}" for prefix in content_prefixes()}
+
+    for key in expand_for_expression_keys("content"):
+        key_path = key.split(" ", 1)[1]
+        if key_path in bare_prefixes or key_path.endswith("/{proxy+}"):
+            continue
+        assert any(matches(key, path) for path in paths), key
