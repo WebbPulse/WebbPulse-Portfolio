@@ -24,19 +24,20 @@ locals {
   # Memory and timeout match the monolith at 512 MB and 15 seconds, except
   # `public`, whose four routes do at most one DynamoDB read each.
   #
-  # The seeding note is the one place where reading the code changed the
-  # answer. Section 1's ownership table gives `content` read only access to
-  # `users` and gives `identity` nothing on `site-content`. But
-  # app/core/middleware.py's SeedMiddleware calls ensure_admin_seeded() and
-  # ensure_site_content_seeded() together on the first request of a process,
-  # and app/composition/wiring.py adds that one middleware to both domains that
-  # set `seeds = true`, which is `content` and `identity`. So on its first
-  # request `content` writes `users` and `identity` writes `site-content`,
-  # whatever the ownership table says. Denying either write would fail the
-  # first request of every cold start on a table the domain does not own, so
-  # both are granted and the divergence is recorded here rather than left as a
-  # surprise in CloudWatch. The same middleware is why `content` reads the
-  # admin credentials out of the one app secret and not just SECRET_KEY.
+  # Seeding is per table, and that is what puts these grants back on section
+  # 1's ownership table. SeedMiddleware used to call ensure_admin_seeded() and
+  # ensure_site_content_seeded() together wherever it was added, so `content`
+  # wrote `users` and `identity` wrote `site-content` on the first request of
+  # every cold start, and both writes had to be granted here. That is no longer
+  # what the code does: `SeedMiddleware` now takes the seeder names to run,
+  # `Domain.seeds` in app/composition/wiring.py names only the seeds a domain
+  # owns, and app/core/middleware.py's SEEDERS maps them. `content` seeds
+  # `site_content` and `identity` seeds `admin`, so each writes only its own
+  # table and neither reaches across. The two cross-domain writes are therefore
+  # dropped: `content` reads `users` for admin authorisation and no longer
+  # writes it, and `identity` neither reads nor writes `site-content`. Narrowing
+  # the seeders is also why `content` needs only SECRET_KEY out of the one app
+  # secret rather than the three admin credentials.
   #
   # `meta` is shared infrastructure, not identity's table. Repository.create in
   # app/db/repository.py writes a COUNTER# item and a UNIQUE# item for every
@@ -47,8 +48,8 @@ locals {
     content = {
       secrets     = true
       memory      = 512
-      tables      = ["posts", "categories", "site-content", "meta", "users"]
-      read_tables = []
+      tables      = ["posts", "categories", "site-content", "meta"]
+      read_tables = ["users"]
     }
     resume = {
       secrets     = true
@@ -59,7 +60,7 @@ locals {
     identity = {
       secrets     = true
       memory      = 512
-      tables      = ["users", "rate-limits", "meta", "site-content"]
+      tables      = ["users", "rate-limits", "meta"]
       read_tables = []
     }
     public = {
