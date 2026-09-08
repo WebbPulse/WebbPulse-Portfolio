@@ -611,12 +611,36 @@ the same route key and the same function, and touches no application state.
 
 ### Plan
 
-Not yet applied. The speculative plan on the PR, `run-PLACEHOLDER_RUN`, reads
-**PLACEHOLDER_COUNTS**:
+Not yet applied. The speculative plan on the PR, `run-d2rLq7jSou8rkcUc`, reads
+**4 to add, 0 to change, 0 to destroy**:
 
-PLACEHOLDER_RESOURCES
+- 2 `aws_apigatewayv2_route`, one per literal `identity` route key
+- 1 `aws_apigatewayv2_integration` for `identity`, pointing at
+  `webbpulse-staging-identity`
+- 1 `aws_lambda_permission` for `identity`, whose statement id the module
+  derives as `AllowAPIGatewayInvoke-identity` because `identity` is not the
+  `default_integration`
 
-PLACEHOLDER_AUTH
+Section 8 row 16 estimates "2 to add" for this cut. The estimate counts only the
+route keys; the integration and the permission come with any domain's first
+route, exactly as they did in cuts 2 and 3, so 4 is the expected number and not
+a surprise.
+
+Confirmed from `/plans/plan-jE3ZQ7MrQavNnCgg/json-output`: both new routes plan
+with `authorization_type = "CUSTOM"` and `authorizer_id = "p5vo7t"`, the same
+authorizer every existing route already carries. This is the check worth making
+by hand for the same reason as cuts 2 and 3: a route that planned as `NONE`
+would be a hole straight past the staging access gate, and the routes map sets
+no `authorization_type` precisely so the module picks `CUSTOM` for it.
+
+It matters more here than it did on the earlier cuts. The route being added is
+the admin login, so a route that skipped the gate would expose the one endpoint
+that accepts credentials. It is also the case the verify script's old
+authorizer check could not have caught, which is why that check was rewritten in
+this PR to key off the domain header rather than a 200.
+
+The other 153 resources in the workspace plan as no-ops, including all 19
+existing routes and `$default`.
 
 No destroys, as in cuts 2 and 3. Nothing about the monolith, the `legacy`
 integration or its permission changes here, so a plan showing any destroy on
