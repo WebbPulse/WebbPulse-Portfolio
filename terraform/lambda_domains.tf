@@ -178,6 +178,21 @@ module "lambda_domain" {
   # APP_SECRETS_ARN is set only for the domains that read a secret. `public`
   # reads none, which is what lets its role hold no secretsmanager action at
   # all, and an ARN it could not read would be a misleading configuration.
+  #
+  # The two OTEL_ variables are the whole tracing contract webbpulse 0.2.0
+  # keeps. `configure_tracing` builds the pipeline itself rather than running
+  # under `opentelemetry-instrument`, so OTEL_EXPORTER_OTLP_TRACES_PROTOCOL,
+  # OTEL_PYTHON_DISTRO, OTEL_PYTHON_CONFIGURATOR and OTEL_TRACES_SAMPLER are
+  # not set here: the protocol is implicit in the exporter class the package
+  # constructs, the distribution is used as a library rather than a launcher,
+  # and the sampler is passed explicitly so a ratio sampler in the environment
+  # cannot pre-drop the spans the tail step exists to judge.
+  #
+  # WEBBPULSE_OTEL_SAMPLE_RATIO is the probability a *non-error* trace is kept.
+  # Errors are kept whatever it says, which is the point of tail sampling and
+  # is why 0.1 on production is not the 90 percent loss of failures that a head
+  # sampler at the same ratio would be. Staging keeps everything because its
+  # traffic is this repository's own tests.
   environment_variables = merge(
     {
       DYNAMODB_TABLE_PREFIX = local.prefix
@@ -186,6 +201,13 @@ module "lambda_domain" {
       CORS_ORIGINS          = local.cors_origins
       SITE_URL              = local.frontend_url
       LOG_LEVEL             = "INFO"
+
+      WEBBPULSE_OTEL_SAMPLE_RATIO = var.environment == "production" ? "0.1" : "1.0"
+      # Set explicitly rather than left to the package's own default, which
+      # derives the same URL from AWS_REGION. Naming it here is what makes the
+      # destination visible in the plan and in the console, so a function
+      # exporting nowhere is a diff rather than an archaeology exercise.
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = "https://xray.${var.aws_region}.amazonaws.com/v1/traces"
     },
     each.value.secrets ? { APP_SECRETS_ARN = module.app_secrets.arns["app"] } : {},
   )
@@ -202,16 +224,36 @@ module "lambda_domain" {
 
   # Unlike the monolith, whose runtime policy carried the two X-Ray actions
   # before the module owned them, these roles are new, so the module attaches
-  # its own X-Ray write policy and the runtime policy below does not repeat it.
+  # its own X-Ray write policy and the runtime policy below does not repeat
+  # xray:PutTraceSegments or xray:PutTelemetryRecords. It does add xray:PutSpans,
+  # which the module's policy does not carry; see the statement below.
   tracing_mode             = "Active"
   attach_xray_write_policy = true
 }
 
 # ---------------------------------------------------------------------------
-# One runtime policy per domain, naming only that domain's tables. X-Ray is not
-# here: the module attaches it. Logs are, because the module creates the log
-# group but leaves writing to it to the application, the same way the
-# monolith's policy does.
+# One runtime policy per domain, naming only that domain's tables. Logs are
+# here, because the module creates the log group but leaves writing to it to
+# the application, the same way the monolith's policy does.
+#
+# X-Ray is here only in part. The module's attach_xray_write_policy grants
+# xray:PutTraceSegments and xray:PutTelemetryRecords, which are the two actions
+# the X-Ray *segment* API takes and the two the Lambda service itself needs for
+# Active tracing, so those are not repeated. They are not the actions the OTLP
+# endpoint takes: `POST https://xray.<region>.amazonaws.com/v1/traces` is
+# authorized by xray:PutSpans, and that is the call webbpulse 0.2.0's
+# OTLPAwsSpanExporter makes on every flush. Neither the module's inline policy
+# nor the AWS managed AWSXrayWriteOnlyAccess carries it: that policy was last
+# edited in 2018 and grants PutTraceSegments, PutTelemetryRecords and the three
+# GetSampling* actions and nothing else. So without the statement below every
+# export is a 403, which the exporter retries in silence, and the symptom is
+# that traces never appear with nothing in the logs to say why.
+#
+# xray:PutSpansForIndexing is granted alongside it. Both actions are in the
+# X-Ray service authorization reference at Write level, and the pair is what
+# Transaction Search indexes a span through; PutSpans alone would export the
+# span and leave it unsearchable. Neither action takes a resource-level
+# permission, so "*" is the only resource either accepts.
 # ---------------------------------------------------------------------------
 
 resource "aws_iam_role_policy" "lambda_domain" {
@@ -229,6 +271,12 @@ resource "aws_iam_role_policy" "lambda_domain" {
           Effect   = "Allow"
           Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
           Resource = "${module.lambda_domain[each.key].log_group_arn}:*"
+        },
+        {
+          Sid      = "WriteSpansToTheXRayOTLPEndpoint"
+          Effect   = "Allow"
+          Action   = ["xray:PutSpans", "xray:PutSpansForIndexing"]
+          Resource = "*"
         },
       ],
       length(local.lambda_domain_write_arns[each.key]) > 0 ? [

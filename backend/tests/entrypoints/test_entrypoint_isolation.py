@@ -115,16 +115,24 @@ def test_an_entrypoint_reports_its_own_service_name(domain, probes):
 
 @pytest.mark.parametrize("domain", sorted(DOMAIN_NAMES))
 def test_an_entrypoint_exposes_the_runtime_wiring(domain):
-    """`main` is what the image runs, and it wires the three shared helpers.
+    """`main` is what the image runs, and it wires the four shared helpers.
 
     Asserted by reading the module rather than calling it, because
     `configure_logging` replaces the root handlers and `configure_tracing`
     installs a global tracer provider, and a test that ran them would leave
-    both in place for every test after it.
+    both in place for every test after it. `instrument_fastapi` is here because
+    tail sampling exports nothing without the per-request flush it installs, so
+    an entrypoint that drops it still starts, still answers, and emits no
+    traces at all.
     """
     module = __import__(f"app.entrypoints.{domain}", fromlist=["main"])
     source = Path(module.__file__).read_text()
-    for helper in ("configure_logging", "configure_tracing", "run_uvicorn"):
+    for helper in (
+        "configure_logging",
+        "configure_tracing",
+        "instrument_fastapi",
+        "run_uvicorn",
+    ):
         assert helper in source, f"{domain} entrypoint does not call {helper}"
     assert callable(module.main)
     assert callable(module.build_app)

@@ -15,7 +15,7 @@ that a test importing the module must not inherit.
 
 from webbpulse.lambda_entry import run_uvicorn
 from webbpulse.logging import configure_logging
-from webbpulse.otel import configure_tracing
+from webbpulse.otel import configure_tracing, instrument_fastapi, resolve_sample_ratio
 
 from ..composition.settings import get_settings
 from ..composition.wiring import DOMAINS, build_domain_app
@@ -37,11 +37,28 @@ def main() -> None:
         service=DOMAIN.service_name,
         environment=settings.environment,
     )
-    configure_tracing(DOMAIN.service_name, environment=settings.environment)
+    # Tracing before the application is built, so `instrument_fastapi` attaches
+    # to a real tracer provider rather than the API's no-op one. The ratio is
+    # resolved explicitly rather than left to the default so the value this
+    # process is actually running with appears in the configuration log line,
+    # which is the only way to tell a misread WEBBPULSE_OTEL_SAMPLE_RATIO from a
+    # correctly read one.
+    configure_tracing(
+        DOMAIN.service_name,
+        environment=settings.environment,
+        sample_ratio=resolve_sample_ratio(),
+    )
+    app = build_app()
+    # Must happen before uvicorn serves: `instrument_app` can only inject the
+    # server span middleware while the middleware stack is still unbuilt, and
+    # the flush wrapper it installs is what exports a tail sampled trace before
+    # the Lambda execution environment freezes. Auto-on under Lambda, off in a
+    # local run.
+    instrument_fastapi(app)
     # Blocks. `run_uvicorn` binds AWS_LWA_PORT, then PORT, then 8080, which is
     # the adapter's own precedence; binding anything else presents as the
     # readiness check never passing with no application logs at all.
-    run_uvicorn(build_app())
+    run_uvicorn(app)
 
 
 if __name__ == "__main__":
