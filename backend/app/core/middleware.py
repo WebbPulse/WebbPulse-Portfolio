@@ -27,10 +27,40 @@ class TrailingSlashMiddleware:
         await self.app(scope, receive, send)
 
 
-class SeedMiddleware:
-    """Seed the admin user and the site-content singleton on the first request.
+#: The seeders, keyed by the name a `Domain` names on its descriptor. Each
+#: value is a zero-argument callable that imports its domain and runs its
+#: seeder, so naming a seed here does not import the domain that owns it.
+#:
+#: `admin` writes the `users` table and reads `ADMIN_USERNAME`, `ADMIN_PASSWORD`
+#: and `ADMIN_EMAIL`; `site_content` writes the `site-content` singleton and
+#: reads no secret at all. They are separate entries rather than one because a
+#: domain must seed only the tables it owns: running both in `content` made that
+#: function resolve the three admin secrets and write a table `identity` owns,
+#: which is what `Domain.requires_secrets` claimed it did not do.
 
-    The two seeders are imported inside `__call__`, not at module scope, and
+
+def _seed_admin() -> None:
+    from ..domains.identity.service import ensure_admin_seeded
+
+    ensure_admin_seeded()
+
+
+def _seed_site_content() -> None:
+    from ..domains.content.service import ensure_site_content_seeded
+
+    ensure_site_content_seeded()
+
+
+SEEDERS = {
+    "admin": _seed_admin,
+    "site_content": _seed_site_content,
+}
+
+
+class SeedMiddleware:
+    """Run the named seeders on the first request in a process.
+
+    Each seeder imports its own domain inside the call, not at module scope, and
     that placement is load-bearing rather than stylistic. This module also holds
     `TrailingSlashMiddleware`, which every domain application adds, so a
     module-level import of `app.domains.content` and `app.domains.identity`
@@ -41,18 +71,24 @@ class SeedMiddleware:
 
     The import is cached by `sys.modules` after the first request, so the cost
     is a dictionary lookup per request rather than a re-import.
+
+    `seeds` names which seeders to run. It defaults to both, which is what root
+    A wants: one process serving every route owns every table. A per-domain
+    application passes only the seeds its domain owns, so `content` no longer
+    seeds the admin user and no longer reads the three admin secrets to do it.
     """
 
-    def __init__(self, app):
+    def __init__(self, app, seeds=None):
         self.app = app
+        self.seeds = tuple(SEEDERS) if seeds is None else tuple(seeds)
+        unknown = [name for name in self.seeds if name not in SEEDERS]
+        if unknown:
+            raise ValueError(f"Unknown seed(s): {', '.join(sorted(unknown))}")
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "http":
-            from ..domains.content.service import ensure_site_content_seeded
-            from ..domains.identity.service import ensure_admin_seeded
-
-            ensure_admin_seeded()
-            ensure_site_content_seeded()
+            for name in self.seeds:
+                SEEDERS[name]()
         await self.app(scope, receive, send)
 
 

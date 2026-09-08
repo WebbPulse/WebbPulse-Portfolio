@@ -21,18 +21,30 @@ three arguments it always passes are the ones the plan calls out:
   inside the middleware `create_app` installed, exactly where it sits in the
   monolith.
 
-`SeedMiddleware` is deliberately not here. It writes the `users` and
-`site-content` tables on the first request in a process, and `public` is the
-domain with read-only DynamoDB and no Secrets Manager access at all, so wiring
-it into every domain would make the least-privileged function attempt two writes
-it has no IAM for. Only the domains that own those tables seed them, which is
-what `seeds` on the descriptor records.
+`SeedMiddleware` is deliberately not added to every domain. It writes the
+`users` and `site-content` tables on the first request in a process, and
+`public` is the domain with read-only DynamoDB and no Secrets Manager access at
+all, so wiring it into every domain would make the least-privileged function
+attempt two writes it has no IAM for. Only the domains that own those tables
+seed them, which is what `seeds` on the descriptor records, and it records
+*which* seeds rather than merely whether: `identity` owns `users` and seeds the
+admin, `content` owns the singleton and seeds that. Running both in both is what
+used to make `content` read the three admin secrets its descriptor says it does
+not need.
+
+**Secrets fail at startup, not at the first request that needs one.**
+`check_required_secrets` reads `requires_secrets` off the domains a root serves
+and calls `settings.require_secrets` for exactly those, once, before the process
+serves anything. Resolution itself stays lazy, so the call is what makes a
+misconfigured function fail loudly at cold start while `public`, which names no
+secret, still makes no Secrets Manager call at all.
 """
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, Iterable
 
 from webbpulse.http import create_app
 
@@ -69,10 +81,16 @@ class Domain:
     router_tags: tuple[str, ...] = ()
     #: Which of the four secret fields the domain cannot serve a request without.
     #: `public` names none, which is what lets its function run with no
-    #: `secretsmanager:GetSecretValue` at all.
+    #: `secretsmanager:GetSecretValue` at all. `check_required_secrets` reads
+    #: this at startup, so the list is the thing that fails a misconfigured
+    #: function rather than a comment about one.
     requires_secrets: tuple[str, ...] = ()
-    #: Whether the domain seeds the tables it owns on the first request.
-    seeds: bool = False
+    #: Which seeders the domain runs on the first request, by the names in
+    #: `app.core.middleware.SEEDERS`. A domain seeds only the tables it owns:
+    #: `identity` owns `users` and so names `admin`, `content` owns the
+    #: `site-content` singleton and so names `site_content`, and `public` and
+    #: `resume` own neither and name nothing.
+    seeds: tuple[str, ...] = ()
     #: Extra keyword arguments for `create_app`.
     extra: dict = field(default_factory=dict)
 
@@ -116,7 +134,7 @@ DOMAINS: dict[str, Domain] = {
         title="WebbPulse Portfolio content",
         load_routers=_content_routers,
         requires_secrets=("SECRET_KEY",),
-        seeds=True,
+        seeds=("site_content",),
     ),
     "resume": Domain(
         name="resume",
@@ -136,7 +154,7 @@ DOMAINS: dict[str, Domain] = {
             "ADMIN_PASSWORD",
             "ADMIN_EMAIL",
         ),
-        seeds=True,
+        seeds=("admin",),
     ),
     "public": Domain(
         name="public",
@@ -147,6 +165,49 @@ DOMAINS: dict[str, Domain] = {
 }
 
 DOMAIN_NAMES = tuple(DOMAINS)
+
+
+#: Environments where a missing secret is a startup failure rather than a
+#: warning. These are the deployed ones, the two that have an `APP_SECRETS_ARN`
+#: and a function whose first request must not be the thing that discovers the
+#: secret is unreadable. `local` and `test` stay warnings, which is what keeps a
+#: checkout runnable and the suite green with no AWS at all.
+ENFORCED_ENVIRONMENTS = ("staging", "production")
+
+
+def check_required_secrets(
+    domains: "Iterable[Domain]", *, settings: Settings | None = None
+) -> None:
+    """Fail fast on a missing secret, once at startup, per the domains served.
+
+    Resolution stays lazy: nothing here runs at import, and a root that serves
+    no domain naming a secret never calls `require_secrets`, so `public` makes
+    no Secrets Manager call and needs no `secretsmanager:GetSecretValue` grant.
+    What this adds is the moment of truth. Without it a function with the wrong
+    ARN starts clean and fails on the first request that happens to verify a
+    token, which reads as an intermittent 500 rather than as the
+    misconfiguration it is.
+
+    Outside a deployed environment a missing secret is a warning, not a raise.
+    A checkout with no AWS has to keep running, and the suite has to stay green
+    without a signing key in the environment.
+    """
+    wanted = sorted({name for domain in domains for name in domain.requires_secrets})
+    if not wanted:
+        return
+    resolved = settings if settings is not None else get_settings()
+    if resolved.environment in ENFORCED_ENVIRONMENTS:
+        resolved.require_secrets(*wanted)
+        return
+    missing = [name for name in wanted if getattr(resolved, name) is None]
+    if missing:
+        warnings.warn(
+            f"Missing secret(s): {', '.join(missing)}. Set them as environment "
+            "variables or as keys of the APP_SECRETS_ARN secret. Tokens signed "
+            "with an empty key are insecure.",
+            UserWarning,
+            stacklevel=2,
+        )
 
 
 def build_domain_app(
@@ -203,7 +264,10 @@ def build_domain_app(
     if domain.seeds:
         from ..core.middleware import SeedMiddleware
 
-        app.add_middleware(SeedMiddleware)
+        # Only this domain's own seeds. `content` used to run the admin seeder
+        # too, which made it write the `users` table and resolve the three admin
+        # secrets its descriptor says it does not need.
+        app.add_middleware(SeedMiddleware, seeds=domain.seeds)
     app.add_middleware(TrailingSlashMiddleware, router=app.router)
     # Outermost, so the header is on the response whatever the inner stack did
     # with it, error envelopes included. The value is this domain's name, which

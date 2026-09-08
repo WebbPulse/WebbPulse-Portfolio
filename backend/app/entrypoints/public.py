@@ -20,7 +20,7 @@ from webbpulse.logging import configure_logging
 from webbpulse.otel import configure_tracing, instrument_fastapi, resolve_sample_ratio
 
 from ..composition.settings import get_settings
-from ..composition.wiring import DOMAINS, build_domain_app
+from ..composition.wiring import DOMAINS, build_domain_app, check_required_secrets
 
 DOMAIN = DOMAINS["public"]
 
@@ -50,6 +50,11 @@ def main() -> None:
         environment=settings.environment,
         sample_ratio=resolve_sample_ratio(),
     )
+    # Before the application is built, so a function with an unreadable secret
+    # or the wrong ARN fails at cold start with a message naming the missing
+    # field, rather than on whichever later request first verifies a token.
+    # Logging is already configured above, so the failure lands in JSON.
+    check_required_secrets([DOMAIN], settings=settings)
     app = build_app()
     # Must happen before uvicorn serves: `instrument_app` can only inject the
     # server span middleware while the middleware stack is still unbuilt, and
