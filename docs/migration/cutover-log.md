@@ -304,9 +304,12 @@ them because nothing has been deleted from it.
 PR 15. Routes the two prefixes the `content` domain mounts, `posts` and
 `site-content`, to the `content` function. Status: **Applied on staging**
 (PR #112), HCP Terraform run `run-pjWK9LRzZz4JL891`: **6 added, 0 changed, 0
-destroyed**, exactly the speculative plan below. CI verification is still
-pending, because the `verify-route-cuts` job's `DOMAINS` variable does not yet
-name `content`; see the follow up noted under "Verification, once applied".
+destroyed**, exactly the speculative plan below. **Verified in CI** (PR #114,
+deploy-backend run 34174774044): all four probes, both slash forms of `posts`
+and `site-content`, are served by the `content` function, and the bare request
+is rejected by the gate with 403. As with cut 2, the trailing-slash paths are
+matched by the bare key: the gateway normalises the slash before route
+selection.
 
 ### What changed
 
@@ -482,7 +485,11 @@ still serves them because nothing has been deleted from it.
 ## Cut 4: identity
 
 PR 16. Routes the `/api/v1/admin` prefix to the `identity` function. Status:
-**PR open, not applied**.
+**Applied on staging** (PR #115), HCP Terraform run `run-DqfE5zcewV5esunT`:
+**4 added, 0 changed, 0 destroyed**, exactly the speculative plan below. CI
+verification is wired by the same PR that records this status, which adds
+`identity` to the `verify-route-cuts` `DOMAINS` list; its result is recorded
+under "Verification, once applied" when the next deploy runs.
 
 This is the last cut. With `identity` routed, every domain in
 `local.lambda_domains` has an integration and a route key, and what remains in
