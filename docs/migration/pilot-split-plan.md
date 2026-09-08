@@ -1029,8 +1029,11 @@ Three resources: a CloudWatch Logs resource policy letting `xray.amazonaws.com`
 write to `aws/spans`, the trace segment destination set to `CloudWatchLogs`, and
 the `Default` indexing rule at 1 percent. The `aws/spans` log group cannot be
 created by Terraform ahead of X-Ray (names starting with `aws/` are reserved, the
-first apply failed on exactly that), so X-Ray creates it and a follow-up change
-imports it to set the standard 7 day retention.
+first apply failed on exactly that), so X-Ray creates it with a 30 day default and
+a follow-up change imports it to set the standard 7 day retention. Verified on
+staging 2026-09-08: application spans from all four domains (FastAPI server spans,
+DynamoDB client spans, outbound HTTP) arrive in `aws/spans` next to the Lambda
+platform spans, with no exporter errors in the function logs.
 
 Two things worth knowing. It is account-wide for the region rather than per
 environment, so it changes trace storage for everything in the account that
