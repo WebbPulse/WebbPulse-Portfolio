@@ -41,6 +41,7 @@ import re
 from pathlib import Path
 
 import pytest
+from starlette.routing import Route
 
 from app.composition.wiring import build_domain_app
 
@@ -142,12 +143,20 @@ def expand_for_expression_keys(integration: str) -> set[str]:
 
 
 def domain_paths(domain: str) -> set[str]:
-    """The application paths a domain serves, documentation and /health aside."""
+    """The application paths a domain serves, documentation and /health aside.
+
+    `app.routes` is typed `list[BaseRoute]`, and only the `Route` subclass
+    carries `path` and `methods`, so the isinstance narrowing is what lets
+    Pyright read either attribute. It also drops `Mount` and `WebSocketRoute`,
+    neither of which is a gateway route, which is the same set the plain
+    `methods` truthiness check happened to exclude.
+    """
     app = build_domain_app(domain)
     return {
         route.path
         for route in app.routes
-        if getattr(route, "methods", None)
+        if isinstance(route, Route)
+        and route.methods
         and route.path not in DOCUMENTATION_PATHS
         and not (domain != "public" and route.path == "/health")
     }
