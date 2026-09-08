@@ -374,6 +374,18 @@ that skips it would leave `main` and the workspace state disagreeing about a
 file that is present in the configuration, and the next unrelated run would
 apply it anyway without anyone reading this section.
 
+**The `aws/spans` log group needs a second apply, and production does not get
+it in this release.** X-Ray creates that group itself the first time it writes to
+the CloudWatchLogs destination; Terraform cannot create it because CloudWatch
+reserves the `aws/` prefix. So adopting it into state and putting the platform's
+7 day retention on it is gated behind `var.manage_spans_log_group`, which
+defaults to false and is absent from the production workspace. The release
+apply therefore creates the resource policy, the destination and the indexing
+rule and stops there, with no import of a group that does not exist yet. Step
+6.x below picks the group up once it is real. Staging already adopted it before
+the gate existed, and a `moved` block in `terraform/transaction_search.tf`
+carries that state onto the new `for_each` address, so staging plans no change.
+
 The reason it is here at all is PR #117, which is still open. AWS requires
 Transaction Search before the X-Ray OTLP endpoint will accept spans
 (`terraform/transaction_search.tf:4-10`), so #119 is the prerequisite that #117
@@ -390,6 +402,7 @@ stored for anything already writing them and nothing starts exporting OTLP until
 - [ ] The Artifacts account admits the production deploy role for CodeArtifact and for the base image pull (section 2.5)
 - [ ] The owner has confirmed the SNS subscription plan (section 7)
 - [ ] The owner has agreed to take the account-wide Transaction Search switch and the AWS provider major bump in this release, or PR #119 has been reverted on `staging` first (section 2.8)
+- [ ] `manage_spans_log_group` is **not** set on ws-JpNLUhFzVCzMDgAN. It stays absent through the release apply and is set at section 6.6, after X-Ray has created the `aws/spans` group
 - [ ] PR #117 is resolved one way or the other (section 8)
 
 ## 3. Apply sequencing
@@ -819,10 +832,9 @@ is not evidence that a route key is valid
 (`docs/migration/cutover-log.md:441-442`). The keys on `staging` today are
 already corrected, so this should not recur; the check is cheap.
 
-**Created, Transaction Search (4):**
+**Created, Transaction Search (3):**
 
 ```
-aws_cloudwatch_log_group.spans
 aws_cloudwatch_log_resource_policy.transaction_search_spans
 aws_xray_trace_segment_destination.main
 aws_xray_indexing_rule.default
@@ -832,6 +844,13 @@ These arrived on `staging` in PR #119 after the monolith retirement, so they are
 part of this promotion and not a later release. Read section 2.8 before
 confirming the apply: the trace destination switch is account-wide and is not
 undone by removing the resource.
+
+`aws_cloudwatch_log_group.spans["aws/spans"]` is deliberately **not** in this
+plan. It is gated behind `var.manage_spans_log_group`, which is false by default
+and is not set on ws-JpNLUhFzVCzMDgAN, because the group does not exist until
+X-Ray writes its first span and the import would fail the plan. If the plan does
+contain it, the variable has been set on the production workspace early: unset
+it and re-plan rather than confirming. Section 6.6 adopts it after the fact.
 
 **Created, the CI role and the alarm filters (6):**
 
@@ -1136,6 +1155,52 @@ That is hours, not minutes. Treat it as the disaster path, not the rollback
 path. The bucket and its lifecycle rule are kept precisely so this stays
 available (`terraform/lambda.tf:11-17`), and the deploy role keeps read access
 to it (`terraform/iam_github_actions.tf:141-148`).
+
+### 6.6 Adopt the `aws/spans` log group (a second apply, after the cut)
+
+This is the follow-up the release apply deliberately leaves undone, and it is
+easy to forget because nothing breaks without it. Skipping it only means the
+group keeps X-Ray's 30 day default instead of the platform's 7 day retention,
+which costs money quietly rather than failing loudly.
+
+The release apply switched the trace segment destination to `CloudWatchLogs`
+(section 2.8) but did not touch `aws/spans`, because the group does not exist
+until X-Ray writes its first span into it and Terraform cannot create it: the
+`aws/` prefix is reserved by CloudWatch. So the import is gated behind
+`var.manage_spans_log_group`, default false and absent from ws-JpNLUhFzVCzMDgAN.
+
+Once production has served real traffic after step 5.6, confirm the group is
+there:
+
+```bash
+aws logs describe-log-groups \
+  --log-group-name-prefix aws/spans \
+  --query 'logGroups[].[logGroupName,retentionInDays]' --output text
+```
+
+Expect `aws/spans` with no retention value, or `30`. If nothing comes back, no
+span has been written yet: the functions are not exporting OTLP until PR #117
+ships (section 8), so this may wait on Lambda platform spans instead. Do not set
+the variable until the group exists, because the plan fails on the import if it
+does not.
+
+Then set `manage_spans_log_group = true` on the production workspace
+ws-JpNLUhFzVCzMDgAN (Terraform category, not HCL) and start a run. The plan
+should be exactly one import and one in-place change, taking retention from 30
+days to 7:
+
+```
+aws_cloudwatch_log_group.spans["aws/spans"] will be imported then updated in-place
+```
+
+Nothing else should appear. If the plan proposes to create or destroy the group,
+stop: creation cannot succeed against the reserved prefix, and a destroy means
+the import did not match.
+
+Staging is already through this. It adopted the group on 2026-09-08 before the
+gate existed, so its state carries the pre-gate address; the `moved` block in
+`terraform/transaction_search.tf` migrates it to
+`aws_cloudwatch_log_group.spans["aws/spans"]` with no destroy and recreate.
 
 ## 7. Work outside Terraform
 
