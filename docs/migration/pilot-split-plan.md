@@ -1025,10 +1025,12 @@ OTLP endpoint." It is the prerequisite for the collector-less export this
 section describes, and it landed ahead of the PR that points the functions at
 the endpoint.
 
-Four resources: the `aws/spans` log group at the standard 7 day retention, a
-CloudWatch Logs resource policy letting `xray.amazonaws.com` write to it, the
-trace segment destination set to `CloudWatchLogs`, and the `Default` indexing
-rule at 1 percent.
+Three resources: a CloudWatch Logs resource policy letting `xray.amazonaws.com`
+write to `aws/spans`, the trace segment destination set to `CloudWatchLogs`, and
+the `Default` indexing rule at 1 percent. The `aws/spans` log group cannot be
+created by Terraform ahead of X-Ray (names starting with `aws/` are reserved, the
+first apply failed on exactly that), so X-Ray creates it and a follow-up change
+imports it to set the standard 7 day retention.
 
 Two things worth knowing. It is account-wide for the region rather than per
 environment, so it changes trace storage for everything in the account that

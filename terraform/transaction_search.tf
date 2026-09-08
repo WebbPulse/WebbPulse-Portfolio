@@ -28,15 +28,12 @@
 # back to "XRay", not a `terraform destroy`.
 # ---------------------------------------------------------------------------
 
-# X-Ray writes spans here once the destination is CloudWatchLogs. The name is
-# fixed by the service and cannot be chosen. Created here rather than left to
-# X-Ray's implicit creation so that the 7 day retention the platform standardises
-# on is in place from the very first span, instead of the never-expire default
-# that an implicitly created group would carry.
-resource "aws_cloudwatch_log_group" "spans" {
-  name              = "aws/spans"
-  retention_in_days = 7
-}
+# X-Ray creates the aws/spans log group itself the first time it writes to the
+# CloudWatchLogs destination. It cannot be created ahead of time: CreateLogGroup
+# rejects the name with "Log groups starting with AWS/ are reserved for AWS"
+# (staging run-92rtoN8KYFoD7sWA, 2026-09-08). Retention is therefore applied in
+# a second step, once the group exists, through the `import` block and resource
+# below the destination.
 
 # Lets X-Ray put spans into the two log groups Transaction Search writes to. The
 # source conditions are the confused deputy guard from the AWS setup docs: they
@@ -78,17 +75,28 @@ resource "aws_cloudwatch_log_resource_policy" "transaction_search_spans" {
   policy_document = data.aws_iam_policy_document.transaction_search_spans.json
 }
 
-# The switch itself. Depends on both the log group and the resource policy so the
-# destination never flips before X-Ray is allowed to write, and before retention
-# is set on the group it writes to.
+# The switch itself. Depends on the resource policy so the destination never
+# flips before X-Ray is allowed to write.
 resource "aws_xray_trace_segment_destination" "main" {
   destination = "CloudWatchLogs"
 
-  depends_on = [
-    aws_cloudwatch_log_group.spans,
-    aws_cloudwatch_log_resource_policy.transaction_search_spans,
-  ]
+  depends_on = [aws_cloudwatch_log_resource_policy.transaction_search_spans]
 }
+
+# Step two, added only after the destination above has applied and X-Ray has
+# created the group: adopt aws/spans into state and put the platform's 7 day
+# retention on it. Until then the group carries the never expire default. The
+# import block is a no-op once the group is in state.
+#
+# import {
+#   to = aws_cloudwatch_log_group.spans
+#   id = "aws/spans"
+# }
+#
+# resource "aws_cloudwatch_log_group" "spans" {
+#   name              = "aws/spans"
+#   retention_in_days = 7
+# }
 
 # Adopts the account's existing "Default" indexing rule rather than creating a
 # new named one: the provider's own example uses name = "Default" and imports by
