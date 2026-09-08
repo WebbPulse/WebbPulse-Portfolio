@@ -9,9 +9,12 @@ does not populate it, so under the adapter that lookup misses and the old code
 fell through to the leftmost `X-Forwarded-For` hop, which the caller controls.
 A limiter keyed on a caller controlled value is worse than no limiter, because
 anyone can mint a fresh identity per request while the endpoint looks protected.
-`client_ip` below reads the `x-amzn-request-context` header the adapter forwards
-and still reads the Mangum scope, so it is correct under both runtimes during the
-migration. It never reads `X-Forwarded-For`.
+`client_ip` below reads the `x-amzn-request-context` header the adapter forwards.
+It still falls back to the Mangum scope, which is now unreachable in production:
+the monolith is deleted and all four functions are adapter images. The fallback
+is one dictionary lookup, so it stays rather than being removed in the same
+change that removed the runtime it was written for. It never reads
+`X-Forwarded-For`.
 
 **Where the items live.** The `LOGIN_FAIL#` items used to be written into the
 `meta` table, which also holds the id allocator's counters and uniqueness items

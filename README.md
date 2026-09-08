@@ -30,7 +30,12 @@ cd backend
 docker compose up -d              # start DynamoDB Local on :8001
 export DYNAMODB_ENDPOINT_URL=http://localhost:8001
 python scripts/create_local_tables.py
-uvicorn app.main:app --reload     # http://localhost:8000 (docs at /docs)
+
+# Every domain's routes in one process, on :8000 (docs at /docs)
+uvicorn app.composition.app:app --reload
+
+# Or one domain, exactly as its image runs it
+PORT=8010 python -m app.entrypoints.content
 ```
 
 ```bash
@@ -38,11 +43,11 @@ uvicorn app.main:app --reload     # http://localhost:8000 (docs at /docs)
 pytest tests/
 
 # Linting
-flake8 app/ tests/ --max-line-length=88 --extend-ignore=E203,W503
-black --check app/ tests/ && isort --check-only app/ tests/
+ruff check app tests
+ruff format --check app tests
 ```
 
-See `backend/README.md` for configuration, the data model, and the Lambda build.
+See `backend/README.md` for configuration, the data model, and the container images.
 
 ### Frontend
 

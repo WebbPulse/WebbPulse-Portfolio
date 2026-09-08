@@ -31,19 +31,29 @@ npm run test:run -- --reporter=verbose path/to/test.spec.ts
 
 ```bash
 # Local DynamoDB via docker-compose, then the API against it
-docker-compose up -d
-DYNAMODB_ENDPOINT_URL=<local dynamodb url> uvicorn app.main:app --reload
+docker compose up -d
+export DYNAMODB_ENDPOINT_URL=<local dynamodb url>
+python scripts/create_local_tables.py
+
+# All 44 routes in one process (root A, every domain's routers on one app)
+uvicorn app.composition.app:app --reload
+
+# One domain, exactly as the image runs it (root B; the Dockerfile CMD is
+# `python -m app.entrypoints.${DOMAIN}`). run_uvicorn binds AWS_LWA_PORT,
+# then PORT, then 8080
+PORT=8010 python -m app.entrypoints.content
+
+# All four as the real images, under the Lambda Web Adapter. Needs a
+# CodeArtifact token; see backend/README.md
+docker compose --profile domains up --build
 
 # Tests (moto-backed, no AWS or database needed)
 pytest tests/                                      # All tests
 pytest tests/test_name.py::test_function_name -v   # Single test
 
-# Lint / format
-flake8 app/ tests/ --max-line-length=88 --extend-ignore=E203,W503
-black app/ tests/ && isort app/ tests/
-
-# Build the Lambda deployment package (what CI ships)
-bash scripts/build_lambda.sh                       # -> backend/dist/function.zip
+# Lint / format (ruff replaced flake8, black and isort)
+ruff check app tests
+ruff format --check app tests
 ```
 
 ## Architecture
@@ -56,27 +66,29 @@ bash scripts/build_lambda.sh                       # -> backend/dist/function.zi
 
 ### Backend
 
-- **Runtime**: one FastAPI app on a single Lambda (`webbpulse-<env>-api`, Python 3.13, arm64) via Mangum, behind an API Gateway HTTP API (`ANY /{proxy+}`). Handler is `app.lambda_handler.handler`
+- **Runtime**: four FastAPI apps, one per domain (`content`, `resume`, `identity`, `public`), each its own Lambda (`webbpulse-<env>-<domain>`, Python 3.13, arm64) built as a container image from one `backend/Dockerfile`. There is no Lambda handler and no Mangum: the [Lambda Web Adapter](https://github.com/awslabs/aws-lambda-web-adapter) runs ahead of the process and turns each invoke into an HTTP request against `127.0.0.1:8080`, so the same image runs on Lambda and under `docker run`. The image's `CMD` is `python -m app.entrypoints.${DOMAIN}`. API Gateway routes to them with 21 explicit route keys and no `$default`: an unmatched path is a gateway 404, not a fall-through
 - **REST API**: All routes under `/api/v1/` prefix. OpenAPI docs at `/docs`. Ids stay integers and list endpoints keep `skip`/`limit` so the frontend contract is unchanged
 - **Auth**: JWT tokens (HS256, python-jose/bcrypt). Users have an `is_admin` boolean flag. The admin user is seeded from the `APP_SECRETS_ARN` secret on cold start
 - **Database**: DynamoDB, one table per entity (`webbpulse-<env>-<entity>`: users, categories, posts, projects, experience, skills, education, certifications, site-content, meta). Integer ids come from counter items in `meta`; uniqueness (username, email, slug) is enforced with lookup items inside `TransactWriteItems`. `posts` has `published-index` and `category-index` GSIs
 - **Config**: env vars `DYNAMODB_TABLE_PREFIX`, `APP_SECRETS_ARN` (signing key + admin credentials come from one JSON secret, `webbpulse-<env>/app`, read at cold start), `ENVIRONMENT`, `CORS_ORIGINS`, `SITE_URL`, `LOG_LEVEL`; `DYNAMODB_ENDPOINT_URL` points at a local DynamoDB
 - **Rate limiting**: API Gateway stage throttling (burst 200, rate 100). There is no in-process limiter
-- **Observability**: aws-lambda-powertools logger, X-Ray active tracing, 30-day CloudWatch log groups for the function and the HTTP API access log
+- **Observability**: OpenTelemetry through `webbpulse.otel` (Transaction Search via the OTLP endpoint), X-Ray active tracing, and 7-day CloudWatch log groups for the four functions and the HTTP API access log. `app/core/logging.py` still uses the aws-lambda-powertools logger and three domain services import it, so that dependency stays until they move to `webbpulse.logging`
 
 ### Key files
 
 | File | Purpose |
 |---|---|
-| `backend/app/main.py` | FastAPI app entrypoint — CORS, middleware, lifespan hooks |
-| `backend/app/lambda_handler.py` | Mangum adapter — the Lambda entrypoint |
+| `backend/app/composition/wiring.py` | The four domains and `build_domain_app` — the single list both roots read |
+| `backend/app/composition/app.py` | Root A: every domain's routers on one app, for local dev and the test suite. Nothing deploys it |
+| `backend/app/entrypoints/<domain>.py` | Root B: one module per deployed function, the image's `CMD` |
+| `backend/Dockerfile` | Builds all four images; `DOMAIN` selects the entrypoint, `READINESS_PROTOCOL` the adapter check |
 | `backend/app/config.py` | Pydantic Settings, env vars and the `APP_SECRETS_ARN` JSON secret |
-| `backend/app/api/v1/api.py` | The composition root: mounts every domain under `/api/v1` |
 | `backend/app/domains/` | One package per domain (content, resume, identity, public); no imports between them |
 | `backend/app/core/`, `backend/app/db/` | Cross-cutting code every domain shares: settings, auth, limiter, logging, DynamoDB |
-| `backend/scripts/build_lambda.sh` | Builds `dist/function.zip` for Lambda |
+| `backend/scripts/build_image.sh` | Builds one domain's container image |
+| `backend/tests/fixtures/route_contract.json` | The published contract: 44 routes, 42 documented operations |
 | `terraform/dynamodb.tf` | Table map — attributes, GSIs, TTL, PITR per entity |
-| `terraform/lambda.tf` | Function, execution role, artifact bucket, placeholder package |
+| `terraform/lambda.tf` | The four domain functions, execution roles, ECR repositories |
 | `terraform/apigateway.tf` | HTTP API, `$default` stage, `api.webbpulse.com` custom domain |
 | `frontend/src/services/api.ts` | Centralized API client |
 | `frontend/vite.config.ts` | Vite config with dev proxy |
@@ -91,9 +103,9 @@ bash scripts/build_lambda.sh                       # -> backend/dist/function.zi
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `.github/workflows/test-backend.yml` | PR to `main`/`staging`, paths `backend/**` | pytest on moto (no database service), flake8, black, isort |
+| `.github/workflows/test-backend.yml` | PR to `main`/`staging`, paths `backend/**` | delegates to the org reusable `python-ci.yml@v1`: CodeArtifact login, then pytest on moto (no database service), `ruff check` and `ruff format --check` |
 | `.github/workflows/test-frontend.yml` | PR to `main`/`staging`, paths `frontend/**` | lint, format check, build, Vitest with coverage |
-| `.github/workflows/deploy-backend.yml` | push to `main`/`staging`, paths `backend/**` | builds `function.zip`, uploads it to the artifact bucket as `backend/<sha>.zip`, waits for any active TFC run, `aws lambda update-function-code --publish`, then curls `/health` |
+| `.github/workflows/deploy-backend.yml` | push to `main`/`staging`, paths `backend/**` | builds the four domain images, pushes them to ECR as `sha-<commit>`, points each function at its digest-pinned URI, smoke tests each one, then verifies the live gateway serves every domain's paths from that domain's function |
 | `.github/workflows/deploy-frontend.yml` | push to `main`/`staging`, paths `frontend/**` | `npm run build` with `VITE_API_BASE_URL`, waits for any active TFC run, `s3 sync --delete`, CloudFront invalidation |
 
 Deploy workflows pick the `production` or `staging` GitHub Environment from the branch and assume `vars.AWS_DEPLOY_ROLE_ARN` via OIDC. The TFC-polling step keeps a code deploy from racing a Terraform apply that is touching the same function.
@@ -103,8 +115,6 @@ Environment-scoped inputs each GitHub Environment must define:
 | Name | Kind | Used by |
 |---|---|---|
 | `AWS_DEPLOY_ROLE_ARN` | variable | both deploy workflows — terraform role `webbpulse-<env>-github-actions-deploy` |
-| `LAMBDA_FUNCTION_NAME` | variable | `deploy-backend.yml` (terraform output `lambda_function_name`) |
-| `LAMBDA_ARTIFACT_BUCKET` | variable | `deploy-backend.yml` (terraform output `lambda_artifact_bucket`) |
 | `API_BASE_URL` | variable | backend smoke test and the frontend build (terraform output `backend_url`, no trailing slash) |
 | `FRONTEND_S3_BUCKET` | variable | `deploy-frontend.yml` (terraform output `frontend_bucket`) |
 | `CLOUDFRONT_DISTRIBUTION_ID` | variable | `deploy-frontend.yml` (terraform output `cloudfront_distribution_id`) |

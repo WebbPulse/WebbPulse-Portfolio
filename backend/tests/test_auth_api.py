@@ -5,6 +5,8 @@ Tests for the authentication API endpoints
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.envelope import error_message
+
 
 class TestAuthAPI:
     """Test class for authentication API endpoints"""
@@ -29,7 +31,7 @@ class TestAuthAPI:
         login_data = {"username": "nonexistentuser", "password": "password123"}
         response = client.post("/api/v1/admin/login", json=login_data)
         assert response.status_code == 401
-        assert "Incorrect username or password" in response.json()["detail"]
+        assert "Incorrect username or password" in error_message(response)
 
     @pytest.mark.api
     @pytest.mark.auth
@@ -38,7 +40,7 @@ class TestAuthAPI:
         login_data = {"username": "adminuser", "password": "wrongpassword"}
         response = client.post("/api/v1/admin/login", json=login_data)
         assert response.status_code == 401
-        assert "Incorrect username or password" in response.json()["detail"]
+        assert "Incorrect username or password" in error_message(response)
 
     @pytest.mark.api
     @pytest.mark.auth
@@ -71,7 +73,7 @@ class TestAuthAPI:
         login_data = {"username": "inactiveuser", "password": "password123"}
         response = client.post("/api/v1/admin/login", json=login_data)
         assert response.status_code == 401
-        assert response.json()["detail"] == "User account is inactive"
+        assert error_message(response) == "User account is inactive"
 
     @pytest.mark.api
     @pytest.mark.auth
@@ -117,7 +119,7 @@ class TestTokenValidation:
         """Test accessing protected endpoint with invalid token"""
         response = client.get("/api/v1/posts/admin", headers=invalid_auth_headers)
         assert response.status_code == 401
-        assert "Invalid authentication credentials" in response.json()["detail"]
+        assert "Invalid authentication credentials" in error_message(response)
 
     @pytest.mark.api
     @pytest.mark.auth
@@ -132,7 +134,7 @@ class TestTokenValidation:
         """Test accessing admin endpoint with non-admin token"""
         response = client.get("/api/v1/posts/admin", headers=auth_headers)
         assert response.status_code == 403
-        assert "Not enough permissions" in response.json()["detail"]
+        assert "Not enough permissions" in error_message(response)
 
     @pytest.mark.api
     @pytest.mark.auth
@@ -146,7 +148,7 @@ class TestTokenValidation:
 
         response = client.get("/api/v1/posts/admin", headers=headers)
         assert response.status_code == 403
-        assert "Not enough permissions" in response.json()["detail"]
+        assert "Not enough permissions" in error_message(response)
 
 
 class TestPasswordSecurity:

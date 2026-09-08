@@ -77,9 +77,12 @@ class Settings(BaseServiceSettings):
     SITE_URL: str = "https://www.webbpulse.com"
     DEBUG: bool = False
     LOG_LEVEL: str = "INFO"
-    # Powertools is still what the monolith logs through. It goes when the last
-    # domain moves and `app/lambda_handler.py` is deleted, which is section 6's
-    # final step, not this PR's.
+    # Powertools is still what `app/core/logging.py` logs through, and the
+    # `content`, `identity` and `public` services import that logger directly.
+    # The monolith is gone but they were never migrated onto
+    # `webbpulse.logging`, so the dependency and these two settings stay until
+    # that is done. It is real work on the domain code, not a line in a
+    # deletion PR.
     POWERTOOLS_SERVICE_NAME: str = "webbpulse-portfolio-api"
     POWERTOOLS_METRICS_NAMESPACE: str = "WebbPulse/Portfolio"
     CORS_ORIGINS: str = DEFAULT_CORS_ORIGINS

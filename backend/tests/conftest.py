@@ -75,9 +75,22 @@ def aws_tables():
 
 @pytest.fixture
 def client():
-    from app.main import app
+    """The whole surface in one process, built from the domain routers.
 
-    with TestClient(app) as test_client:
+    This used to be `app.main`, the monolith the retired Lambda served. That
+    module is gone, and root A (`app.composition.app`) is what replaced it: the
+    same four domains' routers on one application, assembled from the single
+    list in `app.composition.wiring` that the four deployed entrypoints also
+    read. So a route this client can reach is a route some domain function
+    serves, which is the property the suite was relying on `app.main` for.
+
+    `build_app()` rather than the module-level `app`, so each test gets an
+    application built after `aws_tables` has installed the moto backend and
+    reset the seed state.
+    """
+    from app.composition.app import build_app
+
+    with TestClient(build_app()) as test_client:
         yield test_client
 
 

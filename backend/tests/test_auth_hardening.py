@@ -18,6 +18,7 @@ from app.domains.identity.service import (
     reset_seed_state,
     seed_admin_user,
 )
+from tests.envelope import error_message
 
 LOGIN = "/api/v1/admin/login"
 PROTECTED = "/api/v1/posts/admin"
@@ -85,7 +86,7 @@ class TestTokens:
         token = create_access_token({"sub": test_admin_user["username"]})
         response = client.get(PROTECTED, headers={"Authorization": f"Bearer {token}"})
         assert response.status_code == 403
-        assert response.json()["detail"] == "User account is inactive"
+        assert error_message(response) == "User account is inactive"
 
     @pytest.mark.auth
     def test_wrong_scheme_rejected(self, client: TestClient):
@@ -278,7 +279,13 @@ class TestClientIp:
 
     @pytest.mark.unit
     def test_mangum_scope_still_works(self):
-        """The monolith runs under Mangum until the last cut, so both paths live."""
+        """Nothing runs under Mangum now, but `client_ip` still reads the scope.
+
+        The monolith is deleted and all four functions are Web Adapter images,
+        so this branch is unreachable in production. It is the last fallback in
+        `client_ip` and costs nothing, so it stays covered rather than being
+        removed in the same change that removes the runtime it was written for.
+        """
         request = self.request(
             {"aws.event": {"requestContext": {"http": {"sourceIp": "1.1.1.1"}}}}
         )

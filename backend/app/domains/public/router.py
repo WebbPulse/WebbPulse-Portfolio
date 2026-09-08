@@ -1,7 +1,8 @@
 """The public domain's router: the unauthenticated, unprefixed surface.
 
 ``GET /`` and ``GET /health`` used to be declared on the application object in
-``app.main``; ``/sitemap.xml`` and ``/robots.txt`` came from the SEO router.
+the monolith's ``app.main``; ``/sitemap.xml`` and ``/robots.txt`` came from the
+SEO router.
 Both are mounted here without a prefix and without tags, in the order the
 application used to build them, so the route table and the OpenAPI document are
 unchanged.

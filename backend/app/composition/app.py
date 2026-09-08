@@ -1,9 +1,16 @@
 """Root A: the whole surface in one process.
 
-This is what local development, `docker-compose`, and the existing `TestClient`
-suite run against. Root B is `app.entrypoints.<domain>`, one per deployed
-function, and both are built from the same domain routers so neither can drift
-from the other.
+This is what the `TestClient` suite runs against, and what a developer runs to
+serve every route from one process. Root B is `app.entrypoints.<domain>`, one
+per deployed function, and both are built from the same domain routers so
+neither can drift from the other.
+
+Nothing deploys this module. The four domain functions serve every route in
+production, and `docker compose --profile domains up` runs those same four
+images locally, which is the closer reproduction. Root A is for the case where
+one process serving all 44 routes is more convenient than four containers:
+
+    uvicorn app.composition.app:app --reload
 
 ## Why this is not `mount_all`
 
@@ -32,14 +39,21 @@ makes each one's routes a literal subset of the monolith's, and root A includes
 the same routers directly. `tests/entrypoints/test_route_split.py` asserts the
 two agree.
 
-## Why `app.main` is still the deployed monolith
+## What this replaced
 
-`app.main` is untouched by this PR and stays the app the monolith Lambda serves
-until the last cut in section 6 retires it. Its OpenAPI document is byte
-identical to what it was, which is the point. This module is the root the split
-is built on, and it differs from `app.main` in exactly the ways the shared
-package brings: the error envelope, the request id, and a liveness-only
-`/health` beside the database-reading one.
+`app.main` was the monolith's root and is deleted. Its function, integration and
+`$default` route were destroyed when section 6 retired the monolith, and the
+source went with them in the PR after that.
+
+This module inherited its job as the whole-surface application. It is not a
+copy: it differs in exactly the ways the shared package brings, which are the
+error envelope and the request id, and it builds from the domain routers rather
+than from a second hand-maintained list. The published contract is unchanged
+either way, and that is asserted rather than assumed.
+`tests/fixtures/route_contract.json` records the 44 routes and 42 operations the
+monolith published, `tests/test_openapi_contract.py` holds this application to
+them in declaration order, and `tests/entrypoints/test_route_split.py` holds the
+four deployed domain applications to the same file and to this application.
 """
 
 from __future__ import annotations

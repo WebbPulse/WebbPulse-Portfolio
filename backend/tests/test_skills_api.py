@@ -5,6 +5,8 @@ Tests for the skills API endpoints
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.envelope import error_message
+
 
 class TestSkillsAPI:
     """Test class for skills API endpoints"""
@@ -55,7 +57,7 @@ class TestSkillsAPI:
     def test_get_nonexistent_skill(self, client: TestClient):
         response = client.get("/api/v1/skills/999")
         assert response.status_code == 404
-        assert "Skill not found" in response.json()["detail"]
+        assert "Skill not found" in error_message(response)
 
     @pytest.mark.api
     def test_inactive_skill_hidden(self, client: TestClient):

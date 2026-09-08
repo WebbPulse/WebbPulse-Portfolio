@@ -1,18 +1,27 @@
 # Portfolio API Backend
 
-FastAPI application for the WebbPulse portfolio, running on AWS Lambda behind an
-API Gateway HTTP API with DynamoDB as the datastore. The public API contract is
-unchanged from the previous Postgres deployment; only the runtime moved.
+FastAPI application for the WebbPulse portfolio, running as four container
+image Lambda functions behind an API Gateway HTTP API, with DynamoDB as the
+datastore. One domain per function: `content`, `resume`, `identity` and
+`public`. The public API contract is unchanged from the single-function
+deployment that preceded them, and from the Postgres deployment before that;
+only the runtime moved.
 
 ## Layout
 
 ```
 app/
-├── main.py                 FastAPI app, CORS, middleware
-├── lambda_handler.py       Lambda entrypoint: app.lambda_handler.handler
 ├── config.py               Settings (env vars, the APP_SECRETS_ARN JSON secret)
 ├── version.py              The version reported by OpenAPI, / and /health
-├── api/v1/api.py           The composition root: mounts every domain under /api/v1
+├── composition/            Root A: the whole surface in one process
+│   ├── wiring.py           The four domains, and build_domain_app
+│   ├── app.py              Every domain's routers on one application
+│   └── settings.py         Settings the shared package's create_app reads
+├── entrypoints/            Root B: one module per deployed function
+│   ├── content.py          python -m app.entrypoints.content
+│   ├── resume.py           .. and one each for resume, identity, public
+│   ├── identity.py
+│   └── public.py
 ├── domains/                One package per domain, no imports between them
 │   ├── content/            posts, categories, the site-content singleton
 │   │   ├── router.py       The domain's routers, prefixes and tags
@@ -53,7 +62,6 @@ app/
 scripts/
 ├── create_local_tables.py  Create the tables against DynamoDB Local
 ├── migrate_postgres_to_dynamo.py  One-time Postgres -> DynamoDB copy
-├── build_lambda.sh         Build dist/function.zip for python3.13 arm64
 └── build_image.sh          Build one domain's container image
 tests/                      pytest suite backed by moto
 ```
@@ -113,8 +121,33 @@ export DYNAMODB_ENDPOINT_URL=http://localhost:8001
 export DYNAMODB_TABLE_PREFIX=webbpulse-development
 export SECRET_KEY=dev-secret ADMIN_USERNAME=admin ADMIN_PASSWORD=admin ADMIN_EMAIL=admin@example.com
 venv/bin/python scripts/create_local_tables.py
-venv/bin/uvicorn app.main:app --reload
 ```
+
+Then run either the whole surface or one domain.
+
+**All 44 routes in one process.** `app.composition.app` is root A: every
+domain's routers on one application, built from the same `wiring.DOMAINS` list
+the four deployed entrypoints read. Convenient when a change spans domains.
+
+```bash
+venv/bin/uvicorn app.composition.app:app --reload   # http://localhost:8000
+```
+
+**One domain, the way Lambda runs it.** `app.entrypoints.<domain>` is root B,
+and it is exactly what the image runs: the Dockerfile's `CMD` is
+`python -m app.entrypoints.${DOMAIN}`. It configures logging and tracing, then
+`run_uvicorn` binds `AWS_LWA_PORT`, then `PORT`, then 8080.
+
+```bash
+PORT=8010 venv/bin/python -m app.entrypoints.content
+PORT=8013 venv/bin/python -m app.entrypoints.public
+```
+
+This is the faithful one: a domain here answers only its own routes, so a
+request for another domain's path 404s exactly as it would if API Gateway
+routed it to the wrong function. `docker compose --profile domains up` is
+closer still, since it runs the real images under the Web Adapter, and the
+"Running all four locally" section below covers it.
 
 The admin user is created (or reconciled with the settings) on the first
 request handled by each process, so there is no separate seed step. Docs are
@@ -135,17 +168,6 @@ reach the `webbpulse` package in CodeArtifact.
 
 Tests run against moto; no AWS credentials or local DynamoDB are needed. See
 `tests/README.md`.
-
-## Building the Lambda artifact
-
-```bash
-scripts/build_lambda.sh
-```
-
-Installs `requirements.txt` for `manylinux2014_aarch64` / CPython 3.13, adds
-`app/`, strips caches and test packages, and writes a deterministic
-`dist/function.zip`. The handler is `app.lambda_handler.handler`; run the
-function on `python3.13`, `arm64`.
 
 ## Container images
 

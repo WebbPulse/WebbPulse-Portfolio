@@ -21,14 +21,12 @@ DOMAINS = sorted(
 # The composition roots: the only places allowed to assemble routers from more
 # than one domain.
 #
-# `app/main.py` and `app/api/v1/api.py` are the monolith's, kept exactly as they
-# were so its published OpenAPI document does not move. `app/composition/` is
-# the split's: `wiring.py` names all four domains and `app.py` walks them, which
-# is what makes root A and the four root B entrypoints two views of one list
-# rather than two lists that can drift.
+# `app/composition/` is the only one left. `app/main.py` and `app/api/v1/api.py`
+# were the monolith's and are deleted: the function that served them was
+# destroyed in PR #118 and the source went with it. `wiring.py` names all four
+# domains and `app.py` walks them, which is what makes root A and the four root
+# B entrypoints two views of one list rather than two lists that can drift.
 COMPOSITION_ROOT = {
-    APP / "main.py",
-    APP / "api" / "v1" / "api.py",
     APP / "composition" / "wiring.py",
     APP / "composition" / "app.py",
 }
@@ -78,8 +76,14 @@ def test_no_cross_domain_imports(domain):
 
 @pytest.mark.parametrize("domain", DOMAINS)
 def test_domains_do_not_import_the_composition_root(domain):
-    """A domain never reaches back up into the thing that assembles it."""
-    forbidden = ("app.main", "app.api", "app.lambda_handler")
+    """A domain never reaches back up into the thing that assembles it.
+
+    `app.composition` is the live root. The other three named here are the
+    monolith's deleted modules, kept in the list so an import of one is caught
+    as a boundary violation rather than as a bare `ModuleNotFoundError` if
+    somebody restores them.
+    """
+    forbidden = ("app.composition", "app.main", "app.api", "app.lambda_handler")
     offences = [
         (str(path.relative_to(APP.parent)), module)
         for path in _domain_files(domain)
