@@ -1,5 +1,18 @@
+# The shared package. It lives only in CodeArtifact (domain `webbpulse`,
+# repository `python`, us-west-2), not on PyPI, so anything that installs this
+# file needs a CodeArtifact token: CI gets one through the org reusable
+# workflow, and `deploy-backend.yml` logs in before it builds.
+#
+# Extras, and why each one: `fastapi` for `create_app` and `run_uvicorn`,
+# `dynamodb` for the secret loader and the repository base, `otel` for
+# `configure_tracing`, and `aws-otel` for the SigV4-signing exporter that the
+# CloudWatch X-Ray OTLP endpoint requires. Without `aws-otel` the package falls
+# back to an unsigned exporter, whose 403s the OTLP exporter retries in silence,
+# so the failure looks exactly like having no traffic. `testing` is a dev
+# dependency and is in requirements-dev.txt.
+webbpulse[fastapi,dynamodb,otel,aws-otel]==0.2.0
+
 fastapi==0.115.12
-mangum==0.19.0
 aws-lambda-powertools==3.15.1
 boto3==1.38.46
 pydantic==2.11.3
@@ -8,3 +21,4 @@ python-jose[cryptography]==3.5.0
 bcrypt==4.3.0
 python-slugify==8.0.4
 email-validator==2.2.0
+uvicorn[standard]==0.34.0

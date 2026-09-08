@@ -1,10 +1,13 @@
 -r requirements.txt
+
+# The shared package's pytest plugin: the `dynamodb_tables`, `app_secret`
+# and `frozen_clock` fixtures, and the moto backends they run on.
+webbpulse[testing]==0.2.0
 moto[dynamodb]==5.1.6
 pytest==8.4.1
 pytest-cov==6.2.1
 httpx==0.28.1
 psycopg2-binary==2.9.10
-uvicorn[standard]==0.34.0
-black==25.1.0
-isort==6.0.1
-flake8==7.2.0
+# Lint and format. Replaced flake8, black and isort in PR 4, because the org
+# reusable workflow this repository now calls runs ruff.
+ruff==0.12.0

@@ -5,6 +5,8 @@ Tests for the posts API endpoints
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.envelope import error_message
+
 
 class TestPostsAPI:
     """Test class for posts API endpoints"""
@@ -34,7 +36,7 @@ class TestPostsAPI:
         self, client: TestClient, test_post, test_category
     ):
         """Test getting posts filtered by category"""
-        response = client.get(f"/api/v1/posts/?category_slug={test_category["slug"]}")
+        response = client.get(f"/api/v1/posts/?category_slug={test_category['slug']}")
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
@@ -46,7 +48,7 @@ class TestPostsAPI:
         self, client: TestClient, test_post, test_category
     ):
         """Test getting posts by category using dedicated endpoint"""
-        response = client.get(f"/api/v1/posts/category/{test_category["slug"]}")
+        response = client.get(f"/api/v1/posts/category/{test_category['slug']}")
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
@@ -56,7 +58,7 @@ class TestPostsAPI:
     @pytest.mark.api
     def test_get_single_post(self, client: TestClient, test_post):
         """Test getting a single post by slug"""
-        response = client.get(f"/api/v1/posts/{test_post["slug"]}")
+        response = client.get(f"/api/v1/posts/{test_post['slug']}")
         assert response.status_code == 200
         data = response.json()
         assert data["title"] == test_post["title"]
@@ -68,14 +70,14 @@ class TestPostsAPI:
         """Test getting a post that doesn't exist"""
         response = client.get("/api/v1/posts/nonexistent-post")
         assert response.status_code == 404
-        assert "Post not found" in response.json()["detail"]
+        assert "Post not found" in error_message(response)
 
     @pytest.mark.api
     def test_get_draft_post_public_fails(self, client: TestClient, test_draft_post):
         """Test that draft posts are not accessible via public endpoint"""
-        response = client.get(f"/api/v1/posts/{test_draft_post["slug"]}")
+        response = client.get(f"/api/v1/posts/{test_draft_post['slug']}")
         assert response.status_code == 404
-        assert "Post not found" in response.json()["detail"]
+        assert "Post not found" in error_message(response)
 
     @pytest.mark.api
     def test_get_categories(self, client: TestClient, test_category):
@@ -113,7 +115,7 @@ class TestPostsAdminAPI:
         """Test getting all posts without admin privileges"""
         response = client.get("/api/v1/posts/admin", headers=auth_headers)
         assert response.status_code == 403
-        assert "Not enough permissions" in response.json()["detail"]
+        assert "Not enough permissions" in error_message(response)
 
     @pytest.mark.api
     @pytest.mark.auth
@@ -177,7 +179,7 @@ class TestPostsAdminAPI:
             "/api/v1/posts/admin", json=post_data, headers=admin_auth_headers
         )
         assert response.status_code == 400
-        assert "already exists" in response.json()["detail"]
+        assert "already exists" in error_message(response)
 
     @pytest.mark.api
     @pytest.mark.auth
@@ -190,7 +192,7 @@ class TestPostsAdminAPI:
             "/api/v1/posts/admin", json=sample_post_data, headers=auth_headers
         )
         assert response.status_code == 403
-        assert "Not enough permissions" in response.json()["detail"]
+        assert "Not enough permissions" in error_message(response)
 
     @pytest.mark.api
     @pytest.mark.auth
@@ -202,7 +204,7 @@ class TestPostsAdminAPI:
             "excerpt": "Updated excerpt",
         }
         response = client.put(
-            f"/api/v1/posts/admin/{test_post["id"]}",
+            f"/api/v1/posts/admin/{test_post['id']}",
             json=update_data,
             headers=admin_auth_headers,
         )
@@ -221,20 +223,20 @@ class TestPostsAdminAPI:
             "/api/v1/posts/admin/999", json=update_data, headers=admin_auth_headers
         )
         assert response.status_code == 404
-        assert "Post not found" in response.json()["detail"]
+        assert "Post not found" in error_message(response)
 
     @pytest.mark.api
     @pytest.mark.auth
     def test_delete_post_admin(self, client: TestClient, admin_auth_headers, test_post):
         """Test deleting a post as admin"""
         response = client.delete(
-            f"/api/v1/posts/admin/{test_post["id"]}", headers=admin_auth_headers
+            f"/api/v1/posts/admin/{test_post['id']}", headers=admin_auth_headers
         )
         assert response.status_code == 200
         assert "deleted successfully" in response.json()["message"]
 
         # Verify post is deleted
-        get_response = client.get(f"/api/v1/posts/{test_post["slug"]}")
+        get_response = client.get(f"/api/v1/posts/{test_post['slug']}")
         assert get_response.status_code == 404
 
     @pytest.mark.api
@@ -243,7 +245,7 @@ class TestPostsAdminAPI:
         """Test deleting a post that doesn't exist"""
         response = client.delete("/api/v1/posts/admin/999", headers=admin_auth_headers)
         assert response.status_code == 404
-        assert "Post not found" in response.json()["detail"]
+        assert "Post not found" in error_message(response)
 
     @pytest.mark.api
     @pytest.mark.auth
@@ -252,14 +254,14 @@ class TestPostsAdminAPI:
     ):
         """Test publishing a draft post as admin"""
         response = client.post(
-            f"/api/v1/posts/admin/{test_draft_post["id"]}/publish",
+            f"/api/v1/posts/admin/{test_draft_post['id']}/publish",
             headers=admin_auth_headers,
         )
         assert response.status_code == 200
         assert "published successfully" in response.json()["message"]
 
         # Verify post is now published
-        get_response = client.get(f"/api/v1/posts/{test_draft_post["slug"]}")
+        get_response = client.get(f"/api/v1/posts/{test_draft_post['slug']}")
         assert get_response.status_code == 200
 
     @pytest.mark.api
@@ -269,10 +271,10 @@ class TestPostsAdminAPI:
     ):
         """Test publishing a post that's already published"""
         response = client.post(
-            f"/api/v1/posts/admin/{test_post["id"]}/publish", headers=admin_auth_headers
+            f"/api/v1/posts/admin/{test_post['id']}/publish", headers=admin_auth_headers
         )
         assert response.status_code == 400
-        assert "already published" in response.json()["detail"]
+        assert "already published" in error_message(response)
 
 
 class TestCategoriesAdminAPI:
@@ -326,7 +328,7 @@ class TestCategoriesAdminAPI:
             "/api/v1/posts/categories", json=category_data, headers=admin_auth_headers
         )
         assert response.status_code == 400
-        assert "already exists" in response.json()["detail"]
+        assert "already exists" in error_message(response)
 
     @pytest.mark.api
     @pytest.mark.auth
@@ -339,7 +341,7 @@ class TestCategoriesAdminAPI:
             "description": "Updated category description",
         }
         response = client.put(
-            f"/api/v1/posts/categories/{test_category["id"]}",
+            f"/api/v1/posts/categories/{test_category['id']}",
             json=update_data,
             headers=admin_auth_headers,
         )
@@ -355,7 +357,7 @@ class TestCategoriesAdminAPI:
     ):
         """Test deleting a category as admin"""
         response = client.delete(
-            f"/api/v1/posts/categories/{test_category["id"]}",
+            f"/api/v1/posts/categories/{test_category['id']}",
             headers=admin_auth_headers,
         )
         assert response.status_code == 200
@@ -368,11 +370,11 @@ class TestCategoriesAdminAPI:
     ):
         """Test deleting a category that has posts (should fail)"""
         response = client.delete(
-            f"/api/v1/posts/categories/{test_category["id"]}",
+            f"/api/v1/posts/categories/{test_category['id']}",
             headers=admin_auth_headers,
         )
         assert response.status_code == 400
-        assert "has posts" in response.json()["detail"]
+        assert "has posts" in error_message(response)
 
 
 class TestPostsAPIValidation:

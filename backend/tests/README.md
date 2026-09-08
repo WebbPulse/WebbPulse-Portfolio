@@ -11,7 +11,8 @@ tests/
 ├── test_auth_api.py            login and token flows
 ├── test_auth_hardening.py      expired/tampered tokens, seeding, login limiter
 ├── test_core_security.py       hashing and JWT unit tests
-├── test_lambda_handler.py      API Gateway v2 events through the Lambda handler
+├── fixtures/                   route_contract.json: the 44 routes and 42
+│                               documented operations the API publishes
 ├── test_migration.py           Postgres -> DynamoDB migration script
 ├── test_repository.py          serializer, repository, ordering
 ├── test_settings.py            env and Secrets Manager configuration
@@ -27,6 +28,12 @@ credentials, `DYNAMODB_TABLE_PREFIX=webbpulse-test`, the CI admin credentials)
 and wraps every test in `mock_aws`, creating all tables from
 `app.db.tables.table_definition`. Each test therefore starts with empty tables
 and a fresh admin-seed state.
+
+The `client` fixture builds root A, `app.composition.app`, which is every
+domain's routers on one application. It used to build `app.main`, the monolith,
+which is deleted. Both roots come from the one list in `app.composition.wiring`
+that the four deployed entrypoints also read, so a route this client reaches is
+a route some domain function serves.
 
 Fixtures such as `test_post` or `test_project` create rows through the
 repositories and return plain dicts, so tests read `test_post["slug"]`. The

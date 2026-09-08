@@ -39,7 +39,7 @@ class TestCertificationsAPI:
 
     @pytest.mark.api
     def test_get_single_certification(self, client: TestClient, test_certification):
-        response = client.get(f"/api/v1/certifications/{test_certification["id"]}")
+        response = client.get(f"/api/v1/certifications/{test_certification['id']}")
         assert response.status_code == 200
         assert response.json()["name"] == test_certification["name"]
 
@@ -83,7 +83,7 @@ class TestCertificationsAdminAPI:
         self, client: TestClient, admin_auth_headers, test_certification
     ):
         response = client.put(
-            f"/api/v1/certifications/{test_certification["id"]}",
+            f"/api/v1/certifications/{test_certification['id']}",
             json={"name": "Renamed Cert"},
             headers=admin_auth_headers,
         )
@@ -96,11 +96,11 @@ class TestCertificationsAdminAPI:
         self, client: TestClient, admin_auth_headers, test_certification
     ):
         response = client.delete(
-            f"/api/v1/certifications/{test_certification["id"]}",
+            f"/api/v1/certifications/{test_certification['id']}",
             headers=admin_auth_headers,
         )
         assert response.status_code == 200
-        get_response = client.get(f"/api/v1/certifications/{test_certification["id"]}")
+        get_response = client.get(f"/api/v1/certifications/{test_certification['id']}")
         assert get_response.status_code == 404
 
 

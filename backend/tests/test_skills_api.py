@@ -5,6 +5,8 @@ Tests for the skills API endpoints
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.envelope import error_message
+
 
 class TestSkillsAPI:
     """Test class for skills API endpoints"""
@@ -45,7 +47,7 @@ class TestSkillsAPI:
     @pytest.mark.api
     def test_get_single_skill(self, client: TestClient, test_skill):
         """Test getting a single skill by ID"""
-        response = client.get(f"/api/v1/skills/{test_skill["id"]}")
+        response = client.get(f"/api/v1/skills/{test_skill['id']}")
         assert response.status_code == 200
         data = response.json()
         assert data["name"] == test_skill["name"]
@@ -55,7 +57,7 @@ class TestSkillsAPI:
     def test_get_nonexistent_skill(self, client: TestClient):
         response = client.get("/api/v1/skills/999")
         assert response.status_code == 404
-        assert "Skill not found" in response.json()["detail"]
+        assert "Skill not found" in error_message(response)
 
     @pytest.mark.api
     def test_inactive_skill_hidden(self, client: TestClient):
@@ -137,7 +139,7 @@ class TestSkillsAdminAPI:
         self, client: TestClient, admin_auth_headers, test_skill
     ):
         response = client.put(
-            f"/api/v1/skills/{test_skill["id"]}",
+            f"/api/v1/skills/{test_skill['id']}",
             json={"name": "Renamed", "tier": "core"},
             headers=admin_auth_headers,
         )
@@ -154,7 +156,7 @@ class TestSkillsAdminAPI:
         self, client: TestClient, auth_headers, test_skill
     ):
         response = client.put(
-            f"/api/v1/skills/{test_skill["id"]}",
+            f"/api/v1/skills/{test_skill['id']}",
             json={"name": "X"},
             headers=auth_headers,
         )
@@ -176,13 +178,13 @@ class TestSkillsAdminAPI:
         self, client: TestClient, admin_auth_headers, test_skill
     ):
         response = client.delete(
-            f"/api/v1/skills/{test_skill["id"]}", headers=admin_auth_headers
+            f"/api/v1/skills/{test_skill['id']}", headers=admin_auth_headers
         )
         assert response.status_code == 200
         assert "deleted successfully" in response.json()["message"]
 
         # Soft delete: GET returns 404
-        get_response = client.get(f"/api/v1/skills/{test_skill["id"]}")
+        get_response = client.get(f"/api/v1/skills/{test_skill['id']}")
         assert get_response.status_code == 404
 
     @pytest.mark.api
@@ -191,7 +193,7 @@ class TestSkillsAdminAPI:
         self, client: TestClient, auth_headers, test_skill
     ):
         response = client.delete(
-            f"/api/v1/skills/{test_skill["id"]}", headers=auth_headers
+            f"/api/v1/skills/{test_skill['id']}", headers=auth_headers
         )
         assert response.status_code == 403
 

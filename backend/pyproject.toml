@@ -1,7 +1,45 @@
-[tool.black]
-line-length = 88
-extend-exclude = "venv|build|dist"
+# Lint and format configuration.
+#
+# This replaced the flake8, black and isort trio in PR 4, because the org
+# reusable workflow `python-ci.yml@v1` runs `ruff check` and
+# `ruff format --check` and PR 4 has to adopt that workflow to reach the
+# `webbpulse` package in CodeArtifact. The plan's section 4 anticipates the
+# pairing: the lint configuration converges in the same pull request that
+# adopts the workflow.
+#
+# The settings below are chosen to keep the existing formatting rather than to
+# reformat the tree. `ruff format` is black compatible and the line length is
+# black's 88, so the format check passes on the current source unchanged, and
+# the lint rules are the ones flake8 and isort were already enforcing.
 
-[tool.isort]
-profile = "black"
-skip = ["venv", "build", "dist"]
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+extend-exclude = ["build", "dist", "htmlcov", ".venv", "venv"]
+
+[tool.ruff.lint]
+# Deliberately the same surface the old tools covered and no more: E and F are
+# pycodestyle and pyflakes, which is what flake8 ran, and I is isort, which ruff
+# enforces in the same pass rather than as a second tool.
+#
+# `B` (bugbear) and `UP` (pyupgrade) are the obvious additions and are left off
+# on purpose. Turning them on flags 196 findings across the existing tree, most
+# of them `Optional[str]` versus `str | None` and `datetime.timezone.utc`
+# versus `datetime.UTC`, and `B008` flags FastAPI's own `Depends()` idiom on
+# every route signature. Fixing all of that here would bury a composition change
+# under a whole tree reformat, and reviewing it would mean reading 200 hunks to
+# find the four that matter. It is a good follow up on its own.
+select = ["E", "F", "I"]
+# E203 is whitespace before a colon, which the formatter itself produces in
+# slices; it was in the flake8 `extend-ignore` for exactly that reason. W503 has
+# no ruff equivalent, because ruff never had the line break rule flake8 needed
+# turning off in the first place.
+ignore = ["E203"]
+
+[tool.ruff.lint.per-file-ignores]
+# conftest.py sets the test environment before importing anything that reads
+# it, so its imports are deliberately not at the top of the file.
+"tests/conftest.py" = ["E402"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]

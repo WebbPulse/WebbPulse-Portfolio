@@ -1,23 +1,46 @@
+import json
 from datetime import timedelta
-from types import SimpleNamespace
 
+import boto3
 import pytest
 from fastapi import Request
 from fastapi.testclient import TestClient
 
 from app.config import settings
 from app.core import login_limiter as limiter_module
-from app.core.admin import ensure_admin_seeded, reset_seed_state, seed_admin_user
-from app.core.login_limiter import client_ip
+from app.core.login_limiter import REQUEST_CONTEXT_HEADER, client_ip
 from app.core.security import create_access_token, get_password_hash, verify_password
+from app.db import client as db_client
 from app.db import entities
+from app.db.tables import META, RATE_LIMIT_TTL_ATTRIBUTE, RATE_LIMITS
+from app.domains.identity.service import (
+    ensure_admin_seeded,
+    reset_seed_state,
+    seed_admin_user,
+)
+from tests.envelope import error_message
 
 LOGIN = "/api/v1/admin/login"
 PROTECTED = "/api/v1/posts/admin"
 
 
+def request_context_headers(ip, payload_format="2.0"):
+    """The `x-amzn-request-context` header the Lambda Web Adapter forwards.
+
+    `payload_format="2.0"` is the HTTP API shape and `"1.0"` the REST shape.
+    Both are worth exercising: a suite that only covers one has no coverage of
+    the branch it will actually meet in production.
+    """
+    section = (
+        {"http": {"sourceIp": ip}}
+        if payload_format == "2.0"
+        else {"identity": {"sourceIp": ip}}
+    )
+    return {REQUEST_CONTEXT_HEADER: json.dumps(section)}
+
+
 def attempt(client, password="wrong", ip=None, username="adminuser"):
-    headers = {"X-Forwarded-For": ip} if ip else {}
+    headers = request_context_headers(ip) if ip else {}
     return client.post(
         LOGIN, json={"username": username, "password": password}, headers=headers
     )
@@ -63,7 +86,7 @@ class TestTokens:
         token = create_access_token({"sub": test_admin_user["username"]})
         response = client.get(PROTECTED, headers={"Authorization": f"Bearer {token}"})
         assert response.status_code == 403
-        assert response.json()["detail"] == "User account is inactive"
+        assert error_message(response) == "User account is inactive"
 
     @pytest.mark.auth
     def test_wrong_scheme_rejected(self, client: TestClient):
@@ -181,6 +204,16 @@ class TestLoginLimiter:
 
 
 class TestClientIp:
+    """The source IP the limiter keys on.
+
+    The old implementation read `request.scope["aws.event"]` first and then fell
+    through to the leftmost `X-Forwarded-For` hop. Mangum sets that scope key and
+    the Lambda Web Adapter does not, so under the adapter the limiter would have
+    keyed on a header the caller controls and stopped limiting anything while
+    still looking like it worked. These tests pin both context shapes, both
+    runtimes, and the refusal to read `X-Forwarded-For` at all.
+    """
+
     @staticmethod
     def request(scope_extra=None, headers=(), client=("9.9.9.9", 1234)):
         scope = {
@@ -192,36 +225,232 @@ class TestClientIp:
         return Request(scope)
 
     @pytest.mark.unit
-    def test_prefers_api_gateway_source_ip(self):
+    def test_adapter_header_payload_2_0(self):
+        """HTTP APIs use payload format 2.0, where the IP is under `http`."""
         request = self.request(
-            {"aws.event": {"requestContext": {"http": {"sourceIp": "1.1.1.1"}}}},
-            headers=[("x-forwarded-for", "2.2.2.2")],
+            headers=[
+                (REQUEST_CONTEXT_HEADER, json.dumps({"http": {"sourceIp": "1.1.1.1"}}))
+            ]
         )
         assert client_ip(request) == "1.1.1.1"
 
     @pytest.mark.unit
-    def test_rest_api_identity_source_ip(self):
+    def test_adapter_header_payload_1_0(self):
+        """REST APIs use payload format 1.0, where the IP is under `identity`."""
+        request = self.request(
+            headers=[
+                (
+                    REQUEST_CONTEXT_HEADER,
+                    json.dumps({"identity": {"sourceIp": "3.3.3.3"}}),
+                )
+            ]
+        )
+        assert client_ip(request) == "3.3.3.3"
+
+    @pytest.mark.unit
+    def test_adapter_header_prefers_payload_2_0(self):
+        request = self.request(
+            headers=[
+                (
+                    REQUEST_CONTEXT_HEADER,
+                    json.dumps(
+                        {
+                            "http": {"sourceIp": "1.1.1.1"},
+                            "identity": {"sourceIp": "3.3.3.3"},
+                        }
+                    ),
+                )
+            ]
+        )
+        assert client_ip(request) == "1.1.1.1"
+
+    @pytest.mark.unit
+    def test_adapter_header_accepts_a_whole_event(self):
+        """A context nested under `requestContext` is tolerated too."""
+        request = self.request(
+            headers=[
+                (
+                    REQUEST_CONTEXT_HEADER,
+                    json.dumps({"requestContext": {"http": {"sourceIp": "4.4.4.4"}}}),
+                )
+            ]
+        )
+        assert client_ip(request) == "4.4.4.4"
+
+    @pytest.mark.unit
+    def test_mangum_scope_still_works(self):
+        """Nothing runs under Mangum now, but `client_ip` still reads the scope.
+
+        The monolith is deleted and all four functions are Web Adapter images,
+        so this branch is unreachable in production. It is the last fallback in
+        `client_ip` and costs nothing, so it stays covered rather than being
+        removed in the same change that removes the runtime it was written for.
+        """
+        request = self.request(
+            {"aws.event": {"requestContext": {"http": {"sourceIp": "1.1.1.1"}}}}
+        )
+        assert client_ip(request) == "1.1.1.1"
+
+    @pytest.mark.unit
+    def test_mangum_scope_rest_shape(self):
         request = self.request(
             {"aws.event": {"requestContext": {"identity": {"sourceIp": "3.3.3.3"}}}}
         )
         assert client_ip(request) == "3.3.3.3"
 
     @pytest.mark.unit
-    def test_forwarded_for_then_client_host(self):
-        assert (
-            client_ip(self.request(headers=[("x-forwarded-for", "2.2.2.2, 5.5.5.5")]))
-            == "2.2.2.2"
+    def test_adapter_header_wins_over_the_mangum_scope(self):
+        request = self.request(
+            {"aws.event": {"requestContext": {"http": {"sourceIp": "3.3.3.3"}}}},
+            headers=[
+                (REQUEST_CONTEXT_HEADER, json.dumps({"http": {"sourceIp": "1.1.1.1"}}))
+            ],
         )
+        assert client_ip(request) == "1.1.1.1"
+
+    @pytest.mark.unit
+    def test_forwarded_for_is_never_trusted(self):
+        """The leftmost hop is caller controlled, so trusting it mints identities."""
+        with_context = self.request(
+            headers=[
+                (REQUEST_CONTEXT_HEADER, json.dumps({"http": {"sourceIp": "1.1.1.1"}})),
+                ("x-forwarded-for", "2.2.2.2"),
+            ]
+        )
+        assert client_ip(with_context) == "1.1.1.1"
+
+        without_context = self.request(
+            headers=[("x-forwarded-for", "2.2.2.2, 5.5.5.5")]
+        )
+        assert client_ip(without_context) == "9.9.9.9", "the peer, never the header"
+
+    @pytest.mark.unit
+    def test_falls_back_to_the_peer_address(self):
         assert client_ip(self.request()) == "9.9.9.9"
         assert client_ip(self.request(client=None)) == "unknown"
 
     @pytest.mark.unit
-    def test_context_shape_is_tolerated(self):
-        assert (
-            client_ip(
-                self.request(
-                    {"aws.event": SimpleNamespace()} if False else {"aws.event": {}}
-                )
-            )
-            == "9.9.9.9"
+    def test_malformed_header_degrades_instead_of_raising(self):
+        request = self.request(headers=[(REQUEST_CONTEXT_HEADER, "{not json")])
+        assert client_ip(request) == "9.9.9.9"
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "context",
+        [
+            {},
+            {"http": {}},
+            {"identity": {}},
+            {"http": {"sourceIp": ""}},
+            {"http": "nope"},
+        ],
+    )
+    def test_a_context_without_a_usable_source_ip(self, context):
+        request = self.request(headers=[(REQUEST_CONTEXT_HEADER, json.dumps(context))])
+        assert client_ip(request) == "9.9.9.9"
+
+    @pytest.mark.unit
+    def test_an_empty_mangum_event_falls_through(self):
+        assert client_ip(self.request({"aws.event": {}})) == "9.9.9.9"
+
+
+class TestLimiterTable:
+    """The limiter items live in `<prefix>-rate-limits`, not in `meta`."""
+
+    @pytest.mark.auth
+    def test_items_are_written_to_the_rate_limits_table(self, aws_tables):
+        limiter = limiter_module.LoginLimiter(3, 60)
+        limiter.record_failure("10.0.0.7")
+
+        table = db_client.table(RATE_LIMITS)
+        item = table.get_item(Key=limiter.key("10.0.0.7")).get("Item")
+        assert item is not None, "the counter must land in the rate-limits table"
+        assert int(item["failures"]) == 1
+
+    @pytest.mark.auth
+    def test_the_ttl_attribute_matches_the_shared_package(self, aws_tables):
+        """`webbpulse.ratelimit` names it `expires_at`, not the `ttl` meta uses."""
+        limiter = limiter_module.LoginLimiter(3, 60)
+        limiter.record_failure("10.0.0.7")
+
+        item = db_client.table(RATE_LIMITS).get_item(Key=limiter.key("10.0.0.7"))[
+            "Item"
+        ]
+        assert RATE_LIMIT_TTL_ATTRIBUTE in item
+        assert "ttl" not in item
+
+    @pytest.mark.auth
+    def test_nothing_is_written_to_meta(self, aws_tables):
+        limiter = limiter_module.LoginLimiter(3, 60)
+        limiter.record_failure("10.0.0.7")
+
+        meta = db_client.table(META)
+        assert meta.get_item(Key=limiter.key("10.0.0.7")).get("Item") is None
+
+
+class TestLimiterFailsOpen:
+    """The `rate-limits` table does not exist until PR 9 creates it.
+
+    Until then every limiter call raises `ResourceNotFoundException`, and the
+    login route has to keep working. Failing closed would convert a missing
+    table, or any DynamoDB blip, into a total outage of the only authenticated
+    route, which is a strictly worse failure than briefly not throttling.
+    """
+
+    @staticmethod
+    def missing_table_limiter(monkeypatch):
+        limiter = limiter_module.LoginLimiter(3, 60)
+        resource = boto3.resource("dynamodb", region_name="us-west-2")
+        absent = resource.Table("webbpulse-test-does-not-exist")
+        monkeypatch.setattr(
+            type(limiter), "table", property(lambda self: absent), raising=False
         )
+        return limiter
+
+    @pytest.mark.auth
+    def test_record_failure_allows_the_request(self, aws_tables, monkeypatch):
+        limiter = self.missing_table_limiter(monkeypatch)
+        # 0 is below every threshold, so the caller treats it as "not limited".
+        assert limiter.record_failure("10.0.0.6") == 0
+
+    @pytest.mark.auth
+    def test_retry_after_reports_no_lockout(self, aws_tables, monkeypatch):
+        limiter = self.missing_table_limiter(monkeypatch)
+        assert limiter.retry_after("10.0.0.6") is None
+
+    @pytest.mark.auth
+    def test_clear_does_not_raise(self, aws_tables, monkeypatch):
+        limiter = self.missing_table_limiter(monkeypatch)
+        limiter.clear("10.0.0.6")
+
+    @pytest.mark.auth
+    def test_the_failure_is_logged_as_failed_open(self, aws_tables, monkeypatch):
+        """The WARNING is the compensating control; an alarm watches for it."""
+        recorded = []
+        monkeypatch.setattr(
+            limiter_module.logger,
+            "warning",
+            lambda message, **kwargs: recorded.append(kwargs),
+        )
+        self.missing_table_limiter(monkeypatch).record_failure("10.0.0.6")
+
+        assert recorded, "a fail-open must not be silent"
+        assert recorded[0]["rate_limit_failed_open"] is True
+        assert recorded[0]["error_type"] == "ResourceNotFoundException"
+
+    @pytest.mark.auth
+    def test_login_still_answers_401_with_the_table_missing(
+        self, client: TestClient, test_admin_user, monkeypatch
+    ):
+        resource = boto3.resource("dynamodb", region_name="us-west-2")
+        absent = resource.Table("webbpulse-test-does-not-exist")
+        monkeypatch.setattr(
+            limiter_module.LoginLimiter,
+            "table",
+            property(lambda self: absent),
+        )
+        for _ in range(settings.LOGIN_MAX_FAILURES + 2):
+            assert attempt(client, ip="10.0.0.5").status_code == 401, (
+                "a broken limiter must never lock anyone out"
+            )
+        assert attempt(client, "adminpassword123", ip="10.0.0.5").status_code == 200

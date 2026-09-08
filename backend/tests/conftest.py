@@ -27,22 +27,34 @@ from fastapi.testclient import TestClient  # noqa: E402
 from moto import mock_aws  # noqa: E402
 
 from app.config import settings  # noqa: E402
-from app.core import admin, site_content  # noqa: E402
 from app.core.security import create_access_token, get_password_hash  # noqa: E402
 from app.db import client as db_client  # noqa: E402
 from app.db import entities  # noqa: E402
-from app.db.tables import ENTITIES, META, TTL_ATTRIBUTE, table_definition  # noqa: E402
+from app.db.tables import (  # noqa: E402
+    ENTITIES,
+    META,
+    RATE_LIMIT_TTL_ATTRIBUTE,
+    RATE_LIMITS,
+    TTL_ATTRIBUTE,
+    table_definition,
+)
+from app.domains.content import service as site_content  # noqa: E402
+from app.domains.identity import service as admin  # noqa: E402
 
 
 def create_all_tables(prefix: str = settings.DYNAMODB_TABLE_PREFIX):
     resource = boto3.resource("dynamodb", region_name="us-west-2")
-    for entity in ENTITIES + (META,):
+    for entity in ENTITIES + (META, RATE_LIMITS):
         definition = table_definition(prefix, entity)
         resource.create_table(**definition)
-    resource.meta.client.update_time_to_live(
-        TableName=f"{prefix}-{META}",
-        TimeToLiveSpecification={"Enabled": True, "AttributeName": TTL_ATTRIBUTE},
-    )
+    for entity, attribute in (
+        (META, TTL_ATTRIBUTE),
+        (RATE_LIMITS, RATE_LIMIT_TTL_ATTRIBUTE),
+    ):
+        resource.meta.client.update_time_to_live(
+            TableName=f"{prefix}-{entity}",
+            TimeToLiveSpecification={"Enabled": True, "AttributeName": attribute},
+        )
 
 
 def reset_seed_state():
@@ -63,9 +75,22 @@ def aws_tables():
 
 @pytest.fixture
 def client():
-    from app.main import app
+    """The whole surface in one process, built from the domain routers.
 
-    with TestClient(app) as test_client:
+    This used to be `app.main`, the monolith the retired Lambda served. That
+    module is gone, and root A (`app.composition.app`) is what replaced it: the
+    same four domains' routers on one application, assembled from the single
+    list in `app.composition.wiring` that the four deployed entrypoints also
+    read. So a route this client can reach is a route some domain function
+    serves, which is the property the suite was relying on `app.main` for.
+
+    `build_app()` rather than the module-level `app`, so each test gets an
+    application built after `aws_tables` has installed the moto backend and
+    reset the seed state.
+    """
+    from app.composition.app import build_app
+
+    with TestClient(build_app()) as test_client:
         yield test_client
 
 

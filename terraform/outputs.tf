@@ -5,7 +5,7 @@ output "aws_account_id" {
 
 output "aws_region" {
   description = "AWS region being deployed to"
-  value       = data.aws_region.current.name
+  value       = data.aws_region.current.region
 }
 
 output "webbpulse_zone_id" {
@@ -53,13 +53,12 @@ output "api_custom_domain" {
   value       = module.api.custom_domain_target_domain_name
 }
 
-output "lambda_function_name" {
-  description = "Lambda function name — CI/CD updates its code after each backend push"
-  value       = module.lambda_api.function_name
-}
+# The monolith's `lambda_function_name` output is gone with the function. The
+# deploy job that read it through vars.LAMBDA_FUNCTION_NAME is gone too; the
+# four domain functions are named by `domain_lambda_function_names` below.
 
 output "lambda_artifact_bucket" {
-  description = "S3 bucket CI/CD uploads Lambda deployment packages to"
+  description = "S3 bucket the monolith's deployment zips were uploaded to. Kept after the monolith was retired because the last zip is what a rollback would restore the function from; nothing writes to it now."
   value       = module.lambda_artifacts.bucket_id
 }
 
@@ -76,4 +75,19 @@ output "staging_access_gate_hosted_ui" {
 output "staging_access_gate_user_pool_id" {
   description = "Cognito user pool id of the staging access gate, null when the gate is off"
   value       = one(module.staging_access_gate[*].user_pool_id)
+}
+
+output "github_actions_ci_role_arn" {
+  description = "ARN of the read-only CodeArtifact role pull request CI assumes. Set it as the CI_AWS_ROLE_ARN repository variable (staging value only, since pull request checks run against staging)."
+  value       = module.github_actions_ci_role.role_arn
+}
+
+output "domain_lambda_function_names" {
+  description = "Per-domain Lambda function name keyed by domain, for the function-image map the image deploy step passes to UpdateFunctionCode. Since the monolith was retired these are every Lambda the API routes to."
+  value       = { for name, fn in module.lambda_domain : name => fn.function_name }
+}
+
+output "domain_lambda_log_group_names" {
+  description = "Per-domain CloudWatch log group name keyed by domain. The application errors metric filters read it, and a responder tailing one domain does not have to guess the group from the function name."
+  value       = { for name, fn in module.lambda_domain : name => fn.log_group_name }
 }

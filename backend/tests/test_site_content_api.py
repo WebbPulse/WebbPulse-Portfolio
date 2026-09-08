@@ -7,13 +7,13 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from app.core.site_content import (
+from app.db import entities
+from app.domains.content.defaults import SITE_CONTENT_DEFAULTS
+from app.domains.content.service import (
     ensure_site_content_seeded,
     reset_seed_state,
     seed_site_content,
 )
-from app.core.site_content_defaults import SITE_CONTENT_DEFAULTS
-from app.db import entities
 
 
 class TestSiteContentSeeding:
