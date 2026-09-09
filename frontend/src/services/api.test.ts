@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiService } from './api';
 
-// These tests cover the adapter this service is: @webbpulse/api-client rejects
-// on a non 2xx, and every call site in this application reads the
-// `{ data, error }` envelope instead. What is worth pinning down is the
-// conversion between the two, not the transport, which the shared package
-// tests itself.
+// These tests cover the contract this service exposes: @webbpulse/api-client
+// rejects on a non 2xx, and every call site in this application reads a
+// `{ data, error }` envelope instead. The conversion is now the package's
+// `createEnvelopeClient` rather than a helper in this file, so what is worth
+// pinning down here is that wiring it up preserved the shapes those call sites
+// depend on. The transport and the envelope conversion are tested in the
+// package itself; these are the application's end of the contract.
 
 const BASE = 'https://api.example.test/api/v1';
 
@@ -63,6 +65,120 @@ describe('ApiService', () => {
     expect(response.data).toBeNull();
     // formatApiErrorMessage unpacks the FastAPI detail field.
     expect(response.error).toBe('Project not found');
+  });
+
+  it('reads the message out of the WebbPulse error envelope', async () => {
+    // The shape every WebbPulse backend renders, built by `error_body` in the
+    // shared Python package. `message` is the field written for a caller to
+    // read, so it is the one that has to reach the UI.
+    // The backend writes the id into both the body and the X-Request-ID
+    // header, from the same middleware value, so the fixture carries both.
+    fetchMock.mockResolvedValue(
+      jsonResponse(
+        {
+          success: false,
+          status: 404,
+          message: 'Blog post not found.',
+          request_id: '0199a1f2-0000-7000-8000-000000000001',
+        },
+        {
+          status: 404,
+          headers: {
+            'content-type': 'application/json',
+            'x-request-id': '0199a1f2-0000-7000-8000-000000000001',
+          },
+        }
+      )
+    );
+    const service = new ApiService(BASE);
+
+    const response = await service.getBlogPostBySlug('missing');
+
+    expect(response.data).toBeNull();
+    expect(response.error).toBe('Blog post not found.');
+    // The envelope carries these alongside the message now. The hand rolled
+    // adapter dropped both, so a failure could not be joined to its trace.
+    // Note the envelope's own requestId is read from the response header, not
+    // from the body: getWebbPulseError is what prefers the body's request_id,
+    // which is why the log line above still has an id for a body that crossed
+    // a proxy that dropped the header.
+    expect(response.status).toBe(404);
+    expect(response.requestId).toBe('0199a1f2-0000-7000-8000-000000000001');
+  });
+
+  it('logs the request id and status from the envelope on a failure', async () => {
+    const consoleError = vi.spyOn(console, 'error');
+    // A 500 on a GET is retried by the client, and a Response body can only be
+    // read once, so the mock builds a fresh one per attempt rather than
+    // handing back the same object.
+    fetchMock.mockImplementation(() =>
+      Promise.resolve(
+        jsonResponse(
+          {
+            success: false,
+            status: 500,
+            message: 'Internal server error.',
+            request_id: '0199a1f2-0000-7000-8000-000000000002',
+          },
+          { status: 500 }
+        )
+      )
+    );
+    const service = new ApiService(BASE);
+
+    await service.getSiteContent();
+
+    // getWebbPulseError flattens the snake cased body, so the log line carries
+    // the id that joins it to CloudWatch without this file parsing the body.
+    expect(consoleError).toHaveBeenCalledWith('API request failed:', {
+      message: 'Internal server error.',
+      status: 500,
+      requestId: '0199a1f2-0000-7000-8000-000000000002',
+    });
+  });
+
+  it('reports an error_code when the backend sends one', async () => {
+    // Portfolio's backend has not opted into `error_codes` yet, so this pins
+    // the branch that will start firing when it does, rather than leaving the
+    // first consumer of a code to discover the plumbing was never wired.
+    const consoleError = vi.spyOn(console, 'error');
+    fetchMock.mockResolvedValue(
+      jsonResponse(
+        {
+          success: false,
+          status: 409,
+          message: 'That slug is already taken.',
+          request_id: '0199a1f2-0000-7000-8000-000000000003',
+          error_code: 'CONFLICT',
+        },
+        { status: 409 }
+      )
+    );
+    const service = new ApiService(BASE);
+
+    const response = await service.createCategory({ name: 'Ops', slug: 'ops' });
+
+    expect(response.error).toBe('That slug is already taken.');
+    expect(consoleError).toHaveBeenCalledWith('API request failed:', {
+      message: 'That slug is already taken.',
+      status: 409,
+      errorCode: 'CONFLICT',
+      requestId: '0199a1f2-0000-7000-8000-000000000003',
+    });
+  });
+
+  it('converts a network failure into the error field', async () => {
+    // fetch rejecting is what a browser does when the request never reached the
+    // server. There is no envelope to read, so the envelope has no status and
+    // the message is whatever the client raised.
+    fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
+    const service = new ApiService(BASE);
+
+    const response = await service.getProjects();
+
+    expect(response.data).toBeNull();
+    expect(response.error).toBeTruthy();
+    expect(response.status).toBeUndefined();
   });
 
   it('unpacks a FastAPI validation error array into one line', async () => {
