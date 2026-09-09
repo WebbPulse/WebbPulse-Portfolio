@@ -35,6 +35,14 @@
 #     ORDERING note on the authorizer below has it in full: the two `.well-known`
 #     routes and the function behind them have to exist and answer before the
 #     authorizer can be created, and whoami has to be created after it.
+#
+#     Nothing about that ordering applies to the mint route. `POST
+#     /api/identity/spike/token` names no authorizer of its own, so it is an
+#     ordinary entry in apigateway.tf's routes map behind the staging access
+#     gate, alongside the two `.well-known` keys. It was missing from that map
+#     when the spike first went live, which made the mint endpoint a gateway 404
+#     and left no way to obtain a token to point at whoami; the routes-map entry
+#     is the fix.
 #  2. Whether moto's kms:Sign is faithful enough to trust in a unit suite. The
 #     package suite deliberately does not depend on the answer; this spike is
 #     where real KMS settles it.
@@ -47,7 +55,7 @@
 # ---------------------------------------------------------------------------
 
 variable "identity_spike_enabled" {
-  description = "Stand up the M0 identity spike: a KMS RSA_2048 signing key, a JWT authorizer on the HTTP API, and one protected route. A throwaway experiment for staging only, defaulting to false so production and any workspace that has not opted in plan a no-op. Turn it off and apply again to remove every resource in identity_spike.tf; the KMS key then enters its waiting period rather than being deleted immediately."
+  description = "Stand up the M0 identity spike: a KMS RSA_2048 signing key, a JWT authorizer on the HTTP API, one route protected by that authorizer, and three routes in apigateway.tf's routes map (the two anonymous .well-known documents and the gated mint route). A throwaway experiment for staging only, defaulting to false so production and any workspace that has not opted in plan a no-op. Turn it off and apply again to remove every resource in identity_spike.tf; the KMS key then enters its waiting period rather than being deleted immediately."
   type        = bool
   default     = false
 

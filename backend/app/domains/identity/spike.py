@@ -25,7 +25,11 @@ What is declared here is the two ends of the experiment:
 - `POST /api/identity/spike/token` mints a token. It is behind the staging
   access gate like everything else in the application, and it authenticates
   nobody: any caller past the gate gets a signed token for whatever subject they
-  ask for. **That is why the whole spike is gated and why it is throwaway.** A
+  ask for. Declaring the handler here is only half of that: the route key has to
+  be in `apigateway.tf`'s routes map for a request to reach this process at all,
+  and it was missing from the map when the spike first went live, which made the
+  endpoint API Gateway's own 404 and left no way to obtain a token to point at
+  `whoami`. **That is why the whole spike is gated and why it is throwaway.** A
   route that mints a valid access token for an arbitrary subject is the exact
   shape of the bug the real design exists to prevent, and it is acceptable here
   only because the gate stands in front of it, the environment is staging, and
@@ -51,11 +55,13 @@ this file load-bearing at apply time rather than only at request time. This
 process must already be serving the discovery document, through a route that is
 already reachable anonymously, before the authorizer that protects `whoami` can
 exist at all. `terraform/identity_spike.tf` carries the ordering that guarantees
-it: the two `.well-known` routes stay in `apigateway.tf`'s routes map, `whoami`
-is a standalone route created after the authorizer, and the authorizer waits on
-both modules plus a poll of the live URL. Switching `IDENTITY_SPIKE_ENABLED` off
-and on again is therefore not a runtime toggle for an environment that already
-has the authorizer; it is the thing the authorizer was built on top of.
+it: the two `.well-known` routes stay in `apigateway.tf`'s routes map, next to
+the gated mint route, which names no authorizer and so constrains nothing;
+`whoami` is a standalone route created after the authorizer, and the authorizer
+waits on both modules plus a poll of the live URL. Switching
+`IDENTITY_SPIKE_ENABLED` off and on again is therefore not a runtime toggle for
+an environment that already has the authorizer; it is the thing the authorizer
+was built on top of.
 """
 
 from __future__ import annotations

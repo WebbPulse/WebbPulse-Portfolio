@@ -306,38 +306,54 @@ module "api" {
     # says in as many words that setting NONE on any of them would punch a hole
     # straight past the gate.
     #
-    # These two entries set it deliberately, and they are gated on
-    # local.identity_spike_enabled, so with the spike off this merge contributes
-    # an empty map and the authorization surface is exactly what the paragraph
-    # describes.
+    # The two `.well-known` entries set it deliberately, and every entry in this
+    # block is gated on local.identity_spike_enabled, so with the spike off this
+    # merge contributes an empty map and the authorization surface is exactly
+    # what the paragraph describes.
     #
-    # Why they have to override it at all: API Gateway allows at most one
+    # Why those two have to override it at all: API Gateway allows at most one
     # authorizer per route. The gate's CUSTOM authorizer is applied to every
     # route through the module's var.authorizer_id, so a route cannot be behind
     # the gate and behind the JWT authorizer at once. Section 2.5 of
     # docs/identity-standard.md records that as a blocker; the http-api module's
     # per-route authorization_type and authorizer_id override is the way through
-    # it, and the two keys here are the first use of the type override.
+    # it, and the two `.well-known` keys here are the first use of the type
+    # override.
     #
-    # The spike's third key, `GET /api/identity/spike/whoami`, is deliberately
+    # `POST /api/identity/spike/token`, the mint route, is the third key here
+    # and it sets no authorization_type at all. That is the point: it takes the
+    # module's CUSTOM default like every permanent entry above, so it sits
+    # behind the staging access gate. The gate is the only thing standing in
+    # front of a route that mints a signed token for an arbitrary subject
+    # without authenticating anybody, which is why spike.py's own docstring
+    # calls the gate the reason a route like this is acceptable here and nowhere
+    # else. It belongs in the map rather than beside `whoami` in
+    # identity_spike.tf precisely because it does not name the JWT authorizer:
+    # nothing about it constrains the ordering below, and a routes-map entry is
+    # what keeps its authorization resolved by the module rather than written
+    # out by hand.
+    #
+    # The spike's fourth key, `GET /api/identity/spike/whoami`, is deliberately
     # NOT here. It is a standalone aws_apigatewayv2_route in identity_spike.tf,
     # because it is the one route that names the JWT authorizer and the
-    # authorizer cannot be created until these two keys already answer.
+    # authorizer cannot be created until the two `.well-known` keys already
+    # answer.
     #
     # The reason is an ordering constraint the first apply discovered the hard
     # way. CreateAuthorizer on an HTTP API validates the issuer synchronously:
     # API Gateway fetches <issuer>/.well-known/openid-configuration and refuses
     # the call with BadRequestException, "Issuer must have a valid discovery
-    # endpoint", if it does not get a discovery document back. So the two keys
-    # below and the identity function serving them have to exist before the
-    # authorizer does.
+    # endpoint", if it does not get a discovery document back. So the two
+    # `.well-known` keys below and the identity function serving them have to
+    # exist before the authorizer does.
     #
     # A whoami entry in this map would reference the authorizer's id, which
     # makes every route in the map wait on the authorizer, which waits on a
     # discovery document only those routes can serve. The first apply
     # (run-Yj1PJz22kVW7NM4p) failed exactly there: the authorizer errored and
-    # all three routes were skipped, leaving /.well-known/openid-configuration a
-    # gateway 404. Keeping whoami out of the map is what breaks that knot.
+    # every route in the map was skipped, leaving
+    # /.well-known/openid-configuration a gateway 404. Keeping whoami out of the
+    # map is what breaks that knot.
     #
     # The two `.well-known` keys are NONE, and that is not a convenience. The
     # JWT authorizer fetches the issuer's key material itself, from API
@@ -355,20 +371,36 @@ module "api" {
     # path: the private half never leaves KMS. So this is a hole in the gate in
     # the literal sense, and an empty one.
     #
-    # Both keys are GET and both are literal, with no `{proxy+}`. That is
-    # narrower than every other entry in this map on purpose: the exemption
-    # should cover exactly the two documents the authorizer needs and nothing
-    # else the identity function serves. A greedy key under `/.well-known/`
-    # would exempt any future path there too, which is precisely the kind of
-    # by-omission widening the rest of this file is written to avoid. Neither
-    # key ends in a slash, which is not a style choice either: a route key path
-    # segment may not be empty, and cut 3's block above records the
-    # BadRequestException that proves it.
+    # Both `.well-known` keys are GET and both are literal, with no `{proxy+}`.
+    # That is narrower than every other entry in this map on purpose: the
+    # exemption should cover exactly the two documents the authorizer needs and
+    # nothing else the identity function serves. A greedy key under
+    # `/.well-known/` would exempt any future path there too, which is precisely
+    # the kind of by-omission widening the rest of this file is written to
+    # avoid. Neither key ends in a slash, which is not a style choice either: a
+    # route key path segment may not be empty, and cut 3's block above records
+    # the BadRequestException that proves it.
     #
-    # The paths are at the API origin rather than under `/api/v1/`, because RFC
-    # 8615 puts `.well-known` at the root of the origin and the authorizer
+    # Their paths are at the API origin rather than under `/api/v1/`, because
+    # RFC 8615 puts `.well-known` at the root of the origin and the authorizer
     # derives them from the issuer, which is the origin. That is why the
     # application mounts webbpulse.identity's router with no prefix.
+    #
+    # The mint key is literal too, and POST rather than ANY. Literal because the
+    # spike declares exactly one path under `/api/identity/spike/` that the gate
+    # is meant to cover, and a greedy key there would also swallow `whoami`,
+    # whose whole purpose is to be reached through the JWT authorizer instead:
+    # API Gateway prefers a full literal match over a greedy one, so `whoami`
+    # would still win for its own request, but the map would then be claiming a
+    # prefix it does not own and a future spike path would be gated by accident.
+    # POST rather than ANY for the same reason in the other direction: ANY here
+    # would put every method on that path behind the gate, `whoami`'s route key
+    # is a sibling rather than a child, and the domain-owns-the-prefix argument
+    # that makes ANY right for `/api/v1/admin` does not apply to a two-route
+    # experiment that splits its authorization across two authorizers. It does
+    # not end in a slash; `mint` is declared as `POST /token` on a router
+    # mounted at `/api/identity/spike`, so the served path has no trailing
+    # slash to match.
     #
     local.identity_spike_enabled ? {
       "GET /.well-known/jwks.json" = {
@@ -378,6 +410,12 @@ module "api" {
       "GET /.well-known/openid-configuration" = {
         integration        = "identity"
         authorization_type = "NONE"
+      }
+      # No authorization_type: the module's CUSTOM default, which is the staging
+      # access gate. See the mint paragraph above for why that is the whole
+      # safety story for this route.
+      "POST /api/identity/spike/token" = {
+        integration = "identity"
       }
     } : {},
   )
