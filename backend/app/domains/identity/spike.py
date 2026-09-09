@@ -66,8 +66,6 @@ was built on top of.
 
 from __future__ import annotations
 
-import base64
-import binascii
 import json
 from typing import Any
 
@@ -77,8 +75,10 @@ from ...config import get_settings
 
 #: Where the Lambda Web Adapter puts the API Gateway request context. The
 #: adapter turns an invoke into an ordinary HTTP request against 127.0.0.1 and
-#: passes the event's `requestContext` through as this header, base64-encoded
-#: JSON. Section 2.4 of the standard describes reading it; there is no
+#: passes the event's `requestContext` through as this header as a plain JSON
+#: string, not base64 (M0 verified this against the running adapter; the
+#: package's `webbpulse.http.client_ip` has always parsed it the same way).
+#: Section 2.4 of the standard describes reading it; there is no
 #: `authorizer_claims` helper in webbpulse 0.6.0 to call, so the spike reads the
 #: header itself and M1 decides where the shared version of this belongs.
 REQUEST_CONTEXT_HEADER = "x-amzn-request-context"
@@ -99,12 +99,11 @@ def _request_context(request: Request) -> dict[str, Any]:
     if not raw:
         return {}
     try:
-        # The header is base64 without padding in some adapter versions, so the
-        # padding is restored rather than assumed. `validate=False` would hide a
-        # genuinely corrupt value, which is why it is left strict.
-        padded = raw + "=" * (-len(raw) % 4)
-        decoded = json.loads(base64.b64decode(padded))
-    except (binascii.Error, ValueError, UnicodeDecodeError):
+        # Plain JSON, exactly as the adapter sends it. The spike originally
+        # base64-decoded this and every real request failed the decode, which
+        # surfaced as a 401 indistinguishable from a rejected token.
+        decoded = json.loads(raw)
+    except ValueError:
         return {}
     return decoded if isinstance(decoded, dict) else {}
 
