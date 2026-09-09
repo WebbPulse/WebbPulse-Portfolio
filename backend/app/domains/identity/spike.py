@@ -39,6 +39,23 @@ What is declared here is the two ends of the experiment:
   fetched the JWKS, verified an RS256 signature that KMS produced, and matched
   the issuer and the audience. A 200 from it is the proof. A 401 from API
   Gateway with no token, which never reaches this handler, is the other half.
+
+One result is already in, and it is the one that made the first apply fail:
+**API Gateway validates a JWT authorizer's issuer when the authorizer is
+created.** CreateAuthorizer fetches `<issuer>/.well-known/openid-configuration`
+synchronously and refuses the call with a BadRequestException, "Issuer must have
+a valid discovery endpoint", when it does not get a discovery document back.
+
+That is a fact about deployment order, not about this file, but it is what makes
+this file load-bearing at apply time rather than only at request time. This
+process must already be serving the discovery document, through a route that is
+already reachable anonymously, before the authorizer that protects `whoami` can
+exist at all. `terraform/identity_spike.tf` carries the ordering that guarantees
+it: the two `.well-known` routes stay in `apigateway.tf`'s routes map, `whoami`
+is a standalone route created after the authorizer, and the authorizer waits on
+both modules plus a poll of the live URL. Switching `IDENTITY_SPIKE_ENABLED` off
+and on again is therefore not a runtime toggle for an environment that already
+has the authorizer; it is the thing the authorizer was built on top of.
 """
 
 from __future__ import annotations

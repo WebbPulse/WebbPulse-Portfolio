@@ -44,6 +44,13 @@ which probes both slash forms of every collection.
 Terraform is parsed rather than planned. A plan needs credentials and a
 workspace; the route keys are static text in the module call, and a regex over
 them is enough to compare two sets of strings.
+
+Almost all of them are in `terraform/apigateway.tf`. The identity standard's M0
+spike puts one route, `whoami`, in `terraform/identity_spike.tf` instead, as its
+own `aws_apigatewayv2_route` rather than a routes-map entry, because it has to
+be created after the JWT authorizer while the rest of the route set has to be
+created before it. `standalone_route_keys` reads that file, and the tests around
+it pin the split so it cannot be tidied away.
 """
 
 import re
@@ -526,9 +533,20 @@ def test_no_content_route_key_points_at_a_path_the_app_does_not_serve():
 
 
 #: Route keys served by the `identity` integration that belong to the identity
-#: standard's M0 spike rather than to cut 4. They are gated in `apigateway.tf`
-#: behind `local.identity_spike_enabled`, which is false by default, so they
-#: exist in no plan unless the spike has been switched on.
+#: standard's M0 spike rather than to cut 4. Every one of them is gated behind
+#: `local.identity_spike_enabled`, which is false by default, so they exist in
+#: no plan unless the spike has been switched on.
+#:
+#: The two `.well-known` keys are entries in `apigateway.tf`'s routes map.
+#: `whoami` is not, and that split is the spike's whole ordering fix rather than
+#: a filing preference: `whoami` is the one route that names the JWT authorizer,
+#: API Gateway validates the issuer by fetching the discovery document when the
+#: authorizer is created, and a routes-map entry naming the authorizer would
+#: make every route on the API wait on an authorizer that needs two of those
+#: routes to already answer. So `whoami` is a standalone
+#: `aws_apigatewayv2_route` in `identity_spike.tf`. `spike_route_keys()` below
+#: reads both files, and `test_the_spike_keys_are_the_three_expected_ones` pins
+#: which file each key has to come from.
 #:
 #: They are excluded from `identity_route_keys()` rather than folded into it
 #: because every assertion that helper feeds is about cut 4's permanent shape:
@@ -544,6 +562,49 @@ IDENTITY_SPIKE_ROUTE_KEYS = {
     "GET /.well-known/openid-configuration",
     "GET /api/identity/spike/whoami",
 }
+
+#: The spike's `.well-known` keys, the subset that lives in `apigateway.tf`'s
+#: routes map. The rest of `IDENTITY_SPIKE_ROUTE_KEYS` is the standalone route.
+IDENTITY_SPIKE_ROUTES_MAP_KEYS = {
+    "GET /.well-known/jwks.json",
+    "GET /.well-known/openid-configuration",
+}
+
+IDENTITY_SPIKE_TF = REPO / "terraform" / "identity_spike.tf"
+
+# `route_key = "<METHOD> <path>"` on a standalone aws_apigatewayv2_route. The
+# routes-map form is a map key rather than an argument, so `ROUTE_ENTRY` does
+# not match this and this does not match those.
+STANDALONE_ROUTE_KEY = re.compile(
+    r'^\s*route_key\s*=\s*"'
+    r'(?P<key>(?:ANY|GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) /[^"]*)"',
+    re.MULTILINE,
+)
+
+
+def standalone_route_keys() -> set[str]:
+    """Route keys declared as their own resource rather than in the routes map.
+
+    Today this is the spike's `whoami` and nothing else. Standalone routes are
+    the exception in this repository, for the reason `apigateway.tf` gives at
+    length: a route in the map is addressed by its key and its authorization is
+    resolved by the module, and both of those are worth keeping. `whoami` is out
+    of the map only because it has to be created after an authorizer that has to
+    be created after the map's own routes.
+    """
+    return {
+        match.group("key")
+        for match in STANDALONE_ROUTE_KEY.finditer(
+            IDENTITY_SPIKE_TF.read_text(encoding="utf-8")
+        )
+    }
+
+
+def spike_route_keys() -> set[str]:
+    """Every M0 spike route key Terraform will create, from both files."""
+    return (
+        gateway_route_keys()["identity"] & IDENTITY_SPIKE_ROUTE_KEYS
+    ) | standalone_route_keys()
 
 
 def identity_route_keys() -> set[str]:
@@ -563,9 +624,9 @@ def identity_route_keys() -> set[str]:
 def test_the_spike_keys_are_the_three_expected_ones():
     """The M0 spike's route keys, pinned so the exclusion above cannot grow.
 
-    Either all three are present, because the spike block is in
-    `apigateway.tf`, or none are, because it has been removed with the rest of
-    the spike. A partial set means somebody edited one and not the others.
+    Either all three are present, because the spike is switched on in the
+    configuration, or none are, because it has been removed with the rest of the
+    spike. A partial set means somebody edited one and not the others.
 
     The shape of each one matters, and it is the reason these are pinned rather
     than merely excluded:
@@ -582,8 +643,59 @@ def test_the_spike_keys_are_the_three_expected_ones():
     - `whoami` is outside `/api/v1` so a throwaway experiment stays out of the
       published contract in `tests/fixtures/route_contract.json`.
     """
-    present = gateway_route_keys()["identity"] & IDENTITY_SPIKE_ROUTE_KEYS
+    present = spike_route_keys()
     assert present in (set(), IDENTITY_SPIKE_ROUTE_KEYS), sorted(present)
+
+
+def test_the_spike_splits_its_keys_across_the_two_files_for_ordering():
+    """Which file each spike key lives in, which is the ordering fix itself.
+
+    API Gateway validates a JWT authorizer's issuer at CreateAuthorizer time by
+    fetching `<issuer>/.well-known/openid-configuration`, and refuses the call
+    with a BadRequestException when that is not a discovery document. The first
+    apply of the spike proved it. So the two `.well-known` routes have to exist
+    before the authorizer, and `whoami`, which names the authorizer, after it.
+
+    A single routes map cannot express that. Every route in it is one
+    `for_each`, so a `whoami` entry referencing the authorizer's id makes the
+    whole set wait on the authorizer, and the authorizer waits on a document
+    only that set can serve. Moving `whoami` out is what breaks the knot, and
+    this test is what keeps somebody from tidying it back in.
+    """
+    if not spike_route_keys():
+        pytest.skip("the M0 spike has been removed")
+
+    assert gateway_route_keys()["identity"] & IDENTITY_SPIKE_ROUTE_KEYS == (
+        IDENTITY_SPIKE_ROUTES_MAP_KEYS
+    )
+    assert standalone_route_keys() == {"GET /api/identity/spike/whoami"}
+
+
+def test_the_spike_authorizer_waits_for_the_routes_and_the_function():
+    """The `depends_on` that orders the authorizer after what it fetches.
+
+    Nothing the authorizer resource references implies either dependency:
+    `module.api.api_id` is the API, created long before any route on it, and the
+    authorizer reads nothing at all from `module.lambda_domain`. Without the
+    explicit list Terraform is free to create the authorizer first, which is
+    exactly what the first apply did.
+
+    The wait resource is the third entry because `depends_on` orders API calls
+    and not their effects; see its comment in `identity_spike.tf`.
+    """
+    source = IDENTITY_SPIKE_TF.read_text(encoding="utf-8")
+    if not spike_route_keys():
+        pytest.skip("the M0 spike has been removed")
+
+    authorizer = source.split('resource "aws_apigatewayv2_authorizer"', 1)[1]
+    depends = authorizer.split("depends_on", 1)[1].split("]", 1)[0]
+
+    for required in (
+        "module.api",
+        "module.lambda_domain",
+        "terraform_data.identity_spike_discovery_ready",
+    ):
+        assert required in depends, required
 
 
 def test_identity_has_two_route_keys_for_its_single_prefix():

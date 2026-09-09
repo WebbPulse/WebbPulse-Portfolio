@@ -18,6 +18,23 @@
 #     which resolves the path. Serving both documents at the origin satisfies
 #     either behaviour, and the access log tells us afterwards which one was
 #     actually fetched.
+#
+#     ANSWERED, and earlier than expected. API Gateway fetches the discovery
+#     document, and it does so at CreateAuthorizer time rather than only at
+#     request time: the first apply of this file (run-Yj1PJz22kVW7NM4p) failed
+#     with "BadRequestException: Caught exception when connecting to
+#     https://api.staging.webbpulse.com/.well-known/openid-configuration for
+#     issuer https://api.staging.webbpulse.com ... Issuer must have a valid
+#     discovery endpoint ended with '/.well-known/openid-configuration'". So the
+#     path is derived from the issuer, the document has to be a real discovery
+#     document, and jwks_uri is read out of it in the ordinary OIDC way. The
+#     JWKS fetch itself has still not been observed; the access log settles that
+#     once a request actually reaches whoami.
+#
+#     The consequence is the ordering this file is now written around, and the
+#     ORDERING note on the authorizer below has it in full: the two `.well-known`
+#     routes and the function behind them have to exist and answer before the
+#     authorizer can be created, and whoami has to be created after it.
 #  2. Whether moto's kms:Sign is faithful enough to trust in a unit suite. The
 #     package suite deliberately does not depend on the answer; this spike is
 #     where real KMS settles it.
@@ -199,7 +216,124 @@ resource "aws_iam_role_policy" "identity_spike_signing" {
 # `issuer` and `audience` are the two things the authorizer validates beyond the
 # signature, and both are derived from locals above so the application and the
 # gateway cannot disagree about either.
+#
+# ORDERING. This resource has to be created after the discovery document is
+# already being served, and that is not a preference. CreateAuthorizer on an
+# HTTP API validates the issuer synchronously: API Gateway fetches
+# <issuer>/.well-known/openid-configuration during the create call and rejects
+# it with BadRequestException, "Issuer must have a valid discovery endpoint
+# ended with '/.well-known/openid-configuration'", when it does not get a
+# discovery document back. The AWS documentation does not say so anywhere; the
+# first apply of this file (run-Yj1PJz22kVW7NM4p) is where it was learned, and
+# the error above is quoted from it.
+#
+# So two things must already exist when this resource is created:
+#
+#  1. The identity function carrying IDENTITY_SPIKE_ENABLED, which is what makes
+#     it mount webbpulse.identity's router and serve the two documents at all.
+#     Without the environment variable the function is up but answers 404.
+#  2. The two `.well-known` routes in apigateway.tf, which are what let a
+#     request from outside AWS reach that function.
+#
+# Neither is implied by anything this resource references. It reads
+# module.api.api_id, which is the API itself and is created long before the
+# routes on it, and it reads nothing at all from module.lambda_domain. So the
+# ordering is written out with depends_on, on both whole modules rather than on
+# the individual resources inside them: the route the authorizer needs lives in
+# a for_each inside module.api whose key exists only when the spike is on, and
+# an address that conditional cannot be named in depends_on. Whole-module
+# dependencies are coarser than necessary and cost nothing here, since both
+# modules are upstream of this file in every other respect already.
+#
+# depends_on alone is still not quite enough, because it orders Terraform's API
+# calls and not their effects. terraform_data.identity_spike_discovery_ready
+# below closes that gap by polling the real URL; its own comment has the three
+# lags it exists for.
+#
+# This is also why `GET /api/identity/spike/whoami` is a standalone route below
+# rather than an entry in module.api's routes map. An entry there would name
+# this authorizer's id, module.api would then depend on this resource, and this
+# resource depends on module.api, which is a cycle Terraform refuses. Before the
+# depends_on existed the graph had no cycle and no ordering either, and the
+# whole route set simply waited on the authorizer that needed two of those
+# routes to already answer.
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# The wait, between the routes and the authorizer.
+#
+# depends_on above orders the API calls Terraform makes. It does not order the
+# world those calls change, and three separate lags sit between "CreateRoute
+# returned 201" and "a request from API Gateway's own validator gets a discovery
+# document back":
+#
+#  1. The stage is auto_deploy, so a new route is deployed asynchronously after
+#     the route is created. AWS documents the deployment as automatic, not as
+#     synchronous, and puts no number on it.
+#  2. UpdateFunctionConfiguration, which is what setting IDENTITY_SPIKE_ENABLED
+#     is, returns while LastUpdateStatus is still InProgress. Until it reaches
+#     Successful an invoke can still reach the old configuration, which is a
+#     function that does not serve either document.
+#  3. The identity function is a container image under the Lambda Web Adapter,
+#     and this is the coldest a cold start gets: the first request after a
+#     configuration update pulls a new execution environment, starts Python,
+#     imports FastAPI and builds the app before the adapter will answer. Seconds,
+#     not milliseconds.
+#
+# Any one of those makes CreateAuthorizer fetch a 404 or time out, and the
+# failure is the same BadRequestException as having no route at all, with
+# nothing to say which of the two it was. That ambiguity is the argument for
+# this resource: without it a spurious failure and a real misconfiguration are
+# indistinguishable, and the recovery for the spurious one is to run the apply
+# again and hope.
+#
+# So this polls the real URL, from outside AWS, until it answers 200, and fails
+# the apply if it never does. It is a poll rather than a sleep because a sleep
+# long enough to be safe is longer than the wait usually needs to be, and a
+# sleep short enough to be quick is not safe. Sixty attempts a second apart is a
+# minute of patience, which is far longer than a cold start and still bounded.
+#
+# curl is on the HCP Terraform worker image. `-fsS` makes a non-2xx an exit
+# code, so the 404 case is a failed attempt rather than a successful fetch of an
+# error document, and the loop's own message is what gets printed if the minute
+# runs out.
+#
+# The trigger is the issuer, so the poll runs again if the issuer ever changes,
+# and is skipped on an apply that changes neither. That is the honest trigger:
+# what this resource asserts is that this exact URL answers.
+# ---------------------------------------------------------------------------
+
+resource "terraform_data" "identity_spike_discovery_ready" {
+  count = local.identity_spike_count
+
+  triggers_replace = {
+    issuer = local.identity_spike_issuer
+  }
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    command     = <<-EOT
+      set -euo pipefail
+      url="${local.identity_spike_issuer}/.well-known/openid-configuration"
+      for attempt in $(seq 1 60); do
+        if curl -fsS --max-time 10 "$url" > /dev/null; then
+          echo "discovery document served after $attempt attempt(s): $url"
+          exit 0
+        fi
+        echo "attempt $attempt: no discovery document yet at $url"
+        sleep 1
+      done
+      echo "gave up after 60 attempts: $url never returned 2xx." >&2
+      echo "API Gateway CreateAuthorizer fetches this URL and will fail without it." >&2
+      exit 1
+    EOT
+  }
+
+  depends_on = [
+    module.api,
+    module.lambda_domain,
+  ]
+}
 
 resource "aws_apigatewayv2_authorizer" "identity_spike_jwt" {
   count = local.identity_spike_count
@@ -213,6 +347,62 @@ resource "aws_apigatewayv2_authorizer" "identity_spike_jwt" {
     issuer   = local.identity_spike_issuer
     audience = [local.identity_spike_audience]
   }
+
+  depends_on = [
+    # The two `.well-known` routes, the integration behind them and the stage
+    # that serves them. See the ORDERING note above.
+    module.api,
+    # The identity function with IDENTITY_SPIKE_ENABLED set. Without it the
+    # function serves neither document and the create call fails.
+    module.lambda_domain,
+    # And the proof that both of those have actually taken effect, rather than
+    # merely having been created. The two above order the API calls; this one
+    # orders the outcome.
+    terraform_data.identity_spike_discovery_ready,
+  ]
+}
+
+# ---------------------------------------------------------------------------
+# The protected route, and the actual experiment.
+#
+# One route, JWT authorization, this API's own authorizer. It returns the claims
+# API Gateway put in the request context, so a 200 from it is proof the
+# authorizer fetched the JWKS, verified an RS256 signature made by KMS, and
+# matched issuer and audience. A 401 with no token is the other half of the
+# proof.
+#
+# It is a standalone resource rather than a routes entry in apigateway.tf for
+# the reason the ORDERING note gives: a route that names the authorizer has to
+# be created after it, and the only way to express "after" for one route while
+# the rest of the route set is created before is for that one route to live
+# outside the module. Referencing aws_apigatewayv2_authorizer.identity_spike_jwt
+# below is the whole ordering; no depends_on is needed here.
+#
+# The route key is literal and single-segment, GET, and outside `/api/v1` so a
+# throwaway experiment stays out of the published contract in
+# backend/tests/fixtures/route_contract.json.
+#
+# The target is built the same way the module builds its own, from the module's
+# integration_ids output, so this route reaches the identity function through
+# the one AWS_PROXY integration that already exists rather than through a second
+# one pointing at the same function. The invoke permission the module attaches
+# to that integration is scoped to `<execution_arn>/*/*`, every stage and every
+# route, so this route is covered by it and needs no permission of its own.
+#
+# There is no authorization_type override to write: JWT is not a module default
+# being overridden here, it is stated directly, and there is no gate authorizer
+# in the way because this resource does not go through var.authorizer_id.
+# ---------------------------------------------------------------------------
+
+resource "aws_apigatewayv2_route" "identity_spike_whoami" {
+  count = local.identity_spike_count
+
+  api_id    = module.api.api_id
+  route_key = "GET /api/identity/spike/whoami"
+  target    = "integrations/${module.api.integration_ids["identity"]}"
+
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.identity_spike_jwt[0].id
 }
 
 output "identity_spike_signing_key_id" {
