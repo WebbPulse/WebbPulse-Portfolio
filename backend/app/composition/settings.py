@@ -190,6 +190,10 @@ class Settings(BaseServiceSettings):
         not, with an ARN configured, fetches the blob once per execution
         environment and fills every field it carries, so four unset fields cost
         one Secrets Manager call rather than four.
+
+        The fetch itself is `webbpulse.config.load_json_secret`, reached through
+        `app.secrets`, so the caching and the "this secret is not a JSON object"
+        errors are the shared package's rather than a second copy of them here.
         """
         current = object.__getattribute__(self, field)
         if current is not None:

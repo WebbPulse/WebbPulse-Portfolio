@@ -56,6 +56,34 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 API_PREFIX = "/api/v1"
 
+#: The error envelope options, in one place because both composition roots have
+#: to pass them and a root that passed different ones would render a different
+#: body for the same failure. `build_domain_app` spreads this, and
+#: `app.composition.app` spreads the same dict, so there is a single switch.
+#:
+#: `error_codes=True` adds a stable `error_code` to every error body:
+#: `UNAUTHORIZED`, `NOT_FOUND`, `VALIDATION_ERROR`, `INTERNAL_ERROR` and the
+#: rest of the shared package's status table. It is additive. `success`,
+#: `status`, `message` and `request_id` keep the values and the order they have
+#: always had, so nothing reading the envelope today sees a different answer;
+#: what changes is that a caller can branch on a code rather than on the
+#: message text. `@webbpulse/api-client` already surfaces it as
+#: `getWebbPulseError().errorCode`, and `frontend/src/services/api.ts` already
+#: logs it, where it has been `undefined` until now.
+#:
+#: `validation_details=True` adds `details` to a 422: one
+#: `{"field", "message", "type"}` entry per offending field, with the leading
+#: `body`/`query` segment dropped so the field reads as the form control's
+#: name. The existing `errors` key is untouched, so the older shape still
+#: works. The client types `details` as `unknown[] | Record<string, unknown>`,
+#: which the list satisfies, and this is the shape a form needs to put a
+#: message beside the input that caused it rather than one banner for the
+#: whole request.
+ERROR_ENVELOPE_OPTIONS: dict[str, bool] = {
+    "error_codes": True,
+    "validation_details": True,
+}
+
 #: Service name pattern. Terraform sets `SERVICE_NAME` to the same string, and it
 #: becomes the OpenTelemetry `service.name` and the `service` field on every log
 #: line, so the two have to agree.
@@ -249,6 +277,9 @@ def build_domain_app(
         # duplicate path and the first declaration would win.
         include_health=domain.name != "public",
         redirect_slashes=False,
+        # Spread rather than named, so adding an envelope option is one edit
+        # here rather than one per composition root.
+        **ERROR_ENVELOPE_OPTIONS,
         **domain.extra,
     )
 
