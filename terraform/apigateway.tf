@@ -306,7 +306,7 @@ module "api" {
     # says in as many words that setting NONE on any of them would punch a hole
     # straight past the gate.
     #
-    # These three entries set it deliberately, and they are gated on
+    # These two entries set it deliberately, and they are gated on
     # local.identity_spike_enabled, so with the spike off this merge contributes
     # an empty map and the authorization surface is exactly what the paragraph
     # describes.
@@ -316,8 +316,28 @@ module "api" {
     # route through the module's var.authorizer_id, so a route cannot be behind
     # the gate and behind the JWT authorizer at once. Section 2.5 of
     # docs/identity-standard.md records that as a blocker; the http-api module's
-    # per-route authorization_type and authorizer_id overrides are the way
-    # through it, and this is the first use of them.
+    # per-route authorization_type and authorizer_id override is the way through
+    # it, and the two keys here are the first use of the type override.
+    #
+    # The spike's third key, `GET /api/identity/spike/whoami`, is deliberately
+    # NOT here. It is a standalone aws_apigatewayv2_route in identity_spike.tf,
+    # because it is the one route that names the JWT authorizer and the
+    # authorizer cannot be created until these two keys already answer.
+    #
+    # The reason is an ordering constraint the first apply discovered the hard
+    # way. CreateAuthorizer on an HTTP API validates the issuer synchronously:
+    # API Gateway fetches <issuer>/.well-known/openid-configuration and refuses
+    # the call with BadRequestException, "Issuer must have a valid discovery
+    # endpoint", if it does not get a discovery document back. So the two keys
+    # below and the identity function serving them have to exist before the
+    # authorizer does.
+    #
+    # A whoami entry in this map would reference the authorizer's id, which
+    # makes every route in the map wait on the authorizer, which waits on a
+    # discovery document only those routes can serve. The first apply
+    # (run-Yj1PJz22kVW7NM4p) failed exactly there: the authorizer errored and
+    # all three routes were skipped, leaving /.well-known/openid-configuration a
+    # gateway 404. Keeping whoami out of the map is what breaks that knot.
     #
     # The two `.well-known` keys are NONE, and that is not a convenience. The
     # JWT authorizer fetches the issuer's key material itself, from API
@@ -350,12 +370,6 @@ module "api" {
     # derives them from the issuer, which is the origin. That is why the
     # application mounts webbpulse.identity's router with no prefix.
     #
-    # The whoami key is the actual experiment: one route, JWT authorization,
-    # this API's own authorizer. It returns the claims API Gateway put in the
-    # request context, so a 200 from it is proof the authorizer fetched the
-    # JWKS, verified an RS256 signature made by KMS, and matched issuer and
-    # audience. A 401 with no token is the other half of the proof. It is also
-    # literal and single-segment for the same reason as above.
     local.identity_spike_enabled ? {
       "GET /.well-known/jwks.json" = {
         integration        = "identity"
@@ -364,11 +378,6 @@ module "api" {
       "GET /.well-known/openid-configuration" = {
         integration        = "identity"
         authorization_type = "NONE"
-      }
-      "GET /api/identity/spike/whoami" = {
-        integration        = "identity"
-        authorization_type = "JWT"
-        authorizer_id      = one(aws_apigatewayv2_authorizer.identity_spike_jwt[*].id)
       }
     } : {},
   )
