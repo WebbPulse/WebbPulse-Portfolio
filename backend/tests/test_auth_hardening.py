@@ -72,7 +72,11 @@ class TestTokens:
     def test_token_signed_with_other_key_rejected(
         self, client: TestClient, test_admin_user
     ):
-        from jose import jwt
+        # PyJWT rather than python-jose, which left with `app/core/security.py`'s
+        # own implementation. The token is the same bytes either library would
+        # produce for these claims; what is asserted is that a signature made
+        # with the wrong key is refused.
+        import jwt
 
         token = jwt.encode(
             {"sub": test_admin_user["username"]}, "other-key", algorithm="HS256"

@@ -10,15 +10,22 @@
 # back to an unsigned exporter, whose 403s the OTLP exporter retries in silence,
 # so the failure looks exactly like having no traffic. `testing` is a dev
 # dependency and is in requirements-dev.txt.
-webbpulse[fastapi,dynamodb,otel,aws-otel]==0.2.0
+#
+# `security` is new in 0.5.0 and brings PyJWT and bcrypt, which is why neither
+# is pinned below any more. `app/core/security.py` is now an adapter over
+# `webbpulse.security` rather than its own implementation, and `python-jose`
+# left with it: the package signs and verifies with PyJWT. An HS256 token is
+# interchangeable between the two libraries and the bcrypt cost is unchanged at
+# 12, so no session is invalidated and no stored hash is rewritten.
+# `tests/test_security_compat.py` pins both against fixtures minted by the old
+# code path.
+webbpulse[fastapi,dynamodb,otel,aws-otel,security]==0.5.0
 
 fastapi==0.115.12
 aws-lambda-powertools==3.15.1
 boto3==1.38.46
 pydantic==2.11.3
 pydantic-settings==2.8.1
-python-jose[cryptography]==3.5.0
-bcrypt==4.3.0
 python-slugify==8.0.4
 email-validator==2.2.0
 uvicorn[standard]==0.34.0
