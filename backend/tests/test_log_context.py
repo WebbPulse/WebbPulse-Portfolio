@@ -32,7 +32,7 @@ from webbpulse.log_context import UNSET, request_id_var, user_id_var
 from webbpulse.logging import JsonFormatter
 
 from app.core.logging import logger
-from app.core.security import get_current_user
+from app.core.security import CurrentUser
 
 
 @pytest.fixture
@@ -155,22 +155,34 @@ def test_the_context_does_not_leak_between_requests(client):
 def test_an_authenticated_request_logs_the_user_id(
     client, json_lines, admin_auth_headers, test_admin_user
 ):
-    """`get_current_user` binds `user_id`, and it lands on the log line.
+    """`CurrentUser` binds `user_id`, and it lands on the log line.
 
     The request id arrives from the middleware and the user id from the
     authentication dependency, so this is the assertion that the second half is
     wired: a log line emitted after authentication carries both.
 
+    The dependency is `CurrentUser`, the name every route takes, rather than the
+    `get_current_user` resolver underneath it. As of webbpulse 0.8.0 the binding
+    is `webbpulse.http.user_id_dependency` wrapping that resolver, so the
+    resolver alone binds nothing and testing it would assert the wrong half.
+
+    **The route below is deliberately `def`, not `async def`.** That is the
+    shape that used to lose the binding: a sync dependency runs through
+    `anyio.to_thread.run_sync`, which copies the context into a worker thread and
+    discards the copy on return. The package binds in its own async wrapper
+    after the value has crossed that boundary, so a sync route handler still sees
+    it, and keeping this one sync is what pins that rather than trusting it.
+
     The route is declared here rather than borrowed from a domain, because no
     existing authenticated route logs anything. Borrowing one would assert that
-    `get_current_user` ran, which every `tests/test_auth_*` module already
-    covers, and say nothing about whether the binding reaches a record. This
-    route depends on the real dependency and then logs, which is the actual
-    path a domain service takes.
+    the dependency ran, which every `tests/test_auth_*` module already covers,
+    and say nothing about whether the binding reaches a record. This route
+    depends on the real dependency and then logs, which is the actual path a
+    domain service takes.
     """
 
     @client.app.get("/_test/authenticated")
-    def _log_something(current_user: dict = Depends(get_current_user)) -> dict:
+    def _log_something(current_user: dict = Depends(CurrentUser)) -> dict:
         logger.info("authenticated request")
         return {"ok": True}
 

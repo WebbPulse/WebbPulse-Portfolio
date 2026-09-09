@@ -4,7 +4,7 @@ from typing import Callable, List, Type
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from ...core.security import get_current_user, require_admin
+from ...core.security import CurrentUser, require_admin
 from ...db.repository import Repository
 
 
@@ -50,7 +50,7 @@ def build_crud_router(config: CrudConfig, include_list: bool = True) -> APIRoute
     @router.post("/", response_model=config.schema)
     async def create_item(
         payload: config.create_schema,
-        current_user: dict = Depends(get_current_user),
+        current_user: dict = Depends(CurrentUser),
     ):
         require_admin(current_user, forbidden("create"))
         return repository.create(payload.model_dump())
@@ -59,7 +59,7 @@ def build_crud_router(config: CrudConfig, include_list: bool = True) -> APIRoute
     async def update_item(
         item_id: int,
         payload: config.update_schema,
-        current_user: dict = Depends(get_current_user),
+        current_user: dict = Depends(CurrentUser),
     ):
         require_admin(current_user, forbidden("update"))
         item = repository.update(item_id, payload.model_dump(exclude_unset=True))
@@ -70,7 +70,7 @@ def build_crud_router(config: CrudConfig, include_list: bool = True) -> APIRoute
     @router.delete("/{item_id}")
     async def delete_item(
         item_id: int,
-        current_user: dict = Depends(get_current_user),
+        current_user: dict = Depends(CurrentUser),
     ):
         require_admin(current_user, forbidden("delete"))
         if not repository.soft_delete(item_id):
