@@ -298,6 +298,79 @@ module "api" {
       "ANY /api/v1/admin"          = { integration = "identity" }
       "ANY /api/v1/admin/{proxy+}" = { integration = "identity" }
     },
+
+    # The identity standard's M0 spike, and the one place in this map where the
+    # paragraph at the top of `routes` does not hold. Read that paragraph first:
+    # no entry above sets authorization_type, so every one of them takes the
+    # module's CUSTOM default and sits behind the staging access gate, and it
+    # says in as many words that setting NONE on any of them would punch a hole
+    # straight past the gate.
+    #
+    # These three entries set it deliberately, and they are gated on
+    # local.identity_spike_enabled, so with the spike off this merge contributes
+    # an empty map and the authorization surface is exactly what the paragraph
+    # describes.
+    #
+    # Why they have to override it at all: API Gateway allows at most one
+    # authorizer per route. The gate's CUSTOM authorizer is applied to every
+    # route through the module's var.authorizer_id, so a route cannot be behind
+    # the gate and behind the JWT authorizer at once. Section 2.5 of
+    # docs/identity-standard.md records that as a blocker; the http-api module's
+    # per-route authorization_type and authorizer_id overrides are the way
+    # through it, and this is the first use of them.
+    #
+    # The two `.well-known` keys are NONE, and that is not a convenience. The
+    # JWT authorizer fetches the issuer's key material itself, from API
+    # Gateway's own infrastructure, carrying no gate cookie and no origin-verify
+    # header. If those two paths sat behind the gate the authorizer would get
+    # the gate's 401 instead of a JWKS, could not build a verification key, and
+    # would fail closed on every request to the protected route below, with the
+    # cause visible nowhere except by noticing the JWKS was never fetched. They
+    # have to be reachable anonymously for the design to work at all, which is
+    # also true of the real thing at M2, not just of this spike.
+    #
+    # What they expose is a public key and a document listing where the public
+    # key is, which is what every OIDC provider on the internet serves
+    # anonymously by definition. There is no private key material behind either
+    # path: the private half never leaves KMS. So this is a hole in the gate in
+    # the literal sense, and an empty one.
+    #
+    # Both keys are GET and both are literal, with no `{proxy+}`. That is
+    # narrower than every other entry in this map on purpose: the exemption
+    # should cover exactly the two documents the authorizer needs and nothing
+    # else the identity function serves. A greedy key under `/.well-known/`
+    # would exempt any future path there too, which is precisely the kind of
+    # by-omission widening the rest of this file is written to avoid. Neither
+    # key ends in a slash, which is not a style choice either: a route key path
+    # segment may not be empty, and cut 3's block above records the
+    # BadRequestException that proves it.
+    #
+    # The paths are at the API origin rather than under `/api/v1/`, because RFC
+    # 8615 puts `.well-known` at the root of the origin and the authorizer
+    # derives them from the issuer, which is the origin. That is why the
+    # application mounts webbpulse.identity's router with no prefix.
+    #
+    # The whoami key is the actual experiment: one route, JWT authorization,
+    # this API's own authorizer. It returns the claims API Gateway put in the
+    # request context, so a 200 from it is proof the authorizer fetched the
+    # JWKS, verified an RS256 signature made by KMS, and matched issuer and
+    # audience. A 401 with no token is the other half of the proof. It is also
+    # literal and single-segment for the same reason as above.
+    local.identity_spike_enabled ? {
+      "GET /.well-known/jwks.json" = {
+        integration        = "identity"
+        authorization_type = "NONE"
+      }
+      "GET /.well-known/openid-configuration" = {
+        integration        = "identity"
+        authorization_type = "NONE"
+      }
+      "GET /api/identity/spike/whoami" = {
+        integration        = "identity"
+        authorization_type = "JWT"
+        authorizer_id      = one(aws_apigatewayv2_authorizer.identity_spike_jwt[*].id)
+      }
+    } : {},
   )
 
   throttling_burst_limit = 200

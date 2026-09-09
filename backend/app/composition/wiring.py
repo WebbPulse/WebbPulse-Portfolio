@@ -292,6 +292,54 @@ def build_domain_app(
             router, prefix=domain.router_prefix, tags=list(domain.router_tags)
         )
 
+    # The identity standard's M0 spike, on the `identity` domain only and only
+    # when `IDENTITY_SPIKE_ENABLED` is set. Terraform writes that variable onto
+    # the staging identity function alone, behind `var.identity_spike_enabled`,
+    # which defaults to false, so nothing below is constructed in production or
+    # in a workspace that has not opted in. `app/domains/identity/spike.py` has
+    # the full rationale and says plainly that it is throwaway.
+    #
+    # This does not go through `domain.load_routers` and `domain.router_prefix`,
+    # and the reason is the whole reason it is here rather than on the
+    # descriptor. The descriptor mounts every router it loads at one prefix, and
+    # `identity`'s is `/api/v1/admin`. These two routers need two different
+    # mount points, and neither of them is that one:
+    #
+    #  - The `.well-known` router mounts at the origin with no prefix at all.
+    #    RFC 8615 puts `.well-known` at the root of an origin, and API Gateway's
+    #    JWT authorizer derives the URLs it fetches from the issuer, which is
+    #    the origin. Under `/api/v1/admin` the authorizer would fetch nothing
+    #    and every request to a protected route would fail closed.
+    #  - The spike router mounts at `/api/identity/spike`, matching the route
+    #    key in terraform/apigateway.tf. It is deliberately outside `/api/v1`,
+    #    because `/api/v1` is the published contract that
+    #    `backend/tests/fixtures/route_contract.json` pins, and a throwaway
+    #    experiment does not belong in it.
+    if domain.name == "identity" and resolved.IDENTITY_SPIKE_ENABLED:
+        from webbpulse.identity import identity_router, public_jwk_from_kms
+
+        from ..domains.identity.spike import router as spike_router
+
+        app.include_router(
+            spike_router, prefix="/api/identity/spike", tags=["identity-spike"]
+        )
+
+        issuer = resolved.IDENTITY_TOKEN_ISSUER
+        key_id = resolved.IDENTITY_SIGNING_KEY_ID
+        if issuer and key_id:
+            # `jwks` is a callable rather than a list, so the JWKS is built on
+            # the request that asks for it rather than at import. That is what
+            # keeps a cold start from making a `kms:GetPublicKey` call before
+            # any route is reached, and it is what a two-key rotation will need
+            # later: the callable can return both keys through the overlap
+            # without this wiring changing shape.
+            def _jwks() -> list[dict[str, str]]:
+                import boto3
+
+                return [public_jwk_from_kms(boto3.client("kms"), key_id)]
+
+            app.include_router(identity_router(issuer=issuer, jwks=_jwks))
+
     if domain.seeds:
         from ..core.middleware import SeedMiddleware
 

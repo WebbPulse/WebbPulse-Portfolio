@@ -88,6 +88,31 @@ class Settings(BaseServiceSettings):
     LOGIN_MAX_FAILURES: int = 10
     LOGIN_FAILURE_WINDOW_SECONDS: int = 900
 
+    # The identity standard's M0 spike. Four settings, all optional, all unset
+    # everywhere except the staging function while the spike is being run:
+    # terraform/lambda_domains.tf writes them only when
+    # var.identity_spike_enabled is true, which defaults to false.
+    #
+    # None of these is a secret and none of them is lazy. The KMS key id is an
+    # identifier, not key material; the private half never leaves KMS, and what
+    # the application can do with the id is bounded by the IAM grant on the
+    # function's role rather than by the id being hard to guess. So they are
+    # ordinary fields and are deliberately not in SECRET_FIELDS: adding them
+    # there would make every read attempt a Secrets Manager fetch for values
+    # that are not in the secret.
+    #
+    # IDENTITY_TOKEN_ISSUER and IDENTITY_TOKEN_AUDIENCE come from Terraform
+    # rather than being derived from SITE_URL or ENVIRONMENT here, and that is
+    # the whole point of them. The API Gateway JWT authorizer compares `iss` and
+    # `aud` on the token against its own configured strings byte for byte, and a
+    # mismatch is an unexplained 401 with nothing in any log naming the cause.
+    # Terraform holds both values in one local and hands the same string to the
+    # authorizer and to this process, so the two cannot disagree.
+    IDENTITY_SPIKE_ENABLED: bool = False
+    IDENTITY_SIGNING_KEY_ID: Optional[str] = None
+    IDENTITY_TOKEN_ISSUER: Optional[str] = None
+    IDENTITY_TOKEN_AUDIENCE: Optional[str] = None
+
     APP_NAME: str = "Portfolio Blog API"
     SITE_URL: str = "https://www.webbpulse.com"
     DEBUG: bool = False
