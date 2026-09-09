@@ -1,16 +1,24 @@
 // API service for communicating with the backend.
 //
 // The transport is @webbpulse/api-client and the configuration is
-// @webbpulse/config, both from the org CodeArtifact repository. The
-// `{ data, error }` envelope below is Portfolio's own: the shared client
-// rejects on a non 2xx, and every call site in this application reads
-// `response.error` instead, so this class adapts the throwing contract back
-// into the envelope rather than rewriting every page component.
+// @webbpulse/config, both from the org CodeArtifact repository. The shared
+// client rejects on a non 2xx and every call site in this application reads a
+// `{ data, error }` envelope instead, so an adapter sits between the two.
+//
+// That adapter used to be a private helper in this file. It is now
+// `createEnvelopeClient` from the package, which is the same conversion typed
+// and tested once rather than copied per application. The only visible
+// difference is that the package types `data` as `T | null`, which is what the
+// error path always returned; the local version declared `data: T` and wrote
+// `null as T` into it, so every call site read a value the type said could not
+// be null.
 import {
   ApiError,
   createApiClient,
-  formatApiErrorMessage,
-  type ApiClient,
+  createEnvelopeClient,
+  getWebbPulseError,
+  type ApiEnvelope,
+  type EnvelopeClient,
 } from '@webbpulse/api-client';
 import { loadAppConfig } from '@webbpulse/config';
 import { TokenStore } from '@webbpulse/auth';
@@ -30,6 +38,35 @@ const config = loadAppConfig(import.meta.env, {
 });
 
 export const API_BASE_URL = config.apiBaseUrl;
+
+/**
+ * Logs a failed request with the fields the backend's error envelope carries.
+ *
+ * Every WebbPulse backend renders one error body, so a failure arrives with a
+ * `message`, a `status` and the `request_id` that joins this line to the
+ * CloudWatch logs and the trace for the same request. `getWebbPulseError`
+ * reads those without this file having to know that the body is snake case, or
+ * having to re-implement the shape check.
+ *
+ * `errorCode` is logged when the backend sends one. Portfolio's `create_app`
+ * has not opted into `error_codes` yet, so it is `undefined` in practice today
+ * and the field is simply omitted rather than logged as empty.
+ */
+function logApiFailure(error: unknown): void {
+  if (error instanceof ApiError) {
+    const { message, errorCode, requestId, status } = getWebbPulseError(error);
+    console.error('API request failed:', {
+      message,
+      status,
+      ...(errorCode === undefined ? {} : { errorCode }),
+      ...(requestId === undefined ? {} : { requestId }),
+    });
+    return;
+  }
+  // A network failure, a timeout or an abort. There is no envelope to read, so
+  // the thrown value is all there is to report.
+  console.error('API request failed:', error);
+}
 
 export interface Project {
   id: number;
@@ -161,13 +198,19 @@ export interface Token {
   token_type: string;
 }
 
-export interface ApiResponse<T> {
-  data: T;
-  error?: string;
-}
+/**
+ * The envelope every call site in this application reads.
+ *
+ * The package's `ApiEnvelope` rather than a local declaration, so there is one
+ * definition of the shape. `data` is `T | null`: it was always null on the
+ * error path, and saying so makes the check the compiler's job rather than the
+ * reader's. `status`, `requestId` and `cause` come along with it, which the
+ * hand rolled envelope did not carry.
+ */
+export type ApiResponse<T> = ApiEnvelope<T>;
 
 export class ApiService {
-  private readonly client: ApiClient;
+  private readonly client: EnvelopeClient;
   private readonly tokenStore: TokenStore;
 
   constructor(baseUrl: string = API_BASE_URL) {
@@ -175,49 +218,33 @@ export class ApiService {
     // which Safari in private mode does, so reading a token cannot break the
     // application on load.
     this.tokenStore = new TokenStore(TOKEN_STORAGE_KEY);
-    this.client = createApiClient({
-      baseUrl,
-      // The client defaults to credentials: 'include', which the staging access
-      // gate needs: its CloudFront signed cookies are set on the staging apex,
-      // so a request from the www host to the API host only carries them when
-      // credentials are included. Stated explicitly so it is not lost to a
-      // future default change.
-      credentials: 'include',
-      // Read synchronously on every request, which is what the client requires.
-      getAuthToken: () => this.tokenStore.get(),
-      // The API reissues a token in a response header after a username change.
-      onTokenRefresh: token => {
-        this.tokenStore.set(token);
-      },
-    });
-  }
-
-  /**
-   * Runs a call and converts the client's rejection into the `{ data, error }`
-   * envelope this application's call sites read.
-   */
-  private async envelope<T>(
-    call: () => Promise<{ data: T }>
-  ): Promise<ApiResponse<T>> {
-    try {
-      const response = await call();
-      return { data: response.data };
-    } catch (error) {
-      console.error('API request failed:', error);
-      if (error instanceof ApiError) {
-        // formatApiErrorMessage unpacks the FastAPI `detail` field, including
-        // the validation error array, into one readable line.
-        return {
-          data: null as T,
-          error: formatApiErrorMessage(error.body, error.message),
-        };
+    this.client = createEnvelopeClient(
+      createApiClient({
+        baseUrl,
+        // The client defaults to credentials: 'include', which the staging
+        // access gate needs: its CloudFront signed cookies are set on the
+        // staging apex, so a request from the www host to the API host only
+        // carries them when credentials are included. Stated explicitly so it
+        // is not lost to a future default change.
+        credentials: 'include',
+        // Read synchronously on every request, which is what the client
+        // requires.
+        getAuthToken: () => this.tokenStore.get(),
+        // The API reissues a token in a response header after a username
+        // change.
+        onTokenRefresh: token => {
+          this.tokenStore.set(token);
+        },
+      }),
+      {
+        // The package logs nothing of its own, so reporting stays a decision
+        // this application makes. Keeping console.error preserves what the
+        // hand rolled adapter did; the hook is where a real reporter goes.
+        onError: error => {
+          logApiFailure(error);
+        },
       }
-      return {
-        data: null as T,
-        error:
-          error instanceof Error ? error.message : 'Unknown error occurred',
-      };
-    }
+    );
   }
 
   private request<T>(
@@ -225,11 +252,9 @@ export class ApiService {
     options: { method?: string; body?: unknown } = {}
   ): Promise<ApiResponse<T>> {
     const method = options.method ?? 'GET';
-    return this.envelope<T>(() =>
-      this.client.request<T>(method, endpoint, {
-        ...(options.body === undefined ? {} : { body: options.body }),
-      })
-    );
+    return this.client.request<T>(method, endpoint, {
+      ...(options.body === undefined ? {} : { body: options.body }),
+    });
   }
 
   // Authentication methods
@@ -265,11 +290,9 @@ export class ApiService {
     // the path. The previous form built `/projects?featured_only=true/`, which
     // put the trailing slash inside the query string, so the filter only ever
     // worked by the backend ignoring an unparsed value.
-    return this.envelope<Project[]>(() =>
-      this.client.get<Project[]>('/projects/', {
-        ...(featuredOnly ? { query: { featured_only: true } } : {}),
-      })
-    );
+    return this.client.get<Project[]>('/projects/', {
+      ...(featuredOnly ? { query: { featured_only: true } } : {}),
+    });
   }
 
   async getProject(id: number): Promise<ApiResponse<Project>> {

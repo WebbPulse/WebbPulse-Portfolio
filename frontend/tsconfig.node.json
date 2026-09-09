@@ -2,12 +2,7 @@
   "extends": "@webbpulse/tsconfig/node.json",
   "compilerOptions": {
     "incremental": true,
-    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
-    // The Vite and Vitest configs are the only files here and neither imports
-    // Node type definitions, which the shared node config expects to be
-    // installed. Portfolio has no @types/node dependency, so the types array is
-    // emptied rather than adding one just to satisfy the compiler.
-    "types": []
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo"
   },
   "include": ["vite.config.ts", "vitest.config.ts"]
 }
