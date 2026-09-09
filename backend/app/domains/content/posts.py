@@ -4,7 +4,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from slugify import slugify
 
-from ...core.security import get_current_user, require_admin
+from ...core.security import CurrentUser, require_admin
 from ...db import ordering
 from ...db.repository import UniqueViolation
 from .repository import categories, posts
@@ -69,7 +69,7 @@ async def get_posts(
 
 
 @router.get("/admin", response_model=List[PostSchema])
-async def get_all_posts(current_user: dict = Depends(get_current_user)):
+async def get_all_posts(current_user: dict = Depends(CurrentUser)):
     require_admin(current_user, "Not authorized to view all posts")
     return _with_categories(ordering.admin_posts(posts.list_all()))
 
@@ -101,7 +101,7 @@ async def get_posts_by_category(
 
 
 @router.post("/admin", response_model=PostSchema)
-async def create_post(post: PostCreate, current_user: dict = Depends(get_current_user)):
+async def create_post(post: PostCreate, current_user: dict = Depends(CurrentUser)):
     require_admin(current_user, "Not authorized to create posts")
     data = post.model_dump()
     data["slug"] = data.get("slug") or slugify(post.title)
@@ -120,7 +120,7 @@ async def create_post(post: PostCreate, current_user: dict = Depends(get_current
 async def update_post(
     post_id: int,
     post_update: PostUpdate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(CurrentUser),
 ):
     require_admin(current_user, "Not authorized to update posts")
     _get_post_or_404(post_id)
@@ -135,7 +135,7 @@ async def update_post(
 
 
 @router.delete("/admin/{post_id}")
-async def delete_post(post_id: int, current_user: dict = Depends(get_current_user)):
+async def delete_post(post_id: int, current_user: dict = Depends(CurrentUser)):
     require_admin(current_user, "Not authorized to delete posts")
     if not posts.hard_delete(post_id):
         raise HTTPException(status_code=404, detail="Post not found")
@@ -143,7 +143,7 @@ async def delete_post(post_id: int, current_user: dict = Depends(get_current_use
 
 
 @router.post("/admin/{post_id}/publish")
-async def publish_post(post_id: int, current_user: dict = Depends(get_current_user)):
+async def publish_post(post_id: int, current_user: dict = Depends(CurrentUser)):
     require_admin(current_user, "Not authorized to publish posts")
     post = _get_post_or_404(post_id)
     if _published(post):
@@ -154,7 +154,7 @@ async def publish_post(post_id: int, current_user: dict = Depends(get_current_us
 
 @router.post("/categories", response_model=CategorySchema)
 async def create_category(
-    category: CategoryCreate, current_user: dict = Depends(get_current_user)
+    category: CategoryCreate, current_user: dict = Depends(CurrentUser)
 ):
     require_admin(current_user, "Not authorized to create categories")
     data = category.model_dump()
@@ -171,7 +171,7 @@ async def create_category(
 async def update_category(
     category_id: int,
     category_update: CategoryUpdate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(CurrentUser),
 ):
     require_admin(current_user, "Not authorized to update categories")
     _get_category_or_404(category_id)
@@ -184,9 +184,7 @@ async def update_category(
 
 
 @router.delete("/categories/{category_id}")
-async def delete_category(
-    category_id: int, current_user: dict = Depends(get_current_user)
-):
+async def delete_category(category_id: int, current_user: dict = Depends(CurrentUser)):
     require_admin(current_user, "Not authorized to delete categories")
     _get_category_or_404(category_id)
     if posts.has_posts_in_category(category_id):

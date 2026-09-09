@@ -39,7 +39,18 @@
 # ran and every log line carried no correlation id. `RequestIdMiddleware` binds
 # a ContextVar instead and `JsonFormatter` merges it, which is the same
 # correlation actually reaching the log group. Nothing else imported Powertools.
-webbpulse[fastapi,dynamodb,otel,aws-otel,security,identity]==0.7.0
+#
+# 0.8.0 is adoption ergonomics and is additive: nothing changes for a caller
+# that passes no new argument. What this backend takes from it is
+# `webbpulse.http.user_id_dependency`, which fixes the sync dependency trap that
+# PR 153 worked around locally by making `get_current_user` `async def` and
+# calling `set_user_id` inside it. The binding is the package's now, so the
+# resolver goes back to being only a resolver. The other two additions,
+# `configure_logging(stream=, formatter=)` and `metrics_enabled_from_env`, are
+# not adopted: this backend has no local logging wrapper overriding either of
+# those and emits no metrics at all, so there is nothing here for them to
+# replace.
+webbpulse[fastapi,dynamodb,otel,aws-otel,security,identity]==0.8.0
 
 fastapi==0.115.12
 boto3==1.38.46

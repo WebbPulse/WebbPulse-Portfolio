@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 
-from ...core.security import get_current_user, require_admin
+from ...core.security import CurrentUser, require_admin
 from .repository import SITE_CONTENT_ID, site_content
 from .schemas import SiteContent, SiteContentUpdate
 
@@ -22,7 +22,7 @@ async def get_site_content():
 @router.put("/", response_model=SiteContent)
 async def update_site_content(
     update: SiteContentUpdate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(CurrentUser),
 ):
     require_admin(current_user, "Not authorized to update site content")
     _load()

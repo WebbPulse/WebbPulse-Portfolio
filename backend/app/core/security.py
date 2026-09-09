@@ -23,6 +23,17 @@ internally, where they are strictly better than `python-jose`'s single
 `JWTError`: an expired token is now distinguishable from a forged one in the
 log line, even though both still answer 401.
 
+**The user id binding is `webbpulse.http.user_id_dependency` as of 0.8.0.**
+`get_current_user` resolves the token to a user and does nothing else;
+`CurrentUser` is what routes depend on, and it is the package helper wrapping
+that resolver. PR 153 did the binding by hand, with `get_current_user` forced to
+`async def` so a `set_user_id` call inside it survived: a sync dependency runs
+through `anyio.to_thread.run_sync`, which copies the context into a worker
+thread and discards the copy on return, so the binding was invisible to the
+handler and to every log line after it. The package now owns that, in an async
+wrapper that binds after the value has crossed the thread boundary, and this
+module keeps only the `extract=` that reaches into a `dict` and the span copy.
+
 **`bearer_claims` is deliberately not adopted.** The package's FastAPI
 dependency builds its own `HTTPBearer(auto_error=False)` and answers 401 when
 the `Authorization` header is missing or is not a bearer scheme. This module's
@@ -39,7 +50,8 @@ from typing import Optional
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from webbpulse.log_context import set_span_context_attributes, set_user_id
+from webbpulse.http import user_id_dependency
+from webbpulse.log_context import set_span_context_attributes
 from webbpulse.security import (
     TokenError,
     create_token,
@@ -131,23 +143,20 @@ security = HTTPBearer()
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> dict:
-    """Resolve the bearer token to a user, and bind that user onto the context.
+    """Resolve the bearer token to the admin user it names.
 
-    **`async def` rather than `def`, and that is load bearing.** FastAPI runs a
-    sync dependency in a worker thread through `anyio.to_thread.run_sync`, which
-    copies the context *into* the thread and throws the copy away on the way
-    out. A `set_user_id` call in a sync dependency is therefore invisible to the
-    route handler and to every log record the request goes on to emit: the value
-    is bound in a context that no longer exists by the time anything reads it.
-    Verified rather than assumed, and the reason `user_id` was absent from a log
-    line while `request_id` was present.
+    Resolution only. Binding the id onto the log context is `CurrentUser`
+    below, which is what every route depends on; this function is that
+    dependency's inner resolver and no route should take it directly.
 
-    Nothing else about the dependency changed. Every body below is
-    non-blocking already: `verify_token` is a signature check and
-    `users.find_by_unique` is a boto3 call that the whole backend makes
-    synchronously on the event loop everywhere else, so moving off the
-    threadpool does not turn a blocking call into one on the loop that was not
-    there before. The two `HTTPException`s and their status codes are untouched,
+    It stays `async def`, which it became in PR 153 when the binding was still
+    here. That is no longer load bearing, because `user_id_dependency` binds in
+    its own async wrapper after the value has crossed any thread boundary, so a
+    `def` resolver would work as well. Leaving it alone keeps the diff to the
+    binding and keeps the bodies where they already are: `verify_token` is a
+    signature check and `users.find_by_unique` is a boto3 call the whole backend
+    already makes synchronously on the event loop, so neither wants a threadpool
+    hop back. The two `HTTPException`s and their status codes are untouched,
     which `tests/test_auth_hardening.py` pins.
     """
     username = verify_token(credentials.credentials)
@@ -166,23 +175,54 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="User account is inactive"
         )
-    # The request has had an id since `RequestIdMiddleware` ran; this is the
-    # point at which it also has a principal. Binding it here rather than in the
-    # middleware is deliberate: the middleware runs before any route is matched,
-    # so there is no token to resolve yet, and an unauthenticated request must
-    # keep the `"-"` placeholder rather than inherit the previous caller's id.
-    #
-    # There is no matching reset. The ContextVar was copied into this request's
-    # asyncio task, so the binding dies with the task; resetting it at the end of
-    # the dependency would instead clear it for the route handler that is the
-    # whole reason it was set.
-    set_user_id(user["id"])
-    # Copy both bound values onto the active span, so a log line and a trace join
-    # on one string. `RequestIdMiddleware` already set `webbpulse.request_id`
-    # when it ran, but the user id was not known then, and this call is what adds
-    # `webbpulse.user_id` alongside it. A no-op when nothing is recording, which
-    # is every test and any process that has not called `configure_tracing`, and
-    # it never raises.
+    return user
+
+
+def _user_id(user: dict) -> object:
+    """The id to bind, pulled out of the user mapping.
+
+    `user_id_dependency` reads `.id` off the resolved object by default, and
+    this backend's user is a `dict` straight off DynamoDB, where `.id` is not an
+    attribute. `extract=` is the hook for exactly that. `.get` rather than `[]`
+    so a row somehow missing the key binds nothing and the request still
+    succeeds, which is the package's stated behaviour for a missing id and is
+    the right one: a log line without a user id beats a 500.
+    """
+    return user.get("id")
+
+
+#: `get_current_user`, wrapped so the resolved id reaches the log context.
+#: `user_id_dependency` resolves it as a sub-dependency, binds the id, and
+#: returns the same `dict` through untouched.
+#:
+#: The binding happens here rather than in the middleware for the same reason it
+#: always did: the middleware runs before any route is matched, so there is no
+#: token to resolve yet, and an unauthenticated request must keep the `"-"`
+#: placeholder rather than inherit the previous caller's id.
+_bind_user_id = user_id_dependency(get_current_user, extract=_user_id)
+
+
+async def CurrentUser(user: dict = Depends(_bind_user_id)) -> dict:
+    """The dependency every authenticated route takes.
+
+    Capitalised because it is used as a value rather than called: it reads as a
+    type at the call site, `current_user: dict = Depends(CurrentUser)`, which is
+    the naming the package's own README uses for the same thing. `ruff` selects
+    `E`, `F` and `I` only, so pep8-naming does not object.
+
+    The log context binding is the package's, one layer down through
+    `user_id_dependency`. What this layer adds is the second half PR 153 also
+    did: copying the bound values onto the active OpenTelemetry span, so a log
+    line and a trace join on one string. `RequestIdMiddleware` already set
+    `webbpulse.request_id` when it ran, but the user id was not known then, and
+    this is what adds `webbpulse.user_id` alongside it. A no-op when nothing is
+    recording, which is every test and any process that has not called
+    `configure_tracing`, and it never raises.
+
+    The span copy has to run after the binding rather than beside it, since
+    `set_span_context_attributes` reads the ContextVars, which is why it is a
+    wrapper around `user_id_dependency` rather than something passed into it.
+    """
     set_span_context_attributes()
     return user
 
