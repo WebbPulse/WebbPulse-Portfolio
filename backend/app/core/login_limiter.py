@@ -98,7 +98,7 @@ def client_ip(request: Request) -> str:
         except (TypeError, ValueError):
             logger.warning(
                 "Could not parse the request context header as JSON; ignoring it.",
-                header=REQUEST_CONTEXT_HEADER,
+                extra={"header": REQUEST_CONTEXT_HEADER},
             )
             parsed = None
         # The adapter forwards the `requestContext` object itself, so the source
@@ -152,10 +152,12 @@ class LoginLimiter:
         """
         logger.warning(
             "Login rate limit check failed; allowing the request.",
-            rate_limit_failed_open=True,
-            rate_limit_operation=operation,
-            error_type=type(error).__name__,
-            error_message=str(error),
+            extra={
+                "rate_limit_failed_open": True,
+                "rate_limit_operation": operation,
+                "error_type": type(error).__name__,
+                "error_message": str(error),
+            },
         )
 
     def _current(self, ip: str):

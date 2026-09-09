@@ -20,7 +20,10 @@ def seed_admin_user() -> None:
                     "is_active": True,
                 }
             )
-            logger.info("Seeded admin user", username=settings.ADMIN_USERNAME)
+            logger.info(
+                "Seeded admin user",
+                extra={"username": settings.ADMIN_USERNAME},
+            )
             return
         except UniqueViolation:
             user = users.find_by_unique("username", settings.ADMIN_USERNAME)
@@ -39,7 +42,8 @@ def seed_admin_user() -> None:
     if changes:
         users.update(user["id"], changes)
         logger.info(
-            "Updated admin user from settings", username=settings.ADMIN_USERNAME
+            "Updated admin user from settings",
+            extra={"username": settings.ADMIN_USERNAME},
         )
 
 

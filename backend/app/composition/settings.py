@@ -117,14 +117,12 @@ class Settings(BaseServiceSettings):
     SITE_URL: str = "https://www.webbpulse.com"
     DEBUG: bool = False
     LOG_LEVEL: str = "INFO"
-    # Powertools is still what `app/core/logging.py` logs through, and the
-    # `content`, `identity` and `public` services import that logger directly.
-    # The monolith is gone but they were never migrated onto
-    # `webbpulse.logging`, so the dependency and these two settings stay until
-    # that is done. It is real work on the domain code, not a line in a
-    # deletion PR.
-    POWERTOOLS_SERVICE_NAME: str = "webbpulse-portfolio-api"
-    POWERTOOLS_METRICS_NAMESPACE: str = "WebbPulse/Portfolio"
+    # The two `POWERTOOLS_*` settings are gone with the dependency. Every domain
+    # service now logs through `app/core/logging.py`, which is
+    # `webbpulse.logging`, and the entrypoints already passed `service_name` and
+    # `environment` to `configure_logging` rather than reading either of them.
+    # Terraform never set them on a domain function, so nothing deployed loses a
+    # variable it was reading.
     CORS_ORIGINS: str = DEFAULT_CORS_ORIGINS
 
     @field_validator("CORS_ORIGINS")

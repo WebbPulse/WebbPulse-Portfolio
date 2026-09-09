@@ -113,10 +113,12 @@ class RequestLoggingMiddleware:
         finally:
             logger.info(
                 "request",
-                method=scope.get("method"),
-                path=scope.get("path"),
-                status=status["code"],
-                duration_ms=round((time.perf_counter() - started) * 1000, 2),
+                extra={
+                    "method": scope.get("method"),
+                    "path": scope.get("path"),
+                    "status": status["code"],
+                    "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+                },
             )
 
 

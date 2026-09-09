@@ -13,5 +13,5 @@ def database_status() -> str:
         site_content.get(SITE_CONTENT_ID)
         return "healthy"
     except Exception as error:
-        logger.exception("Database health check failed", error=str(error))
+        logger.exception("Database health check failed", extra={"error": str(error)})
         return "unhealthy"

@@ -29,10 +29,19 @@
 # It does not bring boto3. The module takes a KMS client rather than
 # constructing one, so the caller owns that dependency, and boto3 is already
 # here through `dynamodb`.
-webbpulse[fastapi,dynamodb,otel,aws-otel,security,identity]==0.6.0
+#
+# 0.7.0 adds `webbpulse.log_context` and `webbpulse.metrics`, both standard
+# library only and both in the base install, so neither is a new extra.
+# `log_context` is what removed `aws-lambda-powertools` from the line below it.
+# Powertools' correlation is `@logger.inject_lambda_context`, a decorator on a
+# Lambda handler, and there is no handler here: the Web Adapter turns each
+# invoke into an HTTP request against a uvicorn process, so the decorator never
+# ran and every log line carried no correlation id. `RequestIdMiddleware` binds
+# a ContextVar instead and `JsonFormatter` merges it, which is the same
+# correlation actually reaching the log group. Nothing else imported Powertools.
+webbpulse[fastapi,dynamodb,otel,aws-otel,security,identity]==0.7.0
 
 fastapi==0.115.12
-aws-lambda-powertools==3.15.1
 boto3==1.38.46
 pydantic==2.11.3
 pydantic-settings==2.8.1
