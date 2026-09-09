@@ -19,7 +19,17 @@
 # 12, so no session is invalidated and no stored hash is rewritten.
 # `tests/test_security_compat.py` pins both against fixtures minted by the old
 # code path.
-webbpulse[fastapi,dynamodb,otel,aws-otel,security]==0.5.0
+#
+# `identity` is new in 0.6.0 and brings PyJWT[crypto] and fastapi, for
+# `webbpulse.identity`: the KMS signer, the JWK encoding and the `.well-known`
+# router that the identity standard's M0 spike serves. It is deliberately not a
+# dev-only extra even though the spike is throwaway, because the code that
+# imports it runs in the deployed identity function.
+#
+# It does not bring boto3. The module takes a KMS client rather than
+# constructing one, so the caller owns that dependency, and boto3 is already
+# here through `dynamodb`.
+webbpulse[fastapi,dynamodb,otel,aws-otel,security,identity]==0.6.0
 
 fastapi==0.115.12
 aws-lambda-powertools==3.15.1

@@ -211,6 +211,33 @@ module "lambda_domain" {
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = "https://xray.${var.aws_region}.amazonaws.com/v1/traces"
     },
     each.value.secrets ? { APP_SECRETS_ARN = module.app_secrets.arns["app"] } : {},
+
+    # The identity standard's M0 spike, on the identity function only and only
+    # when var.identity_spike_enabled is set. With the spike off this merge
+    # contributes an empty map, so no other domain and no production plan sees
+    # any of it. identity_spike.tf has the whole rationale.
+    #
+    # IDENTITY_SIGNING_KEY_ID is the alias, `alias/webbpulse-<env>-identity-signing`,
+    # not the key id or the key ARN, and that avoids a dependency cycle rather
+    # than merely being tidier. The key policy in identity_spike.tf names
+    # module.lambda_domain["identity"].role_arn as a principal, so the key
+    # depends on this module; naming aws_kms_key.identity_signing[0].key_id here
+    # would make this module depend on the key, and Terraform would refuse the
+    # graph. The alias name is a pure function of local.prefix, so it closes the
+    # loop with a string. KMS accepts an alias anywhere it accepts a key id for
+    # Sign and GetPublicKey, and the alias is created from the same local, so
+    # the two cannot drift.
+    #
+    # The issuer and audience are passed rather than derived in the application
+    # for the reason identity_spike.tf gives at length: the authorizer and the
+    # signer have to agree on both strings byte for byte, and the only way to
+    # guarantee that is for both to read the same Terraform local.
+    each.key == "identity" && local.identity_spike_enabled ? {
+      IDENTITY_SPIKE_ENABLED  = "true"
+      IDENTITY_SIGNING_KEY_ID = "alias/${local.prefix}-identity-signing"
+      IDENTITY_TOKEN_ISSUER   = local.identity_spike_issuer
+      IDENTITY_TOKEN_AUDIENCE = local.identity_spike_audience
+    } : {},
   )
 
   # 7 days, the retention the platform migration decision settled on, and

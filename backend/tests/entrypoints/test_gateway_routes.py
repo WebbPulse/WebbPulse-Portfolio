@@ -525,16 +525,65 @@ def test_no_content_route_key_points_at_a_path_the_app_does_not_serve():
         assert any(matches(key, path) for path in paths), key
 
 
+#: Route keys served by the `identity` integration that belong to the identity
+#: standard's M0 spike rather than to cut 4. They are gated in `apigateway.tf`
+#: behind `local.identity_spike_enabled`, which is false by default, so they
+#: exist in no plan unless the spike has been switched on.
+#:
+#: They are excluded from `identity_route_keys()` rather than folded into it
+#: because every assertion that helper feeds is about cut 4's permanent shape:
+#: two keys, both `ANY`, both under `/api/v1/admin`. The spike is deliberately
+#: none of those things, and widening those assertions to accommodate it would
+#: retire exactly the invariants they exist to hold. `test_the_spike_keys_are_
+#: the_three_expected_ones` below pins the spike's own shape instead, so the
+#: exclusion cannot quietly grow.
+#:
+#: This set goes when the spike does.
+IDENTITY_SPIKE_ROUTE_KEYS = {
+    "GET /.well-known/jwks.json",
+    "GET /.well-known/openid-configuration",
+    "GET /api/identity/spike/whoami",
+}
+
+
 def identity_route_keys() -> set[str]:
-    """`identity`'s keys, which are literal rather than generated.
+    """Cut 4's keys, which are literal rather than generated.
 
     Cuts 2 and 3 loop over a local, so their keys have to be expanded with
     `expand_for_expression_keys`. Cut 4 covers one prefix and writes both keys
     out, so `gateway_route_keys` reads them straight from the file.
+
+    The M0 spike's keys are subtracted. See `IDENTITY_SPIKE_ROUTE_KEYS`.
     """
-    keys = gateway_route_keys()["identity"]
+    keys = gateway_route_keys()["identity"] - IDENTITY_SPIKE_ROUTE_KEYS
     assert keys, "no identity route keys were parsed out of apigateway.tf"
     return keys
+
+
+def test_the_spike_keys_are_the_three_expected_ones():
+    """The M0 spike's route keys, pinned so the exclusion above cannot grow.
+
+    Either all three are present, because the spike block is in
+    `apigateway.tf`, or none are, because it has been removed with the rest of
+    the spike. A partial set means somebody edited one and not the others.
+
+    The shape of each one matters, and it is the reason these are pinned rather
+    than merely excluded:
+
+    - The two `.well-known` keys sit at the origin, not under `/api/v1`,
+      because RFC 8615 puts `.well-known` at the root of an origin and API
+      Gateway derives their URLs from the issuer. Under a prefix the authorizer
+      would fetch nothing.
+    - All three are `GET` and literal, with no `{proxy+}`. That is narrower than
+      every permanent key in this file on purpose: the two `.well-known` routes
+      carry `authorization_type = "NONE"`, which is a hole in the staging access
+      gate, and it should be exactly two documents wide. A greedy key would
+      widen it to anything under `/.well-known/`.
+    - `whoami` is outside `/api/v1` so a throwaway experiment stays out of the
+      published contract in `tests/fixtures/route_contract.json`.
+    """
+    present = gateway_route_keys()["identity"] & IDENTITY_SPIKE_ROUTE_KEYS
+    assert present in (set(), IDENTITY_SPIKE_ROUTE_KEYS), sorted(present)
 
 
 def test_identity_has_two_route_keys_for_its_single_prefix():
