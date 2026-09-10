@@ -58,118 +58,21 @@ locals {
       }
 
       # ---------------------------------------------------------------
-      # The identity standard's M2 tables. Section 4.1 of
-      # docs/identity-standard.md fixes every key name, index name and TTL
-      # attribute below, and webbpulse.identity.storage reads and writes
-      # exactly these names. They are copied rather than derived, so a
-      # mismatch is a failing test here rather than a ValidationException
-      # at 3am, and each one is checked by tests/test_identity_m2.py
-      # against the constants the package exports.
+      # The identity standard's four tables are NOT here any more.
+      #
+      # credentials, refresh-tokens, login-attempts and identity-tokens moved
+      # into the platform identity module, which owns the whole identity layer:
+      # the same four tables, the KMS signing key, and the two IAM grants the
+      # identity function needs on both. terraform/identity.tf has the module
+      # call and the `moved` blocks; the physical names are unchanged, because
+      # both modules build "<name_prefix>-<key>" from the same local.prefix.
+      #
+      # The key schemas travelled with them rather than being restated: the
+      # module's default `tables` map already carries the package's contract for
+      # all four, byte identical to what this file declared. Only the point in
+      # time recovery override on identity-tokens is repeated at the module
+      # call, because the module's default leaves it null.
       # ---------------------------------------------------------------
-
-      # The password hash, kept off the user record on purpose: a route that
-      # returns a user cannot accidentally serialise a hash when the hash
-      # lives in another table. Hash user_id, range credential_type, so a
-      # second credential kind can exist later without another column on
-      # users.
-      #
-      # No TTL, ever. A credential expiring on a storage reclaim schedule
-      # would sign somebody out of their own account, and DynamoDB deletes
-      # on its own timetable rather than on the deadline.
-      credentials = {
-        hash_key  = "user_id"
-        range_key = "credential_type"
-        attributes = [
-          { name = "user_id", type = "S" },
-          { name = "credential_type", type = "S" },
-        ]
-      }
-
-      # One item per generation of one refresh family. Keyed on the SHA-256
-      # of the token rather than on a token id, which makes the hot path,
-      # "is this presented token valid", a single GetItem on the primary key
-      # with no index in the way.
-      #
-      # family_id-generation-index exists for the other operation, revoking a
-      # whole family after a reuse is detected, and is never on the
-      # verification path. The name is the package's REFRESH_FAMILY_INDEX
-      # constant and DynamoDB resolves an index by name, so the two cannot
-      # differ.
-      #
-      # TTL expires_at reclaims storage only. The package checks every
-      # deadline on read as well, because an expired item survives its
-      # expiry by up to a couple of days.
-      "refresh-tokens" = {
-        hash_key = "token_hash"
-        attributes = [
-          { name = "token_hash", type = "S" },
-          { name = "family_id", type = "S" },
-          { name = "generation", type = "N" },
-        ]
-        global_secondary_indexes = [
-          { name = "family_id-generation-index", hash_key = "family_id", range_key = "generation", projection_type = "ALL" },
-        ]
-        ttl_attribute = "expires_at"
-      }
-
-      # The progressive lockout's evidence. Hash identity_key, which is
-      # `email#<lower>` or `ip#<addr>`, range attempted_at, so an attempt is
-      # an append and never an overwrite and the history is readable newest
-      # first without scanning every attempt ever made.
-      #
-      # No point in time recovery: a row is a failed login from the last 30
-      # days, the lockout window is 24 hours, and there is nothing here worth
-      # restoring to a point in time.
-      "login-attempts" = {
-        hash_key  = "identity_key"
-        range_key = "attempted_at"
-        attributes = [
-          { name = "identity_key", type = "S" },
-          { name = "attempted_at", type = "S" },
-        ]
-        ttl_attribute          = "expires_at"
-        point_in_time_recovery = false
-      }
-
-      # ---------------------------------------------------------------
-      # The identity standard's M3 table. One item is one single-use link,
-      # for either purpose: email verification or password reset. Section
-      # 4.1's row for it, and webbpulse.identity.storage's own table, are
-      # hash token_hash, no range key, no index, TTL expires_at.
-      # ---------------------------------------------------------------
-
-      # Keyed on the SHA-256 of the mailed token, never on the token, so a
-      # read of this table cannot be turned into a working link. The hot
-      # path, "is this presented link valid", is therefore a single GetItem
-      # on the primary key.
-      #
-      # No index, deliberately, and it should stay that way. The package's
-      # DynamoIdentityTokenStore.revoke_for_user raises rather than scanning,
-      # and the package's M3 decision 6 is explicit: a user index would cost
-      # a write on the click path to serve the issue path, and what it would
-      # close is a link the user asked for that expires on its own inside an
-      # hour. `purpose` is an attribute rather than a second table, and
-      # LinkService.confirm asserts the purpose it wanted against the stored
-      # record, so one table does not make a verification link a valid reset
-      # link.
-      #
-      # TTL expires_at reclaims storage and is never the expiry check.
-      # DynamoDB deletes on its own schedule, typically within a couple of
-      # days, so an expired row stays readable long after it lapsed and
-      # confirm re-checks the deadline against the clock every time.
-      #
-      # No point in time recovery. Every item is a link that expires within
-      # a day at the outside, and restoring one to a point in time would
-      # restore a consumed link to its unconsumed state, which is the one
-      # thing the single-use guarantee exists to prevent.
-      "identity-tokens" = {
-        hash_key = "token_hash"
-        attributes = [
-          { name = "token_hash", type = "S" },
-        ]
-        ttl_attribute          = "expires_at"
-        point_in_time_recovery = false
-      }
     },
   )
 }
