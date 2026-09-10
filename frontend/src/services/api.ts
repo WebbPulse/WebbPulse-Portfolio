@@ -73,10 +73,12 @@ export const AUTH_MODE: AuthMode = (() => {
  * 1. The identity function serves `POST /api/auth/login`, `/api/auth/refresh`
  *    and `/api/auth/logout`. Staging currently serves only the JWKS,
  *    the OpenID discovery document and the function's health route.
- * 2. The refresh cookie is set httpOnly, `SameSite=None` and `Secure`, scoped
- *    to the registrable domain, so it reaches the API host from the www host.
- *    The client already sends `credentials: 'include'` for the staging access
- *    gate, which is the same requirement.
+ * 2. The refresh cookie is set httpOnly, `SameSite=Lax` and `Secure`, scoped
+ *    to the registrable domain. The www host and the API host share that
+ *    domain, so a fetch between them is same site and Lax is enough; the
+ *    standard rules out `SameSite=None`. The client already sends
+ *    `credentials: 'include'` for the staging access gate, which is the same
+ *    requirement for a cross origin, same site request.
  * 3. The login route takes the standard's `email` and `password` and answers
  *    `{ access_token, expires_in }`. Portfolio's current route takes
  *    `username` and answers `{ access_token, token_type }`, which is why
