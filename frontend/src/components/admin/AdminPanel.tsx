@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '../common';
 import { apiService } from '../../services/api';
 import { LoginForm } from './LoginForm';
+import { TotpForm } from './TotpForm';
 import { ProjectForm } from './ProjectForm';
 import { ExperienceForm } from './ExperienceForm';
 import { BlogPostForm } from './BlogPostForm';
@@ -118,6 +119,13 @@ const TABS: { id: AdminTab; label: string }[] = [
 export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
   const [activeTab, setActiveTab] = useState<AdminTab>('site-content');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  /**
+   * The MFA ticket from a first login leg that asked for a second factor.
+   *
+   * Non-null is exactly the condition for showing the code step, so there is
+   * no separate boolean that could disagree with it. Identity mode only.
+   */
+  const [mfaTicket, setMfaTicket] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -266,8 +274,37 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
     setError(null);
     try {
       const r = await apiService.login({ username, password });
-      if (r.error) setError(r.error);
-      else setIsAuthenticated(true);
+      if (r.status === 'authenticated') setIsAuthenticated(true);
+      else if (r.status === 'mfa-required') setMfaTicket(r.ticket);
+      else setError(r.error);
+    } catch {
+      setError('Login failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /**
+   * Finishes a login that asked for a second factor.
+   *
+   * Clearing the ticket on success matters as much as setting the session:
+   * the ticket is single use, so leaving it in state would show the code step
+   * again on the next sign out with a value the server has already spent.
+   */
+  const handleTotp = async (code: string) => {
+    if (mfaTicket === null) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const r = await apiService.completeTotp({ ticket: mfaTicket, code });
+      if (r.status === 'authenticated') {
+        setMfaTicket(null);
+        setIsAuthenticated(true);
+      } else if (r.status === 'mfa-required') {
+        setMfaTicket(r.ticket);
+      } else {
+        setError(r.error);
+      }
     } catch {
       setError('Login failed');
     } finally {
@@ -575,6 +612,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
   };
 
   if (!isAuthenticated) {
+    if (mfaTicket !== null) {
+      return (
+        <TotpForm
+          onSubmit={handleTotp}
+          onCancel={() => {
+            setMfaTicket(null);
+            setError(null);
+          }}
+          loading={loading}
+          error={error}
+          className={className}
+        />
+      );
+    }
     return (
       <LoginForm
         onLogin={handleLogin}
