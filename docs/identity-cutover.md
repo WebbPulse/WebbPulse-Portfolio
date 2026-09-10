@@ -289,6 +289,150 @@ it would leave an account with no way back in; see
 `has_other_sign_in_method` in `backend/app/composition/identity_hooks.py` for how
 Portfolio answers that question today and why.
 
+## Passkeys, once M5 is applied
+
+M5 adds seven routes under `/api/auth` and needs no new table: `passkeys` and
+`webauthn-challenges` were created by the M6 apply, ahead of the code that reads
+them, so adopting M5 is a backend change with no apply in front of it.
+
+**None of the seven routes mount until `passkeys_enabled` is true.** With it
+false, which is how this PR ships in both environments, the identity function
+serves exactly the routes it served under 0.14.0 and the OpenAPI document
+contains no `/api/auth/passkeys` path at all. That is asserted by
+`backend/tests/test_identity_m5.py`, so applying this PR changes no behaviour
+that anybody can reach.
+
+**The package's own default for both passkey flags is true, and this product
+ships both false.** That inversion is the one thing about this milestone worth
+reading twice, because it means an omitted Terraform variable is not a no-op:
+it would mount seven routes. Both are set explicitly in
+`terraform/lambda_domains.tf` for that reason, and a test pins the package
+default so a future release that flips it turns the now-redundant line into a
+failing test rather than a line nobody can explain.
+
+### 1. The two switches are separate, and they are not turned on together
+
+| Variable | Default | What true means |
+|---|---|---|
+| `passkeys_enabled` | `false` | The five management routes mount. A user can enrol, list, rename and delete a passkey, and use one as a second factor. |
+| `passkeys_passwordless` | `false` | The two `/api/auth/login/passkey/*` routes stop refusing. A passkey becomes a way into the account with no password at all. |
+
+`passkeys_enabled` is a rollout step and waits on the frontend.
+`@webbpulse/auth` 0.8.0 is what calls `navigator.credentials.create`, and until
+it ships a mounted route is a route nothing calls, and one a curious client
+could enrol a credential against under an RP id that is immutable for that
+credential's life.
+
+`passkeys_passwordless` is a policy decision rather than a rollout step, and it
+**stays off until the owner decides**. Turning it on is not required to use
+passkeys: with it off a passkey is a managed credential and a second factor,
+which is the whole of what the frontend work needs. The package makes
+passwordless safe rather than right, and the difference matters here.
+`POST /api/auth/login/passkey/options` answers any input, including an unknown
+address, returning a challenge and an empty `allowCredentials` so an anonymous
+route cannot become an account oracle. Whether a single administrator product
+wants a passwordless entry point at all is a separate question, and nothing in
+this PR presumes on the answer.
+
+### 2. Turning passkeys on, per environment
+
+Both are HCP Terraform workspace variables, Terraform kind, on the workspace for
+the environment: `WebbPulse-Portfolio-staging` for staging and
+`WebbPulse-Portfolio` for production.
+
+```
+passkeys_enabled = true
+```
+
+Set it, queue a plan, and apply. The plan is a Lambda environment update on the
+identity function and nothing else. The routes mount on the next cold start.
+
+Staging first, and leave it there long enough to enrol a passkey and sign in
+with it on a real authenticator, because the failure modes below are the kind
+that only appear against a real browser.
+
+### 3. What the RP id and the origins have to agree about
+
+Two values decide whether a ceremony can succeed at all, and neither is typed
+into HCP.
+
+`IDENTITY_RP_ID` comes from `module.identity` and is the registrable domain,
+the same string the refresh cookie is scoped to. **It is the one identity value
+that cannot be corrected later**: it is hashed into every credential and
+immutable for that credential's life, so a passkey enrolled under a wrong RP id
+has to be re-enrolled rather than fixed by a variable change.
+
+`IDENTITY_WEBAUTHN_ORIGINS` is derived in Terraform from `local.domain`, the
+same local `IDENTITY_FRONTEND_BASE_URL` is built from, so the origin a browser
+sends and the origin a ceremony checks cannot drift apart.
+
+| Environment | RP id | WebAuthn origin |
+|---|---|---|
+| staging | `staging.webbpulse.com` | `https://staging.webbpulse.com` |
+| production | `webbpulse.com` | `https://webbpulse.com` |
+
+The origin is an origin and not a URL with a path, because `clientDataJSON`
+carries only the scheme, host and port. The package requires both values rather
+than defaulting either, and raises naming the variable when one is missing: an
+empty origin list would make the origin check vacuous, and the origin check is
+the whole of what makes a passkey phishing resistant.
+
+A passkey enrolled against staging does not work against production, and that is
+correct rather than an inconvenience. The two are different RP ids, which is the
+same property that stops a credential minted on the real site being replayed
+from a lookalike.
+
+### 4. What to expect after setting it
+
+The five management routes appear first, and they are the ones the frontend
+needs: `POST /api/auth/passkeys/register/options` and `.../verify` to enrol,
+`GET /api/auth/passkeys` to list, and `PATCH` and `DELETE` on
+`/api/auth/passkeys/{credential_id}` to rename and remove one.
+
+The two login routes mount at the same time and refuse while
+`passkeys_passwordless` is false, which is the intended state. They start
+working on the day that second variable is set, with no code change and no
+redeploy beyond the apply.
+
+Three package behaviours worth knowing before the first real sign in, because
+each presents as a refusal with no obvious cause:
+
+- **A challenge is single use and lasts five minutes.** It is a row, deleted the
+  moment it is consumed, and spent by one attempt whatever the outcome. A retry
+  needs fresh options rather than a replayed challenge.
+- **A signature counter that fails to increase is refused and logged at ERROR.**
+  That is the WebAuthn specification's cloned-authenticator signal. Both counts
+  being zero is the documented exception and is allowed, because many
+  authenticators, Apple's included, keep no counter at all.
+- **A user-verified passkey is not challenged for a TOTP code.** The assertion
+  proves possession and the `uv` flag proves the authenticator checked something
+  the user knows or is, so it counts as two factors. A passkey that reports no
+  user verification is one factor and is challenged for a second exactly as a
+  password is.
+
+And one that matters for account recovery: **the last passkey cannot be deleted
+by a user with no password.** It applies only to the last one, and "has a
+password" is read from the `credentials` table. Before turning
+`passkeys_passwordless` on for an account that has no password set, make sure
+there is a second way in.
+
+### 5. Rolling passkeys back
+
+Set the variable back and apply:
+
+```
+passkeys_enabled = false
+```
+
+The seven routes stop being declared on the next cold start. Nothing needs
+undoing in the data: enrolled credentials stay in `passkeys` and become
+reachable again the moment the variable goes back to true, and the RP id they
+were enrolled under has not changed. Any in-flight challenges expire on their
+own within five minutes.
+
+Turning it off does not sign anybody out. A session issued by a passkey login is
+an ordinary session and is unaffected.
+
 ## Rolling back
 
 Set the variable back and redeploy:

@@ -309,7 +309,7 @@ module "lambda_domain" {
     # URL there.
     each.key == "identity" ? merge({
       IDENTITY_ENVIRONMENT       = var.environment
-      IDENTITY_RP_NAME           = "WebbPulse Portfolio"
+      IDENTITY_RP_NAME           = var.identity_rp_name
       IDENTITY_PRODUCT_NAME      = "WebbPulse Portfolio"
       IDENTITY_SUPPORT_EMAIL     = "support@${local.domain}"
       IDENTITY_FRONTEND_BASE_URL = "https://${local.domain}"
@@ -382,6 +382,43 @@ module "lambda_domain" {
       IDENTITY_OAUTH_REDIRECT_URIS = local.identity_oauth_redirect_uris
       IDENTITY_GOOGLE_CLIENT_ID    = var.oauth_google_client_id
       IDENTITY_GITHUB_CLIENT_ID    = var.oauth_github_client_id
+
+      # M5's three passkey variables, and the fourth is IDENTITY_RP_NAME above,
+      # which M5 is the first milestone to actually read.
+      #
+      # BOTH FLAGS ARE SET EXPLICITLY BECAUSE THE PACKAGE DEFAULTS BOTH TO TRUE.
+      # This is the one place in this block where omitting a line would not
+      # leave the behaviour alone: `IdentitySettings.passkeys_enabled` and
+      # `.passkeys_passwordless` both default on, so an unset variable mounts
+      # seven routes rather than none. identity.tf carries the full note on why
+      # the two are separate switches and why each ships false; the short
+      # version is that the first waits on `@webbpulse/auth` 0.8.0 on the
+      # frontend and the second is a policy decision the owner has not made.
+      #
+      # `tostring` rather than the bare bool because a Lambda environment
+      # variable is a string either way and Terraform would render `true` and
+      # `false` identically, but being explicit is what makes the pydantic side
+      # legible: `IdentitySettings` parses these with pydantic's bool coercion,
+      # which reads "true"/"false" case insensitively, and the same rendering is
+      # what IDENTITY_REGISTRATION_ENABLED above already uses.
+      #
+      # IDENTITY_WEBAUTHN_ORIGINS is a JSON array on the same rule
+      # IDENTITY_OAUTH_REDIRECT_URIS and IDENTITY_SIGNING_KEY_ARNS follow: the
+      # settings field is a list and the class refuses bare CSV for those. It
+      # carries the frontend origin, built from the same local.domain that
+      # IDENTITY_FRONTEND_BASE_URL is, so the origin a browser sends and the
+      # origin a ceremony checks cannot disagree.
+      #
+      # THE RP ID IS NOT HERE. IDENTITY_RP_ID comes from
+      # module.identity.identity_environment, merged last below, and is the
+      # registrable domain the refresh cookie is already scoped to. It is the
+      # one identity value that cannot be corrected later: it is hashed into
+      # every credential and immutable for that credential's life, so a passkey
+      # enrolled under a wrong rp_id is a passkey that has to be re-enrolled
+      # rather than a setting that gets fixed.
+      IDENTITY_PASSKEYS_ENABLED      = tostring(var.passkeys_enabled)
+      IDENTITY_PASSKEYS_PASSWORDLESS = tostring(var.passkeys_passwordless)
+      IDENTITY_WEBAUTHN_ORIGINS      = local.identity_webauthn_origins
       },
 
       # The module's own map, merged last so it wins over anything above it.
@@ -396,9 +433,15 @@ module "lambda_domain" {
       #
       # It is deliberately not the whole block. IDENTITY_ENVIRONMENT,
       # IDENTITY_RP_NAME, IDENTITY_PRODUCT_NAME, IDENTITY_SUPPORT_EMAIL,
-      # IDENTITY_FRONTEND_BASE_URL, the two SES strings and the registration
-      # switch are product decisions with no resource behind them, so they stay
-      # here where this product owns them.
+      # IDENTITY_FRONTEND_BASE_URL, the two SES strings, the registration switch,
+      # M6's three OAuth variables and M5's three passkey ones are product
+      # decisions with no resource behind them, so they stay here where this
+      # product owns them.
+      #
+      # IDENTITY_RP_ID is the module's and is the counterpart to M5's block
+      # above: the origins are a product decision and the RP id follows from the
+      # registrable domain the module already owns, which is what keeps it the
+      # same string as the refresh cookie's domain.
       #
       # Merging the module last rather than first is what makes the issuer the
       # gateway is configured from and the issuer the signer stamps the same

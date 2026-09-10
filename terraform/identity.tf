@@ -258,6 +258,57 @@ variable "oauth_github_client_id" {
   default     = ""
 }
 
+# ---------------------------------------------------------------------------
+# M5's two passkey switches, and why each is a variable rather than a literal.
+#
+# THE PACKAGE DEFAULTS BOTH OF THESE TO TRUE AND THIS PRODUCT SHIPS BOTH FALSE.
+# That inversion is the whole of what keeps this adoption inert, so it is worth
+# stating plainly: an omitted variable here is not a no-op, it mounts seven
+# routes. `IdentitySettings` defaults them on because the standard treats the
+# baseline as mandatory and the flags exist to stage a rollout rather than to
+# opt out permanently. Staging a rollout is exactly what this is.
+#
+# The two are separate switches because they are two different decisions.
+#
+# `passkeys_enabled` is the rollout step. With it true, all five management
+# routes mount and a user can enrol, list, rename and delete a passkey. It waits
+# on the frontend: `@webbpulse/auth` 0.8.0 is what calls
+# `navigator.credentials.create`, and until it exists a mounted route is a route
+# nothing calls and one a curious client could enrol a credential against, under
+# an rp_id that is immutable for that credential's life.
+#
+# `passkeys_passwordless` is a policy decision and outlives the rollout. With it
+# false and `passkeys_enabled` true, both `/login/passkey/*` routes refuse and a
+# passkey is a managed credential and a second factor but not an entry point.
+# With it true a passkey is a way into the account with no password at all. The
+# package makes that safe rather than right: `POST /login/passkey/options`
+# answers any input, including an unknown address, returning a challenge and an
+# empty `allowCredentials` so an anonymous route does not become an account
+# oracle. Whether a single administrator product wants a passwordless entry
+# point is the owner's call, and it stays false until they make it.
+#
+# So the ordinary sequence is two separate HCP variable changes with a redeploy
+# each, not one. docs/identity-cutover.md carries it.
+# ---------------------------------------------------------------------------
+
+variable "passkeys_enabled" {
+  description = "Whether identity M5's passkey routes are declared. False, the shipping default, mounts none of the seven and leaves the served API identical to M6's. The package's own default is true, so this is set explicitly rather than omitted: an unset value here would mount routes the frontend has no code for. Turning it on needs @webbpulse/auth 0.8.0 on the frontend first."
+  type        = bool
+  default     = false
+}
+
+variable "passkeys_passwordless" {
+  description = "Whether a passkey is an entry point as well as a credential. False, the shipping default, refuses both /login/passkey routes, so a passkey can be enrolled and managed and used as a second factor but cannot sign anybody in on its own. Independent of passkeys_enabled and stays off until the owner decides a passwordless sign in is wanted; the package's own default is true."
+  type        = bool
+  default     = false
+}
+
+variable "identity_rp_name" {
+  description = "The WebAuthn Relying Party name, which is the product name a browser and an authenticator show the user during a passkey ceremony. Unlike rp_id this is a display string with no security meaning and can be changed at any time without invalidating a credential. Defaults to the value IDENTITY_RP_NAME already carries, so introducing this variable changes no environment."
+  type        = string
+  default     = "WebbPulse Portfolio"
+}
+
 locals {
   # The redirect URI allow list, as the JSON array IDENTITY_OAUTH_REDIRECT_URIS
   # expects.
@@ -282,6 +333,30 @@ locals {
   # discovery document and the authorizer are all built from, so the callback
   # the package will accept and the callback it advertises cannot disagree.
   identity_oauth_redirect_uris = jsonencode(["${local.identity_issuer}/oauth/callback"])
+
+  # M5's WebAuthn origin allow list, as the JSON array IDENTITY_WEBAUTHN_ORIGINS
+  # expects. A JSON array rather than a bare string because
+  # `IdentitySettings.webauthn_origins` is a list field and the class refuses
+  # comma separated values for those, the same rule the redirect URIs above and
+  # IDENTITY_SIGNING_KEY_ARNS both follow.
+  #
+  # THE ORIGIN CHECK IS THE WHOLE OF WHAT MAKES A PASSKEY PHISHING RESISTANT,
+  # which is why the package requires this rather than defaulting it and raises
+  # naming the variable when it is empty. An assertion carries the origin the
+  # browser was actually on, and comparing it against this list is what stops a
+  # credential enrolled on the real site from being usable on a lookalike. An
+  # empty list makes that comparison vacuous.
+  #
+  # An origin, not a URL with a path: scheme, host and port only, which is what
+  # the browser puts in `clientDataJSON`. It is built from local.domain, the
+  # same local IDENTITY_FRONTEND_BASE_URL above is built from, so the origin a
+  # browser sends and the origin a ceremony checks cannot drift apart. One entry,
+  # because this product serves its frontend from one host per environment.
+  #
+  # This is the apex domain rather than the API host on purpose. The ceremony
+  # happens in the page the user is looking at, which is the frontend, and the
+  # API host only ever receives the already signed result.
+  identity_webauthn_origins = jsonencode(["https://${local.domain}"])
 }
 
 module "identity" {
