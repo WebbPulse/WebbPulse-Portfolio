@@ -23,13 +23,13 @@ A modern, responsive personal portfolio website showcasing development work and 
 This frontend depends on the org's shared TypeScript packages, which are
 published to AWS CodeArtifact rather than the public npm registry:
 
-| Package                    | Used for                                                         |
-| -------------------------- | ---------------------------------------------------------------- |
-| `@webbpulse/api-client`    | The typed fetch client behind `src/services/api.ts`              |
-| `@webbpulse/auth`          | Token storage, which degrades when `localStorage` is unavailable |
-| `@webbpulse/config`        | Validated startup configuration from `import.meta.env`           |
-| `@webbpulse/tsconfig`      | The compiler options `tsconfig.app.json` extends                 |
-| `@webbpulse/eslint-config` | The lint rules `eslint.config.js` extends                        |
+| Package                    | Used for                                               |
+| -------------------------- | ------------------------------------------------------ |
+| `@webbpulse/api-client`    | The typed fetch client behind `src/services/api.ts`    |
+| `@webbpulse/auth`          | `AuthClient`, for the identity mode described below    |
+| `@webbpulse/config`        | Validated startup configuration from `import.meta.env` |
+| `@webbpulse/tsconfig`      | The compiler options `tsconfig.app.json` extends       |
+| `@webbpulse/eslint-config` | The lint rules `eslint.config.js` extends              |
 
 `frontend/.npmrc` points the `@webbpulse` scope at the CodeArtifact repository,
 but it deliberately holds no auth token. Before your first `npm install` or
@@ -49,6 +49,29 @@ Note that a `ReadOnlyAccess` profile is not enough: the AWS managed
 ReadOnlyAccess policy omits `sts:GetServiceBearerToken`, which
 `codeartifact login` requires. CI does not use these profiles at all; it obtains
 a token over OIDC in the workflow.
+
+### Authentication modes
+
+Authentication is mid migration, and which mechanism a bundle uses is chosen by
+the `VITE_AUTH_MODE` environment variable rather than by a code change.
+
+| Mode               | What it does                                                                                                        |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `bearer` (default) | `POST /api/v1/admin/login` answers with a bearer token, which is held in `localStorage` and sent on every request   |
+| `identity`         | `AuthClient` from `@webbpulse/auth`: an in memory access token, an httpOnly refresh cookie, and retry once on a 401 |
+
+`identity` is written, typed and unit tested today, but it is not switched on
+because the routes it calls do not exist yet. Portfolio's identity function
+currently serves the JWKS, the OpenID discovery document and its own health
+route; `AuthClient` additionally needs `/api/auth/login`, `/api/auth/refresh`
+and `/api/auth/logout`. Setting `VITE_AUTH_MODE=identity` before those are live
+breaks signing in.
+
+When they are live, set `VITE_AUTH_MODE=identity` on the environment. Once
+every environment carries it, the bearer branch in `src/services/api.ts`,
+`src/services/bearerTokenStore.ts` and `src/services/authMode.ts` are deleted
+together. See `IDENTITY_CUTOVER` in `src/services/api.ts` for the full list of
+what the backend has to provide.
 
 ### Installation
 
