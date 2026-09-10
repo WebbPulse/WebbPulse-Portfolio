@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '../common';
+import {
+  describeOAuthCallbackError,
+  readOAuthCallback,
+  stripOAuthParams,
+} from '@webbpulse/auth';
 import { apiService } from '../../services/api';
+import { useOAuthProviders } from '../../hooks/useOAuthProviders';
 import { LoginForm } from './LoginForm';
 import { TotpForm } from './TotpForm';
 import { ProjectForm } from './ProjectForm';
@@ -141,6 +147,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
    */
   const identityClient = apiService.getIdentityClient();
 
+  /**
+   * The providers this deployment configured, probed once per page load.
+   *
+   * Passed to the Security tab so the "Connect ..." buttons appear only for
+   * providers that exist. The list of what is already linked comes from the
+   * route and is a separate question. See `services/oauthAvailability.ts`.
+   */
+  const oauthProviders = useOAuthProviders(identityClient);
+
   // Projects
   const [projects, setProjects] = useState<Project[]>([]);
   const [showProjectForm, setShowProjectForm] = useState(false);
@@ -197,8 +212,85 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
   const [siteContentForm, setSiteContentForm] =
     useState<SiteContentFormData>(EMPTY_SITE_CONTENT);
 
+  /**
+   * Bumped whenever a link callback lands, to make the Security tab reload.
+   *
+   * `ConnectedAccounts` loads its own list on mount and there is no route that
+   * pushes at it, so a `?oauth_linked=1` return has to tell it to look again.
+   * A counter through `key` remounts the component, which is the smallest
+   * thing that reliably re-runs the load without lifting the whole list into
+   * this file.
+   */
+  const [linksEpoch, setLinksEpoch] = useState(0);
+
+  /**
+   * Reads whatever the OAuth callback left in the address bar.
+   *
+   * Exactly one of four parameters is present, and `readOAuthCallback` narrows
+   * them with a fixed precedence: an error outranks a ticket, which outranks a
+   * link, which outranks a sign-in. That order matters because a `return_to`
+   * carrying a stale `?oauth=1` of its own must not let a successful-looking
+   * parameter mask a live refusal.
+   *
+   * The parameters are stripped immediately, before any await. The MFA ticket
+   * is a live single-use bearer value and leaving it in the address bar leaves
+   * it in the browser history and in the `Referer` of the next navigation. The
+   * strip also stops a reload re-running this against a callback that was
+   * already handled.
+   *
+   * Runs once, on mount, and only in identity mode: bearer mode has no OAuth
+   * routes and nothing can have redirected here from one.
+   */
   useEffect(() => {
-    if (apiService.isAuthenticated()) setIsAuthenticated(true);
+    if (identityClient === null) {
+      if (apiService.isAuthenticated()) setIsAuthenticated(true);
+      return;
+    }
+
+    const result = readOAuthCallback(window.location.href);
+    if (result !== null) {
+      window.history.replaceState(
+        null,
+        '',
+        stripOAuthParams(window.location.href)
+      );
+    }
+
+    switch (result?.kind) {
+      case 'signed-in':
+        // The refresh cookie is already set. `initialize` spends it and puts
+        // the access token in memory, which is the same thing a reload does.
+        setLoading(true);
+        void identityClient
+          .initialize()
+          .then(() => {
+            setIsAuthenticated(apiService.isAuthenticated());
+          })
+          .catch(() => {
+            setError('That sign-in could not be completed. Try again.');
+          })
+          .finally(() => {
+            setLoading(false);
+          });
+        return;
+      case 'mfa-required':
+        // The same second leg the password path reaches, and the same screen.
+        // The ticket is posted to the same route by `completeTotp`.
+        setMfaTicket(result.ticket);
+        return;
+      case 'linked':
+        setIsAuthenticated(apiService.isAuthenticated());
+        setLinksEpoch(epoch => epoch + 1);
+        return;
+      case 'error':
+        setError(describeOAuthCallbackError(result));
+        setIsAuthenticated(apiService.isAuthenticated());
+        return;
+      default:
+        setIsAuthenticated(apiService.isAuthenticated());
+    }
+    // Runs once. `identityClient` is fixed for the life of the bundle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -1350,7 +1442,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
                     </p>
                   </div>
                 ) : (
-                  <SecuritySection client={identityClient} />
+                  <SecuritySection
+                    key={linksEpoch}
+                    client={identityClient}
+                    oauthClient={identityClient}
+                    availableProviders={oauthProviders}
+                  />
                 )}
               </div>
             )}

@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '../common';
 import { apiService } from '../../services/api';
+import { OAuthButtons } from './OAuthButtons';
+import { useOAuthProviders } from '../../hooks/useOAuthProviders';
 
 /**
  * The one sentence the reset request ever shows, whatever happened.
@@ -38,6 +40,15 @@ export const LoginForm: React.FC<LoginFormProps> = ({
    * control appears exactly when there is something behind it.
    */
   const identity = apiService.getIdentityClient();
+
+  /**
+   * The providers this deployment configured, or an empty list.
+   *
+   * Empty in bearer mode, empty while the probe is in flight, and empty on a
+   * backend with no OAuth routes mounted. `OAuthButtons` renders nothing for
+   * an empty list, so all three cases produce the login page as it was.
+   */
+  const providers = useOAuthProviders(identity);
 
   const [resetOpen, setResetOpen] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
@@ -131,6 +142,17 @@ export const LoginForm: React.FC<LoginFormProps> = ({
               {loading ? 'Logging in...' : 'Login'}
             </Button>
           </form>
+
+          {identity !== null && (
+            <OAuthButtons
+              providers={providers}
+              startUrl={provider =>
+                identity.oauthStartUrl(provider, {
+                  returnTo: window.location.pathname,
+                })
+              }
+            />
+          )}
 
           {identity !== null && (
             <div className="mt-4">

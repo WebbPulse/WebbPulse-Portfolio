@@ -15,3 +15,4 @@ export {
   useCertifications,
   useSiteContent,
 } from './useApiData';
+export { useOAuthProviders } from './useOAuthProviders';

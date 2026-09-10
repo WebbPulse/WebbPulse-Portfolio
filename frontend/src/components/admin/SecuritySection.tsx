@@ -8,6 +8,7 @@ import type {
 
 import { Button } from '../common';
 import { qrCodeSvgPath } from '../../utils/qrCode';
+import { ConnectedAccounts, type OAuthLinksClient } from './ConnectedAccounts';
 
 /**
  * The admin panel's second factor management, in identity mode.
@@ -68,6 +69,20 @@ export interface SecurityClient {
 
 interface SecuritySectionProps {
   client: SecurityClient;
+  /**
+   * The three OAuth link routes, or null where they are not offered.
+   *
+   * Separate from `client` rather than folded into it because the two are
+   * gated on different things. The MFA routes exist wherever identity mode
+   * does; the OAuth ones exist only when the deployment configured a provider,
+   * which is probed rather than read. Null renders no "Connected accounts"
+   * block at all, which is the right answer for a backend with no OAuth
+   * routes mounted: an empty block would suggest the feature exists and is
+   * merely unused.
+   */
+  oauthClient?: OAuthLinksClient | null;
+  /** The providers that deployment has configured. See `oauthClient`. */
+  availableProviders?: readonly string[];
   className?: string;
 }
 
@@ -316,6 +331,8 @@ const CodePrompt: React.FC<{
 
 export const SecuritySection: React.FC<SecuritySectionProps> = ({
   client,
+  oauthClient = null,
+  availableProviders = [],
   className = '',
 }) => {
   const [factor, setFactor] = useState<FactorState>('unknown');
@@ -537,6 +554,14 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
             Turn off the authenticator app
           </Button>
         </div>
+      )}
+
+      {oauthClient !== null && (
+        <ConnectedAccounts
+          client={oauthClient}
+          availableProviders={availableProviders}
+          className="mt-10 pt-8 border-t border-gray-200 dark:border-gray-700"
+        />
       )}
     </div>
   );
