@@ -591,3 +591,387 @@ def test_the_routes_do_not_mount_without_the_factor_store(
     # And the earlier milestones are still there, which is the point: a missing
     # store takes the six routes and nothing else.
     assert "/api/auth/login" in paths
+
+
+# ---------------------------------------------------------------------------
+# The 0.13.0 body on the two destructive routes
+# ---------------------------------------------------------------------------
+#
+# These are route contract tests, not re-tests of the package's MFA mechanism.
+# The distinction is the one this module's docstring draws, and it is worth
+# restating because the line is fine here.
+#
+# The package's own suite proves that `verify_challenge` accepts a TOTP code
+# inside its window, that a recovery code is single use, and that a refusal
+# raises `MfaRejected`. None of that is re-asserted below.
+#
+# What is asserted is the shape of the two requests this product's frontend has
+# to send, because 0.13.0 changed it: both routes took no body at all through
+# 0.12.1 and both now require `{"code": "..."}`. A frontend still sending the
+# old empty body gets a 422, and the failure is a user unable to turn off their
+# own second factor. `terraform/apigateway.tf` carries the route keys and
+# `tests/entrypoints/test_gateway_routes.py` pins those, but a route key encodes
+# a method and a path and can say nothing about a body, so this is the only
+# place the new contract is pinned on this side.
+#
+# The app under test is built from the package's in-memory stores rather than
+# the composition root's Dynamo ones, and a real factor is enrolled through the
+# package's own service, so the codes below are real codes and the consumption
+# assertion observes a real deletion. Using a fake here would make the test a
+# restatement of its own setup.
+
+
+class _EnvelopeKms:
+    """M1's signing fake, plus the two envelope calls enrolment makes.
+
+    `FakeKms` covers `sign` and `get_public_key`, which is all M1 through M3
+    needed. Sealing a TOTP seed also calls `GenerateDataKey` and `Decrypt`, so
+    those are added here rather than in the M1 fake: this is the only module
+    that enrols, and widening the shared fake would give the earlier files a
+    capability their subject never uses.
+
+    The wrapped key carries its encryption context, and `decrypt` refuses a
+    context that does not match. That is the property the envelope is for, so a
+    fake that ignored it would let a broken `user_id` binding pass here.
+    """
+
+    def __init__(self, signing: Any) -> None:
+        self._signing = signing
+        self._keys: dict[bytes, tuple[bytes, dict[str, str]]] = {}
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._signing, name)
+
+    def generate_data_key(
+        self, *, KeyId: str, NumberOfBytes: int, EncryptionContext: dict[str, str]
+    ) -> dict[str, Any]:
+        import os
+
+        plaintext = os.urandom(NumberOfBytes)
+        blob = b"wrapped-" + os.urandom(16)
+        self._keys[blob] = (plaintext, dict(EncryptionContext))
+        return {"Plaintext": plaintext, "CiphertextBlob": blob}
+
+    def decrypt(
+        self, *, CiphertextBlob: bytes, EncryptionContext: dict[str, str]
+    ) -> dict[str, Any]:
+        plaintext, context = self._keys[bytes(CiphertextBlob)]
+        if context != dict(EncryptionContext):
+            raise ValueError("encryption context mismatch")
+        return {"Plaintext": plaintext}
+
+
+def _enrolled_app(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> tuple[Any, ...]:
+    """An identity app with one enrolled user, plus the pieces to drive it.
+
+    Returns `(app, mfa_service, user_id, access_token, recovery_codes)`.
+    """
+    import boto3
+    from webbpulse.identity import (
+        IdentitySettings,
+        IdentityStores,
+        InMemoryCredentialStore,
+        InMemoryIdentityTokenStore,
+        InMemoryRecoveryCodeStore,
+        InMemoryRefreshTokenStore,
+        InMemoryTotpFactorStore,
+        build_identity_router,
+    )
+
+    from app.version import VERSION
+
+    _identity_environment(monkeypatch)
+    monkeypatch.setenv("IDENTITY_DATA_KEY_ARN", DATA_KEY_ARN)
+
+    fake = _EnvelopeKms(FakeKms(private_key))
+    monkeypatch.setattr(boto3, "client", lambda service, *a, **kw: fake)
+
+    user_id = "user-under-test"
+
+    class _Hooks(PortfolioIdentityHooks):
+        """The product's hooks with the two lookups answered from memory.
+
+        Subclassing rather than writing a stand-in keeps the `claims_for` policy
+        this product actually ships in the path, so the access token minted
+        below carries the claims the real one would.
+        """
+
+        def load_user_by_id(self, uid: str) -> Any:
+            return {"id": uid, "email": "admin@example.com"} if uid == user_id else None
+
+        def load_user_by_email(self, email: str) -> Any:
+            return {"id": user_id, "email": email}
+
+    settings = IdentitySettings()  # pyright: ignore[reportCallIssue]
+    stores = IdentityStores(
+        credentials=InMemoryCredentialStore(),
+        refresh_tokens=InMemoryRefreshTokenStore(),
+        identity_tokens=InMemoryIdentityTokenStore(),
+        totp_factors=InMemoryTotpFactorStore(),
+        recovery_codes=InMemoryRecoveryCodeStore(),
+    )
+
+    router = build_identity_router(
+        settings,
+        _Hooks(),
+        stores,
+        kms_client=fake,
+        service="webbpulse-portfolio-identity",
+        version=VERSION,
+    )
+
+    # Built through `create_app` with this product's own `ERROR_ENVELOPE_OPTIONS`
+    # rather than a bare `FastAPI()`, because the 422 below is rendered by the
+    # shared validation handler that `create_app` installs and `error_codes`
+    # turns on. A bare app would answer 422 with FastAPI's default body, and the
+    # `error_code` assertion would be testing the fixture rather than the
+    # product. `app/composition/app.py` and `wiring.py` pass the same dict.
+    from webbpulse.http import create_app
+
+    from app.composition.wiring import ERROR_ENVELOPE_OPTIONS
+
+    app = create_app(
+        title="identity-under-test",
+        version=VERSION,
+        service_name="webbpulse-portfolio-identity",
+        include_health=False,
+        **ERROR_ENVELOPE_OPTIONS,
+    )
+    app.include_router(router)
+
+    # Enrol for real, through the package's own service, so the codes below are
+    # codes the router will actually accept.
+    from webbpulse.identity.mfa import MfaService
+    from webbpulse.identity.service import TokenService
+    from webbpulse.identity.totp import current_step, generate_code
+
+    tokens = TokenService(settings, fake)
+    mfa = MfaService(settings, stores, tokens, kms_client=fake)
+
+    enrolment = mfa.begin_enrolment(user_id, account_name="admin@example.com")
+    codes = mfa.confirm_enrolment(
+        user_id, generate_code(enrolment.secret, step=current_step())
+    )
+
+    access = tokens.mint_access_token(user_id, claims={"email": "admin@example.com"})
+
+    return app, mfa, user_id, access, list(codes.codes), enrolment.secret
+
+
+def _auth(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.mark.parametrize("path", ["/api/auth/totp/disable", "/api/auth/recovery-codes"])
+@pytest.mark.parametrize("body", [{}, {"code": ""}, {"code": "   "}, {"code": 123}])
+def test_a_missing_or_blank_code_is_a_422_on_both_routes(
+    private_key: Any, monkeypatch: pytest.MonkeyPatch, path: str, body: Any
+) -> None:
+    """The old 0.12.1 call shape, and the near misses, all rejected as validation.
+
+    A 422 rather than an `INVALID_MFA_CODE` is the deliberate half of this. A
+    client that forgot the field is told it forgot the field, instead of the
+    user being shown "that code is not valid" for a request that never asked
+    them for one. The empty body case is exactly what a frontend written against
+    0.12.1 sends, so this is the test that names the upgrade.
+    """
+    from fastapi.testclient import TestClient
+
+    app, _mfa, _uid, access, _codes, _secret = _enrolled_app(private_key, monkeypatch)
+
+    response = TestClient(app).post(path, json=body, headers=_auth(access))
+
+    assert response.status_code == 422, response.text
+    assert response.json()["error_code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.parametrize("path", ["/api/auth/totp/disable", "/api/auth/recovery-codes"])
+def test_a_wrong_code_is_a_401_invalid_mfa_code_on_both_routes(
+    private_key: Any, monkeypatch: pytest.MonkeyPatch, path: str
+) -> None:
+    """A well formed code that is not the user's, refused in the shared envelope.
+
+    Same status and same `error_code` as `POST /login/totp`, because it is the
+    same verification call. The frontend can therefore render one message for a
+    bad code wherever it asks for one.
+    """
+    from fastapi.testclient import TestClient
+
+    app, _mfa, _uid, access, _codes, _secret = _enrolled_app(private_key, monkeypatch)
+
+    response = TestClient(app).post(
+        path, json={"code": "000000"}, headers=_auth(access)
+    )
+
+    assert response.status_code == 401, response.text
+    assert response.json()["error_code"] == "INVALID_MFA_CODE"
+
+
+def test_a_refused_disable_leaves_the_factor_active(
+    private_key: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verification happens before anything is deleted.
+
+    This is the property that makes the code requirement worth having rather
+    than merely present: if the factor were removed before the code was checked,
+    a wrong code would still have disarmed the account.
+    """
+    from fastapi.testclient import TestClient
+
+    app, mfa, user_id, access, _codes, _secret = _enrolled_app(private_key, monkeypatch)
+
+    refused = TestClient(app).post(
+        "/api/auth/totp/disable", json={"code": "000000"}, headers=_auth(access)
+    )
+
+    assert refused.status_code == 401
+    assert mfa.factors_for(user_id) == ["totp"]
+
+
+def test_a_recovery_code_disables_the_factor_and_is_spent(
+    private_key: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A recovery code is accepted where a TOTP code is, and is consumed by the use.
+
+    Both halves matter. Accepting it is what stops the loss of the phone being
+    unrecoverable, and spending it is what stops a code observed once being
+    replayed: a recovery code that survived its use would be a password.
+
+    The count is read through the package's own `remaining_recovery_codes`
+    rather than by counting rows, so this observes the deletion the store
+    actually performed.
+    """
+    from fastapi.testclient import TestClient
+
+    app, mfa, user_id, access, codes, _secret = _enrolled_app(private_key, monkeypatch)
+
+    before = mfa.remaining_recovery_codes(user_id)
+
+    response = TestClient(app).post(
+        "/api/auth/totp/disable", json={"code": codes[0]}, headers=_auth(access)
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"disabled": True}
+    assert mfa.factors_for(user_id) == []
+    # Disabling clears the whole set, so the spent code cannot be counted against
+    # `before - 1`. What is checked is that it is gone, which is the replay bar.
+    assert mfa.remaining_recovery_codes(user_id) < before
+
+
+def test_a_current_totp_code_regenerates_the_recovery_codes(
+    private_key: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The success path of the second route, with a real code from the real seed.
+
+    The new set is returned once and every previous code stops working in the
+    same write, which is the whole point of the route: an admin who has lost
+    their codes gets a fresh set without an operator touching the table.
+    """
+    from fastapi.testclient import TestClient
+    from webbpulse.identity.totp import current_step, generate_code
+
+    app, mfa, user_id, access, codes, secret = _enrolled_app(private_key, monkeypatch)
+
+    # A step ahead of enrolment's, because the package's replay watermark
+    # refuses a code already spent to confirm the enrolment.
+    code = generate_code(secret, step=current_step() + 1)
+    response = TestClient(app).post(
+        "/api/auth/recovery-codes", json={"code": code}, headers=_auth(access)
+    )
+
+    assert response.status_code == 200, response.text
+    issued = response.json()["recovery_codes"]
+    assert len(issued) == len(codes)
+    assert set(issued).isdisjoint(codes), "the previous set was reissued"
+    assert mfa.factors_for(user_id) == ["totp"], "regenerating is not disabling"
+
+
+def test_a_refused_regenerate_leaves_the_existing_codes_working(
+    private_key: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regenerating deletes the old set before writing the new one, so the order
+    of the check against that delete is what this pins.
+
+    A user who mistypes a code and is left holding a set that no longer works,
+    with no new set to replace it, is locked out by a typo.
+    """
+    from fastapi.testclient import TestClient
+
+    app, mfa, user_id, access, codes, _secret = _enrolled_app(private_key, monkeypatch)
+
+    refused = TestClient(app).post(
+        "/api/auth/recovery-codes", json={"code": "000000"}, headers=_auth(access)
+    )
+
+    assert refused.status_code == 401
+    assert mfa.remaining_recovery_codes(user_id) == len(codes)
+
+
+@pytest.mark.parametrize("path", ["/api/auth/totp/disable", "/api/auth/recovery-codes"])
+def test_the_code_does_not_substitute_for_the_bearer_token(
+    private_key: Any, monkeypatch: pytest.MonkeyPatch, path: str
+) -> None:
+    """0.13.0 adds a requirement, it does not swap one for another.
+
+    Worth pinning because the body is new: a route that read the subject from
+    anywhere but the verified token would let one user's valid code act on
+    another user's account.
+    """
+    from fastapi.testclient import TestClient
+
+    app, _mfa, _uid, _access, codes, _secret = _enrolled_app(private_key, monkeypatch)
+
+    response = TestClient(app).post(path, json={"code": codes[0]})
+
+    assert response.status_code == 401
+    assert response.json()["error_code"] == "NOT_AUTHENTICATED"
+
+
+def _limit_namespaces(app: FastAPI, path: str) -> set[str]:
+    """The rate limit namespaces on one route, read off its dependencies.
+
+    The limiter is wired as a `Depends` per route and exposes no registry, so
+    the closure it was built from is the only place the namespace is legible.
+    Reaching into `__closure__` is ugly and is done deliberately: the
+    alternative is issuing eleven requests to observe a 429, which would make
+    this a slow test of the limiter's arithmetic rather than a fast test of
+    which routes are covered.
+    """
+    for route in app.routes:
+        if getattr(route, "path", "") != path:
+            continue
+        found: set[str] = set()
+        for dependency in getattr(route, "dependencies", []):
+            call = getattr(dependency, "dependency", None)
+            closure = getattr(call, "__closure__", None)
+            for cell in closure or ():
+                value = cell.cell_contents
+                if isinstance(value, str):
+                    found.add(value)
+        return found
+    raise AssertionError(f"{path} did not mount")
+
+
+def test_both_destructive_routes_carry_the_mfa_verify_rate_limit(
+    private_key: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same `mfa-verify` bound `login/totp` has, added to both by 0.13.0.
+
+    They accept the same codes, so they need the same ceiling: a six digit code
+    space is only acceptable because the number of attempts against it is
+    bounded, and an unbounded `totp/disable` would be a way around the bound on
+    `login/totp` rather than a separate door. Through 0.12.1 neither route was
+    limited at all, because neither took a code.
+
+    Compared against `login/totp`'s own namespace rather than a literal, so the
+    limit being retuned is not a failure here while a route quietly losing it
+    is.
+    """
+    app, _mfa, _uid, _access, _codes, _secret = _enrolled_app(private_key, monkeypatch)
+
+    expected = _limit_namespaces(app, "/api/auth/login/totp")
+    assert "mfa-verify" in expected
+
+    for path in ("/api/auth/totp/disable", "/api/auth/recovery-codes"):
+        assert "mfa-verify" in _limit_namespaces(app, path), path

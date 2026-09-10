@@ -21,7 +21,7 @@ everything this product owns stays here.
 
 ## What M4 mounts, and what it does not
 
-`build_identity_router` in 0.12.1 serves the three M1 documents:
+`build_identity_router` in 0.13.0 serves the three M1 documents:
 
     GET /.well-known/openid-configuration
     GET /.well-known/jwks.json
@@ -55,6 +55,16 @@ supplied, the six M4 MFA routes:
     POST /totp/disable
     POST /recovery-codes
     POST /step-up
+
+`totp/disable` and `recovery-codes` take a required `{"code": "..."}` body as of
+0.13.0, where both previously acted on the bearer subject alone. The code is a
+current TOTP code or an unused recovery code, it is verified before either route
+deletes anything, and a recovery code spent on either is consumed exactly as it
+is on login. A missing or blank one is a 422 `VALIDATION_ERROR` and a wrong one
+a 401 `INVALID_MFA_CODE`. Both routes now carry the same `mfa-verify` rate limit
+as `login/totp`, because they accept the same codes. Nothing in this module
+changes for that: the body is the package's contract with the caller, and the
+frontend is what sends it.
 
 all of them under the issuer's path, so `/api/auth/login` and the rest. Each
 group's mounting is conditional inside the package on exactly its own
@@ -111,7 +121,7 @@ the cutover that retires the legacy one is M9.
 mapping, and that module's docstring, are where the policy is written down. M3
 added one hook to it, `mark_email_verified`, which is the only hook the package
 gives no default. **M4 adds none.** The hooks protocol is byte identical in
-0.12.1 to what it was in 0.11.0, so `PortfolioIdentityHooks` satisfies it
+0.13.0 to what it was in 0.11.0, so `PortfolioIdentityHooks` satisfies it
 unchanged, and `tests/test_identity_m2.py`'s structural `isinstance` check
 against the runtime checkable `Protocol` is what proves that rather than a claim
 about it.
