@@ -81,8 +81,25 @@ administrator product and is why `IDENTITY_REGISTRATION_ENABLED` should stay off
 in both environments; the hook is implemented anyway so the route is not a 500
 if it is ever switched on.
 
-`on_user_created` does nothing. There are no default rows to write and no email
-to send until M3.
+`on_user_created` does nothing. There are no default rows to write, and M3's
+verification email is sent by the package's `register` flow rather than from
+here, because it needs the link the flow just issued and this hook is not given
+one.
+
+`mark_email_verified` sets `email_verified` on the `users` row. It is the hook
+M3 adds, and the only one the package gives no default, because a product that
+mounted the flow and forgot it would confirm addresses that never became
+verified. `email_verified` is a new column and DynamoDB needs no migration for
+one: every existing row simply lacks it, which reads as `None`, and that is the
+truthful answer for a row nobody has confirmed.
+
+**`may_authenticate` deliberately does not read it.** Section 8.2's prescription
+for this product is `is_admin` and `is_active`, and adding a third condition
+would lock out the seeded administrator, whose row predates the column and whose
+address nobody has confirmed. It would also make the legacy
+`POST /api/v1/admin/login` and the M2 login disagree about the same account
+while both are live. The column is recorded now so that M9, which retires the
+legacy flow, has the data to decide with rather than a backfill to run first.
 
 `user_repository` hands back `app.db.entities.users`. The package types the
 return as `object` and no M2 flow calls it, so nothing here depends on it being
@@ -178,7 +195,13 @@ class PortfolioIdentityHooks:
         return {"roles": [ADMIN_ROLE]}
 
     def on_user_created(self, user: Mapping[str, Any], via: str) -> None:
-        """No side effects to run. M3's verification email is the first one."""
+        """Still no side effects to run.
+
+        M3's verification email is sent by the package's `register` flow, not
+        from here: it needs the link the flow just issued, which this hook is
+        not given. So this stays empty, and the hook M3 actually adds is
+        `mark_email_verified` below.
+        """
         del user, via
 
     def create_user(
@@ -208,6 +231,52 @@ class PortfolioIdentityHooks:
         # placeholder in that column could be.
         record.pop("hashed_password", None)
         return users.create(record)
+
+    def mark_email_verified(self, user_id: str) -> None:
+        """Record that this user's address is confirmed, on the `users` row.
+
+        Section 4.2 gives the `users` table to the `users` domain and makes
+        `identity` a writer of the authentication columns only, so the package
+        cannot write this one and hands it here instead. It is the only hook the
+        package gives no default, and the reason is worth repeating: a product
+        that mounted the flow and forgot this would confirm addresses that never
+        became verified, and the failure would look exactly like success.
+
+        `email_verified` is a new column, and DynamoDB needs no migration for
+        one. Every existing row simply lacks it, which reads as `None` and is
+        the truthful answer for a row nobody has confirmed. The seeded
+        administrator is such a row.
+
+        **Raising is the contract for a failure, and this raises on a missing
+        row.** `Repository.update` answers `None` rather than raising when there
+        is no such id, and swallowing that would report a verification that did
+        not happen. The link is already consumed by the time this is called, so
+        the user loses it either way; what they must not lose is the truth about
+        whether it worked.
+
+        No retry loop. `Repository.update` is a single conditional `UpdateItem`
+        against DynamoDB, whose transient failures botocore already retries, and
+        a second retry here would only lengthen the window in which the same
+        write is in flight twice.
+        """
+        try:
+            numeric_id = int(user_id)
+        except (TypeError, ValueError) as exc:
+            # Unlike `load_user_by_id`, which answers `None` because a `sub`
+            # this service did not mint is honestly "no such user", there is no
+            # honest no-op here. Being asked to verify an id that cannot exist
+            # means the token and the table disagree, and that is a fault.
+            raise ValueError(
+                f"mark_email_verified was given {user_id!r}, which is not one of "
+                "this product's integer user ids."
+            ) from exc
+
+        if users.update(numeric_id, {"email_verified": True}) is None:
+            raise ValueError(
+                f"mark_email_verified found no user with id {numeric_id}. The link "
+                "was consumed, so the address is not verified and the user needs a "
+                "new one."
+            )
 
     def user_repository(self) -> object:
         """Portfolio's users repository. Typed `object`, as the protocol has it."""

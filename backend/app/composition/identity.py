@@ -1,4 +1,4 @@
-"""The identity function's M1 composition: `IdentitySettings` and the package router.
+"""The identity function's composition: `IdentitySettings` and the package router.
 
 ## Why this lives in `app/composition/` rather than in `app/domains/identity/`
 
@@ -19,9 +19,9 @@ builds an `IdentitySettings`, hands it to `build_identity_router`, and mounts th
 result at the issuer's path. Everything the package fixes lives in the package;
 everything this product owns stays here.
 
-## What M2 mounts, and what it does not
+## What M3 mounts, and what it does not
 
-`build_identity_router` in 0.10.0 serves the three M1 documents:
+`build_identity_router` in 0.11.0 serves the three M1 documents:
 
     GET /.well-known/openid-configuration
     GET /.well-known/jwks.json
@@ -37,9 +37,20 @@ store, the six M2 flow routes as well:
     POST /logout
     POST /logout-all
 
-all of them under the issuer's path, so `/api/auth/login` and the rest. The
-mounting is conditional inside the package on exactly that pair being present,
-which is why supplying them is the whole of what turns M2 on here.
+and, because this module now also passes an `email_sender` and a `stores`
+carrying an `identity-tokens` store, the four M3 email routes:
+
+    POST /verify-email
+    POST /verify-email/confirm
+    POST /reset
+    POST /reset/confirm
+
+all of them under the issuer's path, so `/api/auth/login` and the rest. Each
+group's mounting is conditional inside the package on exactly its own pair being
+present, which is why supplying them is the whole of what turns M2 and M3 on
+here. The M3 pair is a sender and the token store, and `build_email_sender`
+below returns `None` where SES does not exist, which leaves the four routes
+undeclared rather than declared and answering 503.
 
 MFA, passkeys and OAuth are M4 and later, per section 9.1.
 
@@ -47,11 +58,13 @@ MFA, passkeys and OAuth are M4 and later, per section 9.1.
 router in `app/domains/identity/router.py`, mounted at a different prefix, looking
 the user up by username, and signing an HS256 token with a shared secret rather
 than a KMS key. Nothing in this change removes it, redirects it, or alters what
-it accepts. The two flows run side by side, which is what M2 adoption is: the
-cutover that retires the legacy one is M9.
+it accepts. The two flows run side by side, which is what M2 and M3 adoption is:
+the cutover that retires the legacy one is M9.
 
 `hooks` is `PortfolioIdentityHooks` from `identity_hooks.py`. Section 8.2's
-mapping, and that module's docstring, are where the policy is written down.
+mapping, and that module's docstring, are where the policy is written down. M3
+adds one hook to it, `mark_email_verified`, which is the only hook the package
+gives no default and the only part of this bump that is not free.
 
 ## Where the router mounts, which is the issuer's path and not the origin
 
@@ -83,14 +96,15 @@ every route to `/api/auth/api/auth/...`, and keeping the helper would be a secon
 implementation of a derivation the package now owns, which can only ever drift
 from it. `terraform/apigateway.tf` carries route keys for the nine served paths.
 
-## Why the KMS client is constructed here
+## Why the KMS and SES clients are constructed here
 
-The package takes a KMS client rather than building one, which is what keeps
-`boto3` out of the `identity` extra and keeps the module importable with no AWS
-at all. Somebody has to construct it, and the composition root is the place: it
-is the layer that already knows this process runs on Lambda with a role attached.
+The package takes a KMS client rather than building one, and `SesV2EmailSender`
+takes an SES client on the same terms, which is what keeps `boto3` out of the
+`identity` extra and keeps the module importable with no AWS at all. Somebody
+has to construct them, and the composition root is the place: it is the layer
+that already knows this process runs on Lambda with a role attached.
 
-It is constructed lazily, inside `build_router`, rather than at import. Nothing in
+Both are constructed lazily, inside a function, rather than at import. Nothing in
 this package calls AWS at import time, and a `boto3.client` at module scope would
 be a credential resolution on every import of every module that transitively
 reaches this one, including in a test suite that has no credentials.
@@ -153,26 +167,28 @@ def build_router(settings: Settings) -> APIRouter:
     See the module docstring: a prefix here would double it.
 
     Passing `hooks` and a `stores` whose `credentials` is set is what mounts the
-    six M2 flow routes; the package's mounting is conditional on exactly that
-    pair, so omitting either would leave this serving the three M1 documents and
-    nothing else.
+    six M2 flow routes. Passing an `email_sender` **and** a `stores` whose
+    `identity_tokens` is set is what mounts the four M3 routes on top; the
+    package's mounting is conditional on exactly those pairs, so omitting either
+    half of either pair leaves the rest serving unchanged.
     """
     import boto3
     from webbpulse.dynamodb import Repository
     from webbpulse.identity import (
         DynamoCredentialStore,
+        DynamoIdentityTokenStore,
         DynamoLoginAttemptStore,
         DynamoRefreshTokenStore,
         IdentityStores,
         build_identity_router,
     )
 
-    from ..db.tables import CREDENTIALS, LOGIN_ATTEMPTS, REFRESH_TOKENS
+    from ..db.tables import CREDENTIALS, IDENTITY_TOKENS, LOGIN_ATTEMPTS, REFRESH_TOKENS
     from ..version import VERSION
     from .identity_hooks import PortfolioIdentityHooks
 
     def repository(logical_name: str) -> Repository:
-        """A package repository for one of the three M2 tables.
+        """A package repository for one of the four M2 and M3 tables.
 
         Prefix and endpoint are passed explicitly rather than left to the
         package's environment lookup, so this reads the same `Settings` the rest
@@ -188,13 +204,16 @@ def build_router(settings: Settings) -> APIRouter:
             endpoint_url=settings.DYNAMODB_ENDPOINT_URL,
         )
 
+    identity_settings = build_identity_settings(settings)
+
     stores = IdentityStores(
         credentials=DynamoCredentialStore(repository(CREDENTIALS)),
         refresh_tokens=DynamoRefreshTokenStore(repository(REFRESH_TOKENS)),
+        identity_tokens=DynamoIdentityTokenStore(repository(IDENTITY_TOKENS)),
     )
 
     return build_identity_router(
-        build_identity_settings(settings),
+        identity_settings,
         PortfolioIdentityHooks(),
         stores,
         kms_client=boto3.client("kms"),
@@ -206,4 +225,38 @@ def build_router(settings: Settings) -> APIRouter:
         # the same apply that creates the other two, so there is no window where
         # passing it would fail.
         attempts=DynamoLoginAttemptStore(repository(LOGIN_ATTEMPTS)),
+        email_sender=build_email_sender(identity_settings),
     )
+
+
+def build_email_sender(identity_settings: Any) -> Any:
+    """The `EmailSender` for the four M3 routes, or `None` when SES is absent.
+
+    Returning `None` is a supported state rather than a failure, and it is the
+    reason this is a function rather than two lines above. `IDENTITY_EMAIL_FROM`
+    is set by `terraform/lambda_domains.tf` only where SES exists, which is
+    where `local.custom_domains_enabled` is true, and a staging profile without
+    custom domains has no hosted zone to verify a sending domain in. The package
+    then mounts the four routes only when a sender is supplied, so such a
+    deployment serves the M1 documents and the six M2 flows and declares no
+    route it cannot honour. `terraform/ses.tf` has the full reasoning.
+
+    Constructing the client here rather than at import, for the reason the
+    module docstring gives about the KMS client: nothing in this package calls
+    AWS at import time, and a `boto3.client` at module scope is a credential
+    resolution in every test that transitively imports this.
+
+    `from_settings` rather than a keyword list, so the from address and the
+    configuration set travel from the environment through `IdentitySettings` on
+    one path. `ses_configuration_set` unset means the key is omitted from the
+    `SendEmail` call rather than sent empty, which matters: a configuration set
+    that does not exist is a hard failure on every send, and an empty string is
+    a name that does not exist rather than an absence.
+    """
+    if not identity_settings.email_from:
+        return None
+
+    import boto3
+    from webbpulse.identity.email import SesV2EmailSender
+
+    return SesV2EmailSender.from_settings(identity_settings, boto3.client("sesv2"))

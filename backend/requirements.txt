@@ -87,7 +87,30 @@
 # `cookie_path` also defaults to the issuer's path rather than a literal
 # `/api/auth`, which needs no change here: the issuer already carries that path,
 # so the derived value is the one this product was going to set by hand.
-webbpulse[fastapi,dynamodb,otel,aws-otel,security,identity]==0.10.0
+#
+# 0.11.0 is identity milestone M3: email verification and password reset over
+# SES. Strictly additive. The four new routes mount only when a product supplies
+# both an `EmailSender` and an `identity-tokens` store, on the same rule the M2
+# flow routes follow, so a service supplying neither mounts exactly what it
+# mounted in 0.10.0. This one supplies both, so all four mount.
+#
+# What the bump makes available: `webbpulse.identity.email` with the
+# `EmailSender` seam, `SesV2EmailSender` over SES v2 `SendEmail` and
+# `RecordingEmailSender` for tests; `webbpulse.identity.verification` with
+# `LinkService`, the single-use link both flows are built on; the
+# `identity-tokens` store in both its Dynamo and in-memory forms; and
+# `IdentityHooks.mark_email_verified`.
+#
+# `mark_email_verified` is the one part of the bump that is not free. It is the
+# only hook with no default, deliberately, because a product that mounted the
+# flow and forgot it would confirm addresses that never became verified. It is
+# implemented in `app/composition/identity_hooks.py` in this change.
+#
+# The `identity` extra is unchanged. `SesV2EmailSender` takes a client rather
+# than building one and types it structurally, so the extra still does not
+# depend on boto3, and the templates use `string.Template` from the standard
+# library rather than adding a templating dependency. This line gains nothing.
+webbpulse[fastapi,dynamodb,otel,aws-otel,security,identity]==0.11.0
 
 fastapi==0.115.12
 boto3==1.38.46

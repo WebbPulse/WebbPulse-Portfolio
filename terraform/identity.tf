@@ -114,6 +114,27 @@ locals {
   # that only appears at the milestone that first reads it is a value nobody
   # reviews when it is cheap to change.
   identity_registrable_domain = local.domain
+
+  # The two M3 strings: where identity email comes from, and which SES
+  # configuration set it is sent through. `terraform/ses.tf` creates both and
+  # explains why this repository had no SES before M3.
+  #
+  # BOTH ARE EMPTY WHEN CUSTOM DOMAINS ARE OFF, AND THAT IS THE SWITCH RATHER
+  # THAN AN ACCIDENT. A domain identity is verified by DKIM records, and without
+  # a hosted zone there is nowhere to write them, so an SES identity created in
+  # that configuration would stay permanently unverified and every send would
+  # fail. Empty here means `IDENTITY_EMAIL_FROM` is empty on the function, which
+  # means `build_email_sender` returns `None`, which means the package declares
+  # none of the four email routes. A deployment that cannot send email serves
+  # the M1 documents and the six M2 flows and promises nothing it cannot do.
+  #
+  # `no-reply@` because nothing reads replies to these two messages. The bodies
+  # point a reader at `IDENTITY_SUPPORT_EMAIL` for a reply that a person will
+  # see, which is the honest arrangement: a `From` that silently discards mail
+  # and a stated address that does not is better than one address that looks
+  # monitored and is not.
+  identity_email_from            = local.custom_domains_enabled ? "no-reply@${local.domain}" : ""
+  identity_ses_configuration_set = local.custom_domains_enabled ? "${local.prefix}-identity" : ""
 }
 
 # ---------------------------------------------------------------------------
