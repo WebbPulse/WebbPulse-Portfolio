@@ -11,6 +11,8 @@ export { SiteContentForm } from './SiteContentForm';
 export { SecuritySection } from './SecuritySection';
 export { ConnectedAccounts } from './ConnectedAccounts';
 export { OAuthButtons } from './OAuthButtons';
+export { PasskeysPanel } from './PasskeysPanel';
+export { PasskeySignInButton } from './PasskeySignInButton';
 export { MarkdownPreview } from './MarkdownPreview';
 export { MarkdownCheatsheet } from './MarkdownCheatsheet';
 export * from './types';
