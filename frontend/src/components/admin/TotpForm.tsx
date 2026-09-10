@@ -70,11 +70,25 @@ export const TotpForm: React.FC<TotpFormProps> = ({
                 // A one time code, so the browser can offer it from the
                 // platform's own autofill rather than the user retyping it.
                 autoComplete="one-time-code"
-                inputMode="numeric"
+                // Not `numeric`, because a recovery code goes in this same
+                // field and is base32 with hyphens. A numeric keypad on a
+                // phone would leave the user unable to type one.
+                inputMode="text"
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
                 required
                 disabled={loading}
               />
+              {/*
+                The server's `verify_challenge` shape tests the input: six
+                digits is tried as a TOTP code and anything else as a recovery
+                code, on this same route. So one field takes both, and saying
+                so is the difference between a locked out user and one who
+                reaches for the list they saved.
+              */}
+              <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                If you cannot reach your authenticator app, enter one of your
+                recovery codes here instead. Each recovery code works once.
+              </p>
             </div>
             <Button
               type="submit"

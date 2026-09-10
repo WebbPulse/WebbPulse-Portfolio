@@ -11,6 +11,7 @@ import { SkillForm } from './SkillForm';
 import { EducationForm } from './EducationForm';
 import { CertificationForm } from './CertificationForm';
 import { SiteContentForm } from './SiteContentForm';
+import { SecuritySection } from './SecuritySection';
 import type {
   AdminPanelProps,
   AdminTab,
@@ -114,6 +115,7 @@ const TABS: { id: AdminTab; label: string }[] = [
   { id: 'certifications', label: 'Certifications' },
   { id: 'blog', label: 'Blog Posts' },
   { id: 'categories', label: 'Categories' },
+  { id: 'security', label: 'Security' },
 ];
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
@@ -128,6 +130,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
   const [mfaTicket, setMfaTicket] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /**
+   * The identity client, which is null in bearer mode.
+   *
+   * Null is what gates the Security tab: the five MFA routes are identity's,
+   * and the bearer login route has no second factor to manage. Read on every
+   * render rather than held in state because it is fixed for the life of the
+   * bundle, chosen by `VITE_AUTH_MODE` at build time.
+   */
+  const identityClient = apiService.getIdentityClient();
 
   // Projects
   const [projects, setProjects] = useState<Project[]>([]);
@@ -1321,6 +1333,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* Security */}
+            {activeTab === 'security' && (
+              <div>
+                {identityClient === null ? (
+                  <div>
+                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+                      Security
+                    </h2>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      A second factor needs the identity service, which this
+                      bundle is not built against. Nothing to configure here.
+                    </p>
+                  </div>
+                ) : (
+                  <SecuritySection client={identityClient} />
+                )}
               </div>
             )}
           </div>
