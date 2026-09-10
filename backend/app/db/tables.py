@@ -2,8 +2,10 @@ from webbpulse.identity import (
     CREDENTIALS_TABLE,
     IDENTITY_TOKENS_TABLE,
     LOGIN_ATTEMPTS_TABLE,
+    RECOVERY_CODES_TABLE,
     REFRESH_FAMILY_INDEX,
     REFRESH_TOKENS_TABLE,
+    TOTP_FACTORS_TABLE,
 )
 
 ENTITIES = (
@@ -46,6 +48,24 @@ LOGIN_ATTEMPTS = LOGIN_ATTEMPTS_TABLE
 # name is the package's own constant, and `webbpulse.identity.verification` is
 # the only code that reads or writes it.
 IDENTITY_TOKENS = IDENTITY_TOKENS_TABLE
+
+# The identity standard's M4 tables, on the same rule as the four above: each
+# name is the package's own constant, and `webbpulse.identity.mfa` is the only
+# code that reads or writes either one.
+#
+# Neither has a TTL and neither ever will. Section 4.1's rule applies here with
+# more force than anywhere else in this module: an expiring refresh token costs
+# a user one extra sign in, while a TOTP factor or a recovery code that vanishes
+# on a storage reclaim schedule costs them the account. The rows are deleted
+# explicitly, by a user turning TOTP off or by a regeneration replacing a set,
+# and never on a clock.
+#
+# The MFA ticket that carries a login between its two legs is not a table. It is
+# an `identity-tokens` row with `purpose = "mfa_ticket"`, which is the same
+# single-use primitive M3's verification and reset links already use, so M4 adds
+# no fifth identity table for it.
+TOTP_FACTORS = TOTP_FACTORS_TABLE
+RECOVERY_CODES = RECOVERY_CODES_TABLE
 
 COUNTER_PREFIX = "COUNTER#"
 UNIQUE_PREFIX = "UNIQUE#"
@@ -194,6 +214,50 @@ def _login_attempts_table():
     }
 
 
+def _totp_factors_table():
+    """Hash `user_id`, no range key, no index, and deliberately no TTL.
+
+    One factor per user, so `user_id` alone is the key. A second authenticator
+    is not a second row: the user re-enrols and the seed is replaced, which is
+    what keeps the login challenge's factor list a derivation from one item
+    rather than a query over several.
+
+    The seed is not stored in the clear. `webbpulse.identity.crypto` seals it
+    under a data key from the KMS envelope key `module.identity` creates, and
+    the three envelope fields are ordinary non-key attributes, so nothing about
+    that reaches this key schema.
+    """
+    return {
+        "TableName": TOTP_FACTORS,
+        "BillingMode": "PAY_PER_REQUEST",
+        "KeySchema": [{"AttributeName": "user_id", "KeyType": "HASH"}],
+        "AttributeDefinitions": [{"AttributeName": "user_id", "AttributeType": "S"}],
+    }
+
+
+def _recovery_codes_table():
+    """Hash `user_id`, range `code_hash`, no index, and no TTL either.
+
+    The range key is the hash of the code rather than the code, on the same rule
+    the credentials table follows: a recovery code is only ever compared, so
+    there is no reason to be able to read one back. Spending one is then a point
+    write on the primary key with no index in the way, and reading a whole set
+    is one Query on the partition.
+    """
+    return {
+        "TableName": RECOVERY_CODES,
+        "BillingMode": "PAY_PER_REQUEST",
+        "KeySchema": [
+            {"AttributeName": "user_id", "KeyType": "HASH"},
+            {"AttributeName": "code_hash", "KeyType": "RANGE"},
+        ],
+        "AttributeDefinitions": [
+            {"AttributeName": "user_id", "AttributeType": "S"},
+            {"AttributeName": "code_hash", "AttributeType": "S"},
+        ],
+    }
+
+
 def _pk_table(name):
     return {
         "TableName": name,
@@ -212,6 +276,8 @@ TABLES = {
     REFRESH_TOKENS: _refresh_tokens_table(),
     LOGIN_ATTEMPTS: _login_attempts_table(),
     IDENTITY_TOKENS: _identity_tokens_table(),
+    TOTP_FACTORS: _totp_factors_table(),
+    RECOVERY_CODES: _recovery_codes_table(),
 }
 
 TTL_ATTRIBUTE = "ttl"
@@ -222,10 +288,12 @@ TTL_ATTRIBUTE = "ttl"
 RATE_LIMIT_TTL_ATTRIBUTE = "expires_at"
 
 # `webbpulse.identity` names its TTL attribute `expires_at` too, on all three
-# of its tables that have one. `credentials` is not in here and must never be:
-# a credential that expired on a storage reclaim schedule would sign somebody
-# out of their own account, on DynamoDB's timetable rather than on a deadline
-# anybody chose.
+# of its tables that have one. `credentials`, `totp-factors` and
+# `recovery-codes` are not in here and must never be: a credential or a second
+# factor that expired on a storage reclaim schedule would sign somebody out of
+# their own account, on DynamoDB's timetable rather than on a deadline anybody
+# chose, and for the two M4 tables it would lock the account rather than merely
+# end a session.
 IDENTITY_TTL_ATTRIBUTE = "expires_at"
 
 #: Every table this backend owns, in the order they are created, paired with the
@@ -240,6 +308,8 @@ ALL_TABLES = (
     (REFRESH_TOKENS, IDENTITY_TTL_ATTRIBUTE),
     (LOGIN_ATTEMPTS, IDENTITY_TTL_ATTRIBUTE),
     (IDENTITY_TOKENS, IDENTITY_TTL_ATTRIBUTE),
+    (TOTP_FACTORS, None),
+    (RECOVERY_CODES, None),
 )
 
 

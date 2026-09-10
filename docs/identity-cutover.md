@@ -126,6 +126,67 @@ build time and the currently deployed bundle already has the old value baked in.
 There is no `.env` file in `frontend/` and no Terraform input for this: the
 bundle's configuration comes from the workflow's build step only.
 
+## Two factor authentication, once M4 is applied
+
+M4 adds six routes under `/api/auth` and two DynamoDB tables, `totp-factors` and
+`recovery-codes`. Nothing about signing in changes for anybody until an
+individual account enrols: a login for a user with no active factor answers
+exactly as it did before. Enrolment is per account and opt in, and there is no
+policy that requires it.
+
+### What an admin does to enrol
+
+The backend half of this is what M4 ships. The screens that drive it are a
+separate frontend PR, so until that lands the sequence below is what the
+frontend will call rather than something a person can click.
+
+1. **Sign in normally.** Enrolment is a step up operation, so it needs a session
+   that already exists. `POST /api/auth/step-up` is what raises a plain session
+   to one allowed to change a factor, and the enrolment routes require it.
+2. **`POST /api/auth/totp/enrol`** returns a new seed as an `otpauth://` URI and
+   its matching QR payload. The seed is generated on the server, sealed with the
+   KMS envelope key before it is written, and returned exactly once. Nothing
+   reads it back afterwards, so an admin who closes the screen at this point
+   starts over rather than recovering it.
+3. **Scan the QR into an authenticator app**, then submit the six digit code it
+   shows to **`POST /api/auth/totp/activate`**. The factor is inactive until this
+   succeeds, which is what stops a mis-scanned seed from locking anybody out: a
+   failed activation leaves the account exactly as it was.
+4. **Store the recovery codes** the activation response returns. See below.
+
+From then on that account's `POST /api/auth/login` answers with an MFA challenge
+instead of a session, and the second step is `POST /api/auth/login/totp` carrying
+the ticket from the challenge plus a code. `POST /api/auth/totp/disable`, also a
+step up operation, removes the factor and returns the account to single factor.
+
+### Where recovery codes are shown
+
+**Once, in the response to `POST /api/auth/totp/activate`, and never again.**
+Only a hash of each code is stored, in the `recovery-codes` table keyed on the
+user and the code hash, so the server cannot redisplay them and neither can
+anybody with database access. An admin who loses them has one option, which is
+`POST /api/auth/recovery-codes` on a stepped up session: it issues a fresh set
+and invalidates every previous code in the same write.
+
+Each code is single use. Spending one at the second login step deletes its row,
+and codes do not expire, which is deliberate: a recovery code is the thing an
+admin reaches for months after enrolment, when the phone is gone, and one that
+had quietly expired would be worse than none at all.
+
+The practical guidance for a Portfolio administrator is to put the codes in
+1Password alongside the account, not in the same authenticator app that holds
+the factor. The failure they exist for is losing that app.
+
+### The seed at rest
+
+The seed is never stored in plaintext. `MfaService` seals it with an envelope:
+KMS `GenerateDataKey` under the identity module's TOTP key, with an encryption
+context of `purpose=totp` and the user id, so a sealed seed lifted from one row
+cannot be unsealed as another user's. The key ARN reaches the function as
+`IDENTITY_DATA_KEY_ARN`, set by the identity module. A deployment where that
+variable is missing still serves all six routes and fails at the first enrolment
+with an error naming the variable, rather than hiding the routes.
+
 ## Rolling back
 
 Set the variable back and redeploy:

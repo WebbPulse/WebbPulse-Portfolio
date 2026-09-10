@@ -19,9 +19,9 @@ builds an `IdentitySettings`, hands it to `build_identity_router`, and mounts th
 result at the issuer's path. Everything the package fixes lives in the package;
 everything this product owns stays here.
 
-## What M3 mounts, and what it does not
+## What M4 mounts, and what it does not
 
-`build_identity_router` in 0.11.0 serves the three M1 documents:
+`build_identity_router` in 0.12.1 serves the three M1 documents:
 
     GET /.well-known/openid-configuration
     GET /.well-known/jwks.json
@@ -45,14 +45,60 @@ carrying an `identity-tokens` store, the four M3 email routes:
     POST /reset
     POST /reset/confirm
 
-all of them under the issuer's path, so `/api/auth/login` and the rest. Each
-group's mounting is conditional inside the package on exactly its own pair being
-present, which is why supplying them is the whole of what turns M2 and M3 on
-here. The M3 pair is a sender and the token store, and `build_email_sender`
-below returns `None` where SES does not exist, which leaves the four routes
-undeclared rather than declared and answering 503.
+and, because this module now also passes a `stores` carrying a TOTP factor
+store and a recovery code store on top of the identity-tokens store M3 already
+supplied, the six M4 MFA routes:
 
-MFA, passkeys and OAuth are M4 and later, per section 9.1.
+    POST /login/totp
+    POST /totp/enrol
+    POST /totp/activate
+    POST /totp/disable
+    POST /recovery-codes
+    POST /step-up
+
+all of them under the issuer's path, so `/api/auth/login` and the rest. Each
+group's mounting is conditional inside the package on exactly its own
+collaborators being present, which is why supplying them is the whole of what
+turns M2, M3 and M4 on here. The M3 pair is a sender and the token store, and
+`build_email_sender` below returns `None` where SES does not exist, which leaves
+the four email routes undeclared rather than declared and answering 503. M4's
+condition is `totp_enabled` plus all three of the factor store, the recovery
+code store and the token store, which this module now supplies unconditionally.
+
+## What M4 changes about a login, which is nothing until somebody enrols
+
+The package answers `login` with a challenge rather than tokens **only for a
+user with an active TOTP factor**: 200 and
+`{"mfa_required": true, "mfa_ticket": "...", "factors": ["totp"]}`, which the
+caller finishes at `POST /api/auth/login/totp` with `{"mfa_ticket", "code"}`.
+Nobody is enrolled, so today every login answers exactly as it did under 0.11.0
+and the shape changes for one administrator on the day they enrol.
+
+`login/totp` is the one M4 route that is anonymous to the identity JWT
+authorizer, and it has to be: the ticket's audience is `<issuer>/mfa` rather
+than the API audience, so a JWT authorizer configured with the API audience
+rejects the second leg of every MFA login before it runs. It still sits behind
+the staging access gate like every other flow route, which is a different
+control; `terraform/apigateway.tf` has the full note.
+
+## Where the envelope cipher comes from, which is one environment variable
+
+A TOTP seed is the one identity secret that cannot be hashed: the server has to
+reproduce the code to check it, so unlike a password there is no one-way form.
+`webbpulse.identity.crypto.EnvelopeCipher` therefore seals it under a data key
+that KMS mints, and the key it mints from is `IDENTITY_DATA_KEY_ARN`, which
+`module.identity` sets on this function from the symmetric envelope key it
+creates. Nothing here reads that variable by hand. `IdentitySettings` picks it
+up under the `IDENTITY_` prefix as `data_key_arn`, and `MfaService` builds the
+cipher from it and from the same KMS client this module already passes for
+signing, on the first enrolment rather than at construction.
+
+That is why there is no new argument below. The cipher is wired by the variable
+existing and by `kms_client` already being passed, and when the variable is
+absent enrolment fails loudly with a message naming it rather than storing a
+seed in the clear.
+
+Passkeys and OAuth are M5 and M6, per section 9.1.
 
 **The existing `POST /api/v1/admin/login` is untouched.** It is a different
 router in `app/domains/identity/router.py`, mounted at a different prefix, looking
@@ -63,8 +109,12 @@ the cutover that retires the legacy one is M9.
 
 `hooks` is `PortfolioIdentityHooks` from `identity_hooks.py`. Section 8.2's
 mapping, and that module's docstring, are where the policy is written down. M3
-adds one hook to it, `mark_email_verified`, which is the only hook the package
-gives no default and the only part of this bump that is not free.
+added one hook to it, `mark_email_verified`, which is the only hook the package
+gives no default. **M4 adds none.** The hooks protocol is byte identical in
+0.12.1 to what it was in 0.11.0, so `PortfolioIdentityHooks` satisfies it
+unchanged, and `tests/test_identity_m2.py`'s structural `isinstance` check
+against the runtime checkable `Protocol` is what proves that rather than a claim
+about it.
 
 ## Where the router mounts, which is the issuer's path and not the origin
 
@@ -171,6 +221,13 @@ def build_router(settings: Settings) -> APIRouter:
     `identity_tokens` is set is what mounts the four M3 routes on top; the
     package's mounting is conditional on exactly those pairs, so omitting either
     half of either pair leaves the rest serving unchanged.
+
+    M4's six MFA routes are the same rule with a longer condition: `totp_enabled`
+    on the settings, which is the package's default, plus all three of
+    `totp_factors`, `recovery_codes` and `identity_tokens` on the stores. All
+    three are supplied below, so all six mount. They need no argument of their
+    own: the envelope cipher is built inside `MfaService` from
+    `IDENTITY_DATA_KEY_ARN` and the `kms_client` already passed here.
     """
     import boto3
     from webbpulse.dynamodb import Repository
@@ -178,17 +235,26 @@ def build_router(settings: Settings) -> APIRouter:
         DynamoCredentialStore,
         DynamoIdentityTokenStore,
         DynamoLoginAttemptStore,
+        DynamoRecoveryCodeStore,
         DynamoRefreshTokenStore,
+        DynamoTotpFactorStore,
         IdentityStores,
         build_identity_router,
     )
 
-    from ..db.tables import CREDENTIALS, IDENTITY_TOKENS, LOGIN_ATTEMPTS, REFRESH_TOKENS
+    from ..db.tables import (
+        CREDENTIALS,
+        IDENTITY_TOKENS,
+        LOGIN_ATTEMPTS,
+        RECOVERY_CODES,
+        REFRESH_TOKENS,
+        TOTP_FACTORS,
+    )
     from ..version import VERSION
     from .identity_hooks import PortfolioIdentityHooks
 
     def repository(logical_name: str) -> Repository:
-        """A package repository for one of the four M2 and M3 tables.
+        """A package repository for one of the six identity tables.
 
         Prefix and endpoint are passed explicitly rather than left to the
         package's environment lookup, so this reads the same `Settings` the rest
@@ -210,6 +276,13 @@ def build_router(settings: Settings) -> APIRouter:
         credentials=DynamoCredentialStore(repository(CREDENTIALS)),
         refresh_tokens=DynamoRefreshTokenStore(repository(REFRESH_TOKENS)),
         identity_tokens=DynamoIdentityTokenStore(repository(IDENTITY_TOKENS)),
+        # M4. Supplying these two, with `identity_tokens` already above and
+        # `totp_enabled` left at the package's default, is the whole of what
+        # mounts the six MFA routes. The MFA ticket that carries a login between
+        # its two legs is an `identity-tokens` row with
+        # `purpose = "mfa_ticket"`, so it needs no store of its own.
+        totp_factors=DynamoTotpFactorStore(repository(TOTP_FACTORS)),
+        recovery_codes=DynamoRecoveryCodeStore(repository(RECOVERY_CODES)),
     )
 
     return build_identity_router(
