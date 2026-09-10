@@ -400,6 +400,42 @@ module "api" {
       "GET /api/auth/health" = { integration = "identity" }
     },
 
+    # The identity standard's M2 flows: the six POST routes
+    # `build_identity_router` mounts once the product supplies hooks and a
+    # credential store. Like `GET /api/auth/health` above, each one is a
+    # literal key naming the served path, because the router mounts at the
+    # issuer's path and the issuer's path is `/api/auth`.
+    #
+    # None of them sets authorization_type, so each takes the module's default
+    # exactly as the health key does: CUSTOM behind the staging access gate in
+    # staging, and NONE in production where no gate authorizer exists. That is
+    # the correct treatment rather than an omission. These are state changing
+    # routes, so the `authorization_type = "NONE"` the two `.well-known`
+    # documents carry would be wrong here: that hole exists only because API
+    # Gateway fetches those two documents itself at CreateAuthorizer time, and
+    # section 2.5 says it should stay exactly two documents wide.
+    #
+    # These routes are not behind the identity JWT authorizer either, and they
+    # cannot be. An HTTP API route takes one authorizer and in staging the gate
+    # already occupies that slot. It is also the wrong control for four of the
+    # six: `register`, `login` and `refresh` are how a caller obtains a token in
+    # the first place, so requiring one would make them unreachable. `password`
+    # and `logout-all` do need an authenticated caller, and they get it inside
+    # the application: both read the subject from the verified claims the
+    # gateway forwards and refuse with NOT_AUTHENTICATED when there is none,
+    # rather than trusting anything in the body.
+    #
+    # Literal, POST, and no trailing slash: a route key path segment may not be
+    # empty, and a trailing slash fails at apply with a green plan.
+    {
+      "POST /api/auth/register"   = { integration = "identity" }
+      "POST /api/auth/login"      = { integration = "identity" }
+      "POST /api/auth/password"   = { integration = "identity" }
+      "POST /api/auth/refresh"    = { integration = "identity" }
+      "POST /api/auth/logout"     = { integration = "identity" }
+      "POST /api/auth/logout-all" = { integration = "identity" }
+    },
+
     # The identity standard's M0 spike, which is now only its mint route.
     #
     # The two `.well-known` keys used to be part of this block and are now

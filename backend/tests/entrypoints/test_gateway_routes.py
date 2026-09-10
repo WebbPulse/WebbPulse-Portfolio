@@ -625,6 +625,28 @@ IDENTITY_M1_ANONYMOUS_KEYS = {
     "GET /api/auth/.well-known/openid-configuration",
 }
 
+#: M2's six flow keys, excluded from `identity_route_keys()` for exactly the
+#: reason M1's three are: that helper's assertions are about cut 4's shape, two
+#: `ANY` keys under `/api/v1/admin`, and these are not that.
+#:
+#: They sit under `/api/auth` for the same reason M1's do. `build_identity_router`
+#: mounts every route it declares under the issuer's path, so a key here is the
+#: served path rather than a rewrite of one.
+#:
+#: None of them is anonymous. They take the module's CUSTOM default like
+#: `GET /api/auth/health`, so `test_the_anonymous_surface_is_exactly_the_two_
+#: discovery_documents` still holds at exactly two documents: these are state
+#: changing routes, and the gate hole exists only because API Gateway fetches
+#: those two documents itself at CreateAuthorizer time.
+IDENTITY_M2_ROUTE_KEYS = {
+    "POST /api/auth/register",
+    "POST /api/auth/login",
+    "POST /api/auth/password",
+    "POST /api/auth/refresh",
+    "POST /api/auth/logout",
+    "POST /api/auth/logout-all",
+}
+
 IDENTITY_SPIKE_TF = REPO / "terraform" / "identity_spike.tf"
 
 # `route_key = "<METHOD> <path>"` on a standalone aws_apigatewayv2_route. The
@@ -669,13 +691,15 @@ def identity_route_keys() -> set[str]:
     `expand_for_expression_keys`. Cut 4 covers one prefix and writes both keys
     out, so `gateway_route_keys` reads them straight from the file.
 
-    The M0 spike's keys and M1's permanent identity keys are both subtracted.
-    See `IDENTITY_SPIKE_ROUTE_KEYS` and `IDENTITY_M1_ROUTE_KEYS`.
+    The M0 spike's keys, M1's permanent identity keys and M2's six flow keys are
+    all subtracted. See `IDENTITY_SPIKE_ROUTE_KEYS`, `IDENTITY_M1_ROUTE_KEYS`
+    and `IDENTITY_M2_ROUTE_KEYS`.
     """
     keys = (
         gateway_route_keys()["identity"]
         - IDENTITY_SPIKE_ROUTE_KEYS
         - IDENTITY_M1_ROUTE_KEYS
+        - IDENTITY_M2_ROUTE_KEYS
     )
     assert keys, "no identity route keys were parsed out of apigateway.tf"
     return keys
@@ -740,6 +764,73 @@ def test_the_m1_keys_are_literal_and_do_not_end_in_a_slash():
         path = key.split(" ", 1)[1]
         assert "{" not in key, key
         assert not path.endswith("/"), key
+
+
+def test_the_m2_flow_keys_are_present_unconditionally():
+    """M2's six flow routes exist, whether or not the spike does.
+
+    Unconditional for the same reason M1's three are, and for one more: the
+    identity function serves them from the moment `composition/identity.py`
+    hands `build_identity_router` hooks and a credential store, so a route key
+    that was gated behind a flag would be a live route with no way to reach it.
+    """
+    assert IDENTITY_M2_ROUTE_KEYS <= gateway_route_keys()["identity"]
+
+
+def test_the_m2_keys_are_literal_and_do_not_end_in_a_slash():
+    """No `{proxy+}` and no trailing slash, exactly as M1's are checked.
+
+    A greedy key here would be worse than a greedy one on the documents: these
+    are state changing routes, and `POST /api/auth/{proxy+}` would hand the
+    identity function every path under `/api/auth` including ones no milestone
+    has written yet.
+
+    The trailing slash is the same apply-time BadRequestException M1's test
+    catches, and it stays green in a plan.
+    """
+    for key in IDENTITY_M2_ROUTE_KEYS:
+        path = key.split(" ", 1)[1]
+        assert "{" not in key, key
+        assert not path.endswith("/"), key
+
+
+def test_every_m2_key_is_a_post():
+    """All six are state changing, which is why none of them is anonymous.
+
+    Spelled out because the method is what the next test's argument rests on: a
+    GET added to this set would be a read that somebody might reasonably think
+    belongs outside the gate, and it does not.
+    """
+    for key in IDENTITY_M2_ROUTE_KEYS:
+        assert key.startswith("POST "), key
+
+
+def test_no_m2_flow_route_is_anonymous():
+    """The staging access gate stays exactly two documents wide.
+
+    `GET /api/auth/health` is the precedent these follow: they omit
+    `authorization_type` and take the module's CUSTOM default, which is the gate
+    authorizer in staging and nothing in production. Marking a login or a
+    refresh `NONE` would put a state changing route outside the gate, and the
+    gate hole exists only because API Gateway fetches the two discovery
+    documents itself, from its own infrastructure, with no cookie to present.
+    """
+    anonymous = set(ANONYMOUS_ROUTE_ENTRY.findall(_terraform_source()))
+
+    assert IDENTITY_M2_ROUTE_KEYS & anonymous == set(), sorted(
+        IDENTITY_M2_ROUTE_KEYS & anonymous
+    )
+
+
+def test_the_m2_keys_route_to_the_identity_function():
+    """Not to `content`, which owns the neighbouring `/api/v1/admin` surface.
+
+    A flow route pointed at another domain's function is a 404 the frontend
+    reads as a broken login, and the integration name is the only thing in the
+    map that decides it.
+    """
+    for key in IDENTITY_M2_ROUTE_KEYS:
+        assert key in gateway_route_keys()["identity"], key
 
 
 def test_the_well_known_pair_is_anonymous_and_the_health_route_is_gated():

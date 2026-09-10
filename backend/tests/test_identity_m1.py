@@ -133,16 +133,22 @@ def client(
 ) -> TestClient:
     """The identity router mounted the way the composition root mounts it.
 
-    At the issuer's path, through the same `identity_mount_prefix` the
-    composition root uses, so a change to how the mount point is derived shows
-    up here rather than only in production. The KMS client is injected
-    by patching `boto3.client`, so the code under test is the real
-    `build_router` including its own client construction rather than a
-    reimplementation of it that could drift.
+    With no prefix, which since 0.10.0 is how the composition root mounts it:
+    the package places every route under the issuer's path itself, so the paths
+    asserted below are still `/api/auth/...` and a change to how that derivation
+    works shows up here rather than only in production. Passing a prefix would
+    double it.
+
+    The KMS client is injected by patching `boto3.client`, so the code under test
+    is the real `build_router` including its own client construction rather than
+    a reimplementation of it that could drift. That patch does not reach the
+    three M2 repositories `build_router` also constructs: `webbpulse.dynamodb`
+    resolves its table through `boto3.resource`, lazily, on first use, and no
+    test in this file touches a flow route.
     """
     import boto3
 
-    from app.composition.identity import build_router, identity_mount_prefix
+    from app.composition.identity import build_router
     from app.composition.settings import Settings
 
     fake = FakeKms(private_key)
@@ -150,7 +156,7 @@ def client(
 
     settings = Settings()
     app = FastAPI()
-    app.include_router(build_router(settings), prefix=identity_mount_prefix(settings))
+    app.include_router(build_router(settings))
     return TestClient(app)
 
 
