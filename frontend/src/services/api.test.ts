@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiService } from './api';
+import { ApiService, identityOriginFrom } from './api';
 
 // These tests cover the contract this service exposes: @webbpulse/api-client
 // rejects on a non 2xx, and every call site in this application reads a
@@ -10,6 +10,14 @@ import { ApiService } from './api';
 // package itself; these are the application's end of the contract.
 
 const BASE = 'https://api.example.test/api/v1';
+
+/**
+ * The origin the identity routes answer on.
+ *
+ * Not `BASE`: identity mounts at the issuer's path directly on the host, so
+ * `/api/auth/...` rather than `/api/v1/api/auth/...`.
+ */
+const ORIGIN = 'https://api.example.test';
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -284,8 +292,7 @@ describe('ApiService', () => {
         password: 'secret',
       });
 
-      expect(response.error).toBeUndefined();
-      expect(response.data?.access_token).toBe('memory-token');
+      expect(response.status).toBe('authenticated');
       expect(service.isAuthenticated()).toBe(true);
       // The point of section 7.1: nothing a script can read back after a
       // reload.
@@ -303,7 +310,7 @@ describe('ApiService', () => {
       });
 
       const { url, init } = callArgs();
-      expect(url).toBe(`${BASE}/api/auth/login`);
+      expect(url).toBe(`${ORIGIN}/api/auth/login`);
       expect(init.body).toBe(
         JSON.stringify({ email: 'admin@example.test', password: 'secret' })
       );
@@ -343,7 +350,7 @@ describe('ApiService', () => {
       expect(response.error).toBeUndefined();
       expect(response.data).toEqual({ id: 1 });
       const urls = fetchMock.mock.calls.map(call => (call as [string])[0]);
-      expect(urls[2]).toBe(`${BASE}/api/auth/refresh`);
+      expect(urls[2]).toBe(`${ORIGIN}/api/auth/refresh`);
       // Exactly one refresh, and the replay carries the new token.
       expect(
         urls.filter(url => url.endsWith('/api/auth/refresh'))
@@ -368,12 +375,14 @@ describe('ApiService', () => {
         password: 'wrong',
       });
 
-      expect(response.data).toBeNull();
-      expect(response.error).toBe('Email or password is incorrect.');
+      expect(response).toEqual({
+        status: 'failed',
+        error: 'Email or password is incorrect.',
+      });
       expect(service.isAuthenticated()).toBe(false);
     });
 
-    it('reports an MFA challenge as a failed sign in, since there is no form for it yet', async () => {
+    it('reports an MFA challenge as its own result, carrying the ticket', async () => {
       fetchMock.mockResolvedValue(
         jsonResponse({ mfa_required: true, mfa_ticket: 't', factors: ['totp'] })
       );
@@ -384,18 +393,87 @@ describe('ApiService', () => {
         password: 'secret',
       });
 
-      expect(response.data).toBeNull();
-      expect(response.error).toContain('second factor');
+      expect(response).toEqual({ status: 'mfa-required', ticket: 't' });
+      // A challenge is not a session: the first leg carries no access token.
+      expect(service.isAuthenticated()).toBe(false);
     });
 
     it('exposes the same client the API refreshes through', () => {
       const service = new ApiService(BASE, 'identity');
-      expect(service.getAuthClient()).not.toBeNull();
+      expect(service.getIdentityClient()).not.toBeNull();
     });
 
     it('exposes no auth client in bearer mode', () => {
       const service = new ApiService(BASE, 'bearer');
-      expect(service.getAuthClient()).toBeNull();
+      expect(service.getIdentityClient()).toBeNull();
+    });
+
+    // Identity mounts at the issuer's path on the origin, `/api/auth`, while
+    // this application's own routes are under `/api/v1`. `joinUrl` in the
+    // client concatenates rather than resolving, so passing the API base
+    // through unchanged would request `/api/v1/api/auth/login`.
+    it('calls the identity routes on the origin rather than under /api/v1', async () => {
+      fetchMock.mockResolvedValue(tokenResponse('memory-token'));
+      const service = new ApiService(BASE, 'identity');
+
+      await service.login({ username: 'admin', password: 'secret' });
+
+      expect(callArgs().url).toBe('https://api.example.test/api/auth/login');
+    });
+
+    it('reports an MFA challenge, then finishes the login with a TOTP code', async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({
+          mfa_required: true,
+          mfa_ticket: 't1',
+          factors: ['totp'],
+        })
+      );
+      const service = new ApiService(BASE, 'identity');
+
+      const first = await service.login({
+        username: 'admin',
+        password: 'secret',
+      });
+      expect(first).toEqual({ status: 'mfa-required', ticket: 't1' });
+
+      fetchMock.mockResolvedValueOnce(tokenResponse('memory-token'));
+      const second = await service.completeTotp({
+        ticket: 't1',
+        code: '123456',
+      });
+
+      expect(second).toEqual({ status: 'authenticated' });
+      expect(service.isAuthenticated()).toBe(true);
+
+      const totpCall = fetchMock.mock.calls[1] as [string, RequestInit];
+      expect(totpCall[0]).toBe('https://api.example.test/api/auth/login/totp');
+      // The client always sends a JSON string body, which `BodyInit` does not
+      // narrow to on its own.
+      expect(JSON.parse(totpCall[1].body as string)).toEqual({
+        mfa_ticket: 't1',
+        code: '123456',
+      });
+    });
+
+    it('refuses a TOTP completion in bearer mode rather than throwing', async () => {
+      const service = new ApiService(BASE, 'bearer');
+
+      const result = await service.completeTotp({ ticket: 't', code: '1' });
+
+      expect(result.status).toBe('failed');
+    });
+  });
+
+  describe('identityOriginFrom', () => {
+    it('strips the API path back to the origin', () => {
+      expect(identityOriginFrom('https://api.example.test/api/v1')).toBe(
+        'https://api.example.test'
+      );
+    });
+
+    it('returns the input unchanged when it will not parse', () => {
+      expect(identityOriginFrom('not a url')).toBe('not a url');
     });
   });
 });

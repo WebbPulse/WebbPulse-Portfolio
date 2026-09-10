@@ -48,6 +48,35 @@ const config = loadAppConfig(import.meta.env, {
 export const API_BASE_URL = config.apiBaseUrl;
 
 /**
+ * The origin the identity routes hang off, derived from the application's API
+ * base URL.
+ *
+ * These are two different mount points on one host and the difference matters.
+ * The application's own routes live under `/api/v1`, which is what
+ * `API_BASE_URL` carries. Identity mounts at the issuer's path, `/api/auth`,
+ * directly on the origin: the backend's `composition/identity.py` records that
+ * the issuer is `https://<api host>/api/auth` and that every route, the
+ * discovery document included, answers under it.
+ *
+ * `AuthClient`'s paths are absolute (`/api/auth/login` and the rest) and
+ * `joinUrl` in `@webbpulse/api-client` concatenates rather than resolving, so
+ * handing it `API_BASE_URL` would request `/api/v1/api/auth/login` and every
+ * identity call would 404. Stripping back to the origin is what makes the
+ * package's own defaults correct, which is why no path overrides are passed.
+ *
+ * Falls back to the unmodified base when the value will not parse, which keeps
+ * a malformed configuration a visible failure at the request rather than a
+ * throw at module load.
+ */
+export function identityOriginFrom(apiBaseUrl: string): string {
+  try {
+    return new URL(apiBaseUrl).origin;
+  } catch {
+    return apiBaseUrl;
+  }
+}
+
+/**
  * The auth mechanism this bundle runs, read once at startup.
  *
  * `ConfigReader` rather than a raw `import.meta.env` read so an unrecognised
@@ -65,36 +94,25 @@ export const AUTH_MODE: AuthMode = (() => {
 /**
  * What the identity cutover still needs, in one place.
  *
- * The `identity` branch below is written against the real `@webbpulse/auth`
- * 0.4.0 API and compiles today. It is not switched on because the routes it
- * calls do not exist in Portfolio yet, and that is a backend milestone rather
- * than anything left undone here:
+ * The routes `AuthClient` calls are live on staging as of M3: the identity
+ * function serves `/api/auth/login`, `/logout`, `/logout-all`, `/refresh`,
+ * `/password`, `/reset`, `/reset/confirm`, `/verify-email` and
+ * `/verify-email/confirm` under the issuer `https://api.staging.webbpulse.com/api/auth`,
+ * alongside the JWKS and the discovery document. Registration is served but
+ * disabled for Portfolio, which is a single operator site.
  *
- * 1. The identity function serves `POST /api/auth/login`, `/api/auth/refresh`
- *    and `/api/auth/logout`. Staging currently serves only the JWKS,
- *    the OpenID discovery document and the function's health route.
- * 2. The refresh cookie is set httpOnly, `SameSite=Lax` and `Secure`, scoped
- *    to the registrable domain. The www host and the API host share that
- *    domain, so a fetch between them is same site and Lax is enough; the
- *    standard rules out `SameSite=None`. The client already sends
- *    `credentials: 'include'` for the staging access gate, which is the same
- *    requirement for a cross origin, same site request.
- * 3. The login route takes the standard's `email` and `password` and answers
- *    `{ access_token, expires_in }`. Portfolio's current route takes
- *    `username` and answers `{ access_token, token_type }`, which is why
- *    `login` below has two shapes rather than one.
- *
- * When those are live, `VITE_AUTH_MODE=identity` is set on the environment,
- * and once every environment carries it the bearer branch,
- * `BearerTokenStore` and `services/authMode.ts` are deleted together.
+ * What remains is a deployment decision rather than code. `VITE_AUTH_MODE` is
+ * unset in every environment, so every bundle still runs `bearer`. Setting
+ * `AUTH_MODE=identity` on the staging GitHub Environment switches that
+ * environment over; production follows once staging has run on it. When every
+ * environment carries it, the bearer branch, `BearerTokenStore` and
+ * `services/authMode.ts` are deleted together.
  */
 export const IDENTITY_CUTOVER = {
-  /** Routes `AuthClient` needs that Portfolio does not serve yet. */
-  requiredRoutes: [
-    '/api/auth/login',
-    '/api/auth/refresh',
-    '/api/auth/logout',
-  ] as const,
+  /** The GitHub Environment variable that selects the mode at build time. */
+  environmentVariable: 'AUTH_MODE',
+  /** The value that turns the identity mode on. */
+  enabledValue: 'identity',
 } as const;
 
 /**
@@ -257,6 +275,23 @@ export interface Token {
 }
 
 /**
+ * What a sign in attempt produced.
+ *
+ * A third case beside "signed in" and "failed", because the identity standard
+ * makes an MFA challenge a *successful* outcome of the first leg that simply
+ * carries no access token (2.6). Modelling it as an error, which this service
+ * did before the second factor UI existed, forced the panel to read a sentence
+ * out of `error` to decide what to render next.
+ *
+ * `bearer` mode never produces `mfaRequired`, so the panel's handling of it is
+ * dead code there rather than a branch that needs a second implementation.
+ */
+export type LoginResult =
+  | { status: 'authenticated' }
+  | { status: 'mfa-required'; ticket: string }
+  | { status: 'failed'; error: string };
+
+/**
  * The envelope every call site in this application reads.
  *
  * The package's `ApiEnvelope` rather than a local declaration, so there is one
@@ -297,7 +332,10 @@ export class ApiService {
       // stay callable with an expired token, so it is never given a
       // `getAuthToken` pointing back at itself.
       this.auth = createAuthClient({
-        baseUrl,
+        // The origin rather than `baseUrl`: identity mounts at `/api/auth` on
+        // the host, not under this application's `/api/v1`. See
+        // `identityOriginFrom`.
+        baseUrl: identityOriginFrom(baseUrl),
         clientOptions: { credentials },
       });
       this.client = this.buildClient(baseUrl, {
@@ -385,13 +423,12 @@ export class ApiService {
    * carries an email address in practice, and the identity route is the thing
    * that defines the name.
    *
-   * An MFA challenge is a successful outcome of the first leg rather than an
-   * error, and Portfolio has no second factor enrolled, so it is reported as a
-   * failed login here rather than silently read as success. Completing a
-   * challenge needs a form this application does not have; it is added with
-   * the rest of the identity UI when the routes land.
+   * An MFA challenge comes back as its own result rather than as an error. It
+   * is a successful outcome of the first leg that carries no access token
+   * (2.6), and the caller needs the ticket to finish the login, which an
+   * `error` string cannot carry. `bearer` mode never produces it.
    */
-  async login(credentials: UserLogin): Promise<ApiResponse<Token>> {
+  async login(credentials: UserLogin): Promise<LoginResult> {
     if (this.auth !== null) {
       const auth = this.auth;
       try {
@@ -399,31 +436,9 @@ export class ApiService {
           email: credentials.username,
           password: credentials.password,
         });
-        if (outcome.mfaRequired) {
-          return {
-            data: null,
-            error: 'This account requires a second factor to sign in.',
-          };
-        }
-        const token = auth.getAccessToken();
-        return {
-          data:
-            token === null
-              ? null
-              : { access_token: token, token_type: 'bearer' },
-          ...(token === null
-            ? { error: 'Sign in did not return an access token.' }
-            : {}),
-        };
+        return this.readLoginOutcome(outcome);
       } catch (error) {
-        logApiFailure(error);
-        return {
-          data: null,
-          error:
-            error instanceof Error
-              ? error.message
-              : 'Sign in failed. Please try again.',
-        };
+        return this.readLoginFailure(error);
       }
     }
 
@@ -434,9 +449,81 @@ export class ApiService {
 
     if (response.data) {
       this.tokenStore?.set(response.data.access_token);
+      return { status: 'authenticated' };
     }
 
-    return response;
+    return {
+      status: 'failed',
+      error: response.error ?? 'Sign in failed. Please try again.',
+    };
+  }
+
+  /**
+   * Finishes an MFA login with a TOTP code.
+   *
+   * `identity` mode only, because only `AuthClient` can hold the ticket that
+   * `login` handed back. Calling it in `bearer` mode is a programming error
+   * rather than a user-visible state, so it answers with a failure rather than
+   * throwing into a form's submit handler.
+   */
+  async completeTotp(input: {
+    ticket: string;
+    code: string;
+  }): Promise<LoginResult> {
+    if (this.auth === null) {
+      return {
+        status: 'failed',
+        error: 'A second factor is not available in this mode.',
+      };
+    }
+    try {
+      return this.readLoginOutcome(await this.auth.completeTotp(input));
+    } catch (error) {
+      return this.readLoginFailure(error);
+    }
+  }
+
+  /** Turns a package login outcome into this application's result. */
+  private readLoginOutcome(outcome: {
+    mfaRequired: boolean;
+    ticket?: string;
+  }): LoginResult {
+    if (outcome.mfaRequired) {
+      return {
+        status: 'mfa-required',
+        ticket: outcome.ticket ?? '',
+      };
+    }
+    return { status: 'authenticated' };
+  }
+
+  /** Turns a thrown login error into a rendered sentence. */
+  private readLoginFailure(error: unknown): LoginResult {
+    logApiFailure(error);
+    return {
+      status: 'failed',
+      error:
+        error instanceof ApiError
+          ? getWebbPulseError(error).message
+          : 'Sign in failed. Please try again.',
+    };
+  }
+
+  /**
+   * The auth client, for the identity pages that call it directly.
+   *
+   * The two link pages and the forgot password affordance call four routes
+   * that have nothing to do with a session: they are anonymous, they take an
+   * email or a token in the body, and each answers with a discriminated
+   * outcome rather than the `{ data, error }` envelope the rest of this
+   * service converts to. Re-wrapping them here would flatten four distinct
+   * reasons into one string, which is the distinction those pages exist to
+   * render, so they get the client itself.
+   *
+   * Null in `bearer` mode, which is what gates the identity-only UI.
+   */
+  getIdentityClient(): AuthClient<unknown> | null {
+    return this.auth;
   }
 
   /**
