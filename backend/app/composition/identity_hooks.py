@@ -101,6 +101,32 @@ address nobody has confirmed. It would also make the legacy
 while both are live. The column is recorded now so that M9, which retires the
 legacy flow, has the data to decide with rather than a backfill to run first.
 
+`has_other_sign_in_method` is M6's hook, and it answers `False` for this product
+because there is genuinely nothing here for it to find.
+
+It has exactly one caller in the package, `OAuthService.unlink`, which refuses to
+remove the last way into an account. That check counts two of the three possible
+answers itself, the user's remaining OAuth links and their password credential,
+both of which live in tables the package owns. The third is everything a product
+holds that the package cannot see, and the hook is how it asks.
+
+Portfolio holds nothing in that category. Its sign-in methods are the M2 password
+credential, which the package counts, and from M6 the OAuth links, which the
+package also counts. Passkeys are M5 and are not adopted: no passkey route is
+mounted, `IdentityStores` is given no passkey store, and the `passkeys` table
+`terraform/identity.tf` creates is empty. There is no SSO assertion, no magic
+link and no second credential store. The legacy `POST /api/v1/admin/login` is
+not a counter-example and the method's own docstring says why at length.
+
+So `False` is the truthful answer rather than the lazy one, and it is also the
+answer the package's default gives. Implementing it anyway is not redundant, for
+two reasons. `PortfolioIdentityHooks` does not inherit `BaseIdentityHooks`, it
+satisfies the protocol structurally, so without the method it stops satisfying
+the protocol and `tests/test_identity_m2.py`'s `isinstance` check fails. And the
+day M5 is adopted this is the one place that has to change: a hook that is
+present and documented is a hook somebody finds, where a defaulted absent one is
+a passkey silently uncounted and a user whose last credential unlink deletes.
+
 `user_repository` hands back `app.db.entities.users`. The package types the
 return as `object` and no M2 flow calls it, so nothing here depends on it being
 a `webbpulse.dynamodb.Repository`; Portfolio's `Repository` is its own class with
@@ -277,6 +303,56 @@ class PortfolioIdentityHooks:
                 "was consumed, so the address is not verified and the user needs a "
                 "new one."
             )
+
+    def has_other_sign_in_method(self, user_id: str) -> bool:
+        """Whether this user holds a sign-in method the package cannot see.
+
+        Always `False` for Portfolio, because there is nothing here to find. See
+        the module docstring for the inventory; the short version is that every
+        way into an account is either the M2 password credential or an M6 OAuth
+        link, and `OAuthService.unlink` counts both of those itself before it
+        ever calls this.
+
+        **Do not count the password or the OAuth links here.** The package's
+        contract is explicit about it: `unlink` already counts both, and counting
+        them twice cannot make the answer wrong, but a product that counted only
+        those and forgot the thing this hook was added to ask about would be
+        reporting the wrong quantity while looking correct.
+
+        **Passkeys are the answer this will have to change to give.** M5 is not
+        adopted: no passkey route is mounted, no passkey store is supplied, and
+        the `passkeys` table `terraform/identity.tf` creates in the same apply
+        as the OAuth ones is empty. When M5 lands, a user may hold a passkey and
+        no password, and this method is what stops `unlink` deleting their last
+        OAuth link and locking them out permanently. It becomes a `Query` on
+        that user's partition of the passkeys table.
+
+        **The legacy `POST /api/v1/admin/login` is deliberately not counted, and
+        that is a judgement rather than an oversight.** It is a real second way
+        in: it looks the user up by username and checks `hashed_password` on the
+        `users` row, so an administrator with that column set can sign in
+        through it whatever the identity tables say. Counting it would make this
+        return `True` for the seeded administrator and let `unlink` remove their
+        last identity credential.
+
+        It is not counted because the two flows are being retired into one at
+        M9, and this hook is a guard against permanent lockout rather than a
+        census. Answering `True` on the strength of a flow that is scheduled to
+        be deleted would allow exactly the unlink that M9 turns into a locked
+        out account, and it would do so silently, at a point where nobody is
+        looking at this file. Answering `False` costs an administrator one
+        refused unlink and a message telling them to set a password first, which
+        is a support ticket rather than a lost account. That asymmetry is the
+        package's own stated reason for defaulting this to `False`, and it
+        points the same way here.
+
+        `user_id` is the `sub` claim, a string, and is unused for now. It is
+        named rather than discarded because the M5 implementation queries on it,
+        and a parameter that appears at the milestone that first reads it is a
+        signature change in a hook the package calls.
+        """
+        del user_id  # See the docstring: M5's passkey query is what reads it.
+        return False
 
     def user_repository(self) -> object:
         """Portfolio's users repository. Typed `object`, as the protocol has it."""

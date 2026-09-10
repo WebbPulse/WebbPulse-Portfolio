@@ -176,7 +176,41 @@
 # extra is unchanged, so this line gains no dependency. What this bump costs here
 # is the two docs describing those routes, and `tests/test_identity_m4.py` gains
 # the route-contract checks for the new body.
-webbpulse[fastapi,dynamodb,otel,aws-otel,security,identity]==0.13.0
+# 0.14.0 is identity milestone M6: OAuth sign-in and account linking against
+# Google and GitHub. Additive on the rule every milestone since M2 has followed.
+# The five OAuth routes mount only when the product supplies both OAuth stores
+# AND at least one provider carrying a client id, so a deployment that has
+# registered no OAuth app mounts exactly what it mounted under 0.13.0. This one
+# supplies the stores unconditionally and the ids from Terraform variables that
+# default to empty, so the routes are off until the owner registers the apps.
+# docs/identity-cutover.md lists what that involves.
+#
+# What the bump makes available: `webbpulse.identity.oauth` with `OAuthService`,
+# the two stores in their Dynamo and in-memory forms and the linking rules;
+# `webbpulse.identity.oauth_routes` with the five routes;
+# `IdentitySettings.oauth_redirect_uris` and the two client id fields; and
+# `oauth_client_secrets` as an argument to `build_identity_router`.
+#
+# THE ONE CHANGE TO A SHARED INTERFACE IS A HOOK WITH A DEFAULT.
+# `IdentityHooks.has_other_sign_in_method(user_id)` is new and defaults to
+# `False` on `BaseIdentityHooks`, so an implementation written before M6 stays
+# valid. `PortfolioIdentityHooks` is not a subclass, it satisfies the protocol
+# structurally, so it would have stopped satisfying it without the method; it is
+# implemented in `app/composition/identity_hooks.py` in this change, and
+# `tests/test_identity_m2.py`'s `isinstance` check against the runtime
+# checkable Protocol is what proves it rather than a claim about it.
+#
+# `oauth` IS A NEW EXTRA, and the only one this bump adds. It pulls in `httpx`
+# for the provider calls: the token exchange, Google's JWKS and GitHub's `/user`
+# and `/user/emails`. It is genuinely needed rather than defensive, because the
+# client is constructed lazily and the package still imports without it, so
+# omitting it would leave the five routes mounted and failing on their first
+# provider call rather than failing at deploy. The package fetches the JWKS
+# through its own client rather than PyJWKClient, which fetches with urllib and
+# no timeout, so every provider call carries an explicit timeout and a provider
+# that accepts a connection and never answers cannot hold a Lambda execution
+# environment open until the function times out.
+webbpulse[fastapi,dynamodb,otel,aws-otel,security,identity,oauth]==0.14.0
 
 fastapi==0.115.12
 boto3==1.38.46

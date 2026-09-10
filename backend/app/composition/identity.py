@@ -108,7 +108,69 @@ existing and by `kms_client` already being passed, and when the variable is
 absent enrolment fails loudly with a message naming it rather than storing a
 seed in the clear.
 
-Passkeys and OAuth are M5 and M6, per section 9.1.
+## What M6 mounts, and why it mounts nothing today
+
+`build_identity_router` in 0.14.0 also declares five OAuth routes:
+
+    GET    /oauth/{provider}/start
+    GET    /oauth/callback
+    POST   /oauth/{provider}/link
+    GET    /oauth/links
+    DELETE /oauth/{provider}/link
+
+**and it declares none of them in either environment right now.** The package's
+condition is two things at once: a `stores` carrying both `oauth_states` and
+`oauth_links`, which this module supplies unconditionally below, AND at least
+one provider carrying a client id, which is
+`OAuthService.enabled_providers()`. The client ids come from
+`IDENTITY_GOOGLE_CLIENT_ID` and `IDENTITY_GITHUB_CLIENT_ID`, which
+`terraform/identity.tf` renders from variables that default to empty, and no
+OAuth app has been registered with Google or GitHub yet. So the list is empty
+and the five routes are not in the OpenAPI document.
+
+That is the package's own rule rather than a workaround here, and its changelog
+states it: a route that could only answer 503 because nobody set a client id is
+worse than a route that does not exist. It is also what makes this adoption safe
+to deploy ahead of the owner doing anything. The two tables are created, two
+stores are constructed, three environment variables are set, and the served API
+is byte identical to what 0.13.0 served.
+
+Switching a provider on later is configuration and not code: one HCP Terraform
+variable for the client id, one key in the `webbpulse-<env>/app` secret for the
+client secret, and a redeploy. `docs/identity-cutover.md` lists exactly what has
+to be registered with each provider.
+
+## Where the OAuth client secrets come from, which is not the environment
+
+The two client ids are ordinary `IDENTITY_*` environment variables, because a
+client id is not a secret: it travels in the authorization URL in the user's own
+browser on every sign in. The two client secrets are not, and they are not
+settings either. They are keys of the single `webbpulse-<env>/app` secret and
+they reach the package as the `oauth_client_secrets` argument to
+`build_identity_router`, built by `build_oauth_client_secrets` below.
+
+The package takes them as an argument rather than as an `IdentitySettings` field
+deliberately, and its reasoning is the same rule the settings module states for
+itself: a secret that is a settings field is a secret that appears in a `repr`,
+in a pydantic validation error and in whatever log line prints the settings
+object. Everything else about that decision is in that function's docstring,
+including why an empty mapping is a success rather than a failure.
+
+## The one hook M6 adds, which has a default the product should not take
+
+`IdentityHooks.has_other_sign_in_method(user_id)` is new in 0.14.0 and it is the
+first hook since M3 to change the protocol. It defaults to `False` on
+`BaseIdentityHooks`, so a product that inherits from that class keeps working
+untouched. `PortfolioIdentityHooks` does not inherit from it, it satisfies the
+protocol structurally, so it would have stopped satisfying the protocol without
+the method; `tests/test_identity_m2.py`'s `isinstance` check against the runtime
+checkable `Protocol` is what would have caught that.
+
+It is implemented rather than left to a default because the default's whole
+point is to be conservative in one direction, and Portfolio can answer the
+question exactly. `identity_hooks.py` has the reasoning.
+
+Passkeys are M5, per section 9.1.
 
 **The existing `POST /api/v1/admin/login` is untouched.** It is a different
 router in `app/domains/identity/router.py`, mounted at a different prefix, looking
@@ -238,6 +300,14 @@ def build_router(settings: Settings) -> APIRouter:
     three are supplied below, so all six mount. They need no argument of their
     own: the envelope cipher is built inside `MfaService` from
     `IDENTITY_DATA_KEY_ARN` and the `kms_client` already passed here.
+
+    M6's five OAuth routes are the same rule again, and the half of the
+    condition this module does not control is what leaves them unmounted.
+    Supplying `oauth_states` and `oauth_links` is necessary and not sufficient:
+    the package also needs `enabled_providers()` to be non-empty, which needs a
+    client id from the environment, and neither is set. So the two stores below
+    and the `oauth_client_secrets` argument are both live wiring against a
+    switch that is currently off. See the module docstring.
     """
     import boto3
     from webbpulse.dynamodb import Repository
@@ -245,6 +315,8 @@ def build_router(settings: Settings) -> APIRouter:
         DynamoCredentialStore,
         DynamoIdentityTokenStore,
         DynamoLoginAttemptStore,
+        DynamoOAuthLinkStore,
+        DynamoOAuthStateStore,
         DynamoRecoveryCodeStore,
         DynamoRefreshTokenStore,
         DynamoTotpFactorStore,
@@ -256,6 +328,8 @@ def build_router(settings: Settings) -> APIRouter:
         CREDENTIALS,
         IDENTITY_TOKENS,
         LOGIN_ATTEMPTS,
+        OAUTH_LINKS,
+        OAUTH_STATES,
         RECOVERY_CODES,
         REFRESH_TOKENS,
         TOTP_FACTORS,
@@ -293,6 +367,22 @@ def build_router(settings: Settings) -> APIRouter:
         # `purpose = "mfa_ticket"`, so it needs no store of its own.
         totp_factors=DynamoTotpFactorStore(repository(TOTP_FACTORS)),
         recovery_codes=DynamoRecoveryCodeStore(repository(RECOVERY_CODES)),
+        # M6. Supplied unconditionally, which is deliberate and is NOT what
+        # decides whether the OAuth routes exist. The package's condition is
+        # both stores AND at least one provider carrying a client id, so with
+        # `IDENTITY_GOOGLE_CLIENT_ID` and `IDENTITY_GITHUB_CLIENT_ID` both
+        # empty, which is how they ship, `enabled_providers()` is empty and no
+        # OAuth route is declared. These two stores then cost one `Repository`
+        # construction each and touch DynamoDB not at all: a `Repository`
+        # resolves its table lazily per call.
+        #
+        # Supplying them unconditionally rather than behind a check on the ids
+        # keeps the switch in exactly one place. The ids come from Terraform
+        # variables, and having the routes turn on when an id appears, with no
+        # second condition here that could disagree, is what makes registering
+        # an OAuth app a configuration change rather than a code change.
+        oauth_states=DynamoOAuthStateStore(repository(OAUTH_STATES)),
+        oauth_links=DynamoOAuthLinkStore(repository(OAUTH_LINKS)),
     )
 
     return build_identity_router(
@@ -309,7 +399,96 @@ def build_router(settings: Settings) -> APIRouter:
         # passing it would fail.
         attempts=DynamoLoginAttemptStore(repository(LOGIN_ATTEMPTS)),
         email_sender=build_email_sender(identity_settings),
+        # M6's client secrets, as an argument rather than a settings field. See
+        # `build_oauth_client_secrets` for why the package draws that line and
+        # why an empty mapping is the honest thing to pass when nothing is
+        # configured.
+        oauth_client_secrets=build_oauth_client_secrets(settings),
     )
+
+
+#: The keys of the `webbpulse-<env>/app` secret that carry the OAuth client
+#: secrets, mapped to the provider names the package knows.
+#:
+#: The provider names are the package's, `IdentitySettings.oauth_providers` is a
+#: `Literal["google", "github"]`, and `OAuthService` looks the secret up by that
+#: name. The key names are this product's, because the secret is this product's.
+#: Keeping the mapping here as one dict rather than two string literals inside
+#: the function is what makes adding a provider one line, on the day the package
+#: gains one.
+OAUTH_SECRET_KEYS = {
+    "google": "oauth_google_client_secret",
+    "github": "oauth_github_client_secret",
+}
+
+
+def build_oauth_client_secrets(settings: Settings) -> dict[str, str]:
+    """The M6 OAuth client secrets, from the single app secret. Possibly empty.
+
+    ## Why this is an argument and not a setting
+
+    `build_identity_router` takes `oauth_client_secrets` as a keyword argument
+    rather than reading it off `IdentitySettings`, and the package's own
+    docstring gives the reason: a secret that is a settings field is a secret
+    that appears in a `repr`, in a pydantic validation error, and in whatever
+    log line prints the settings object. So the two client ids travel as
+    `IDENTITY_*` environment variables and are ordinary fields, and the two
+    secrets travel through here and are on no object that anything renders.
+
+    They are also deliberately not Lambda environment variables. Memory's rule
+    for this estate is one JSON secret per service per environment, reached
+    through `APP_SECRETS_ARN`, and a client secret in a function's environment
+    is a secret visible in the console, in `get-function-configuration` and in
+    every Terraform plan that touches the function.
+
+    ## Why every key is optional and an empty result is a success
+
+    **Returning `{}` is the ordinary state today, not a failure.** No OAuth app
+    has been registered, so neither key is in the secret and neither client id
+    is set. With no client id the package's `enabled_providers()` is empty and
+    `build_identity_router` declares no OAuth route at all, so there is no route
+    that could want a secret. Raising here for a missing key would turn a
+    deployment that is correctly serving no OAuth into a cold start failure.
+
+    That stays true one provider at a time. Registering Google alone puts
+    `oauth_google_client_secret` in the secret and leaves `github` out of this
+    mapping, and the package mounts the routes with only Google enabled.
+
+    A client id set with no matching secret is the one bad combination this
+    cannot prevent, and it does not try to: the routes mount, the start route
+    works, and the token exchange answers 503 with a message that names no
+    configuration. That is the package's behaviour and it is the right one,
+    because the alternative is a service that will not start over a key that
+    only one route needs.
+
+    ## Why it does not go through `Settings.__getattribute__`
+
+    `Settings` resolves exactly four secret fields lazily by name, listed in
+    `SECRET_FIELDS`, and adding these two there would make them settings fields,
+    which is precisely what the package's design is avoiding. `load_app_secrets`
+    returns the whole flat map and caches it per execution environment, so
+    reading two more keys off it costs no extra Secrets Manager call: by the
+    time the identity function serves a request it has already fetched the blob
+    for `SECRET_KEY`.
+
+    Called once at composition time rather than per request, so a rotated secret
+    is picked up on the next cold start, which is the same contract every other
+    value from this secret has.
+    """
+    arn = settings.APP_SECRETS_ARN or settings.app_secrets_arn
+    if not arn:
+        # A local run or a test with no secret configured. Nothing to read, and
+        # no OAuth route will be declared anyway without a client id.
+        return {}
+
+    from app.secrets import load_app_secrets
+
+    loaded = load_app_secrets(arn)
+    return {
+        provider: loaded[key]
+        for provider, key in OAUTH_SECRET_KEYS.items()
+        if loaded.get(key)
+    }
 
 
 def build_email_sender(identity_settings: Any) -> Any:
