@@ -314,6 +314,11 @@ module "lambda_domain" {
       IDENTITY_PRODUCT_NAME      = "WebbPulse Portfolio"
       IDENTITY_SUPPORT_EMAIL     = "support@${local.domain}"
       IDENTITY_FRONTEND_BASE_URL = "https://${local.domain}"
+      # Off explicitly rather than by omission: the package defaults registration
+      # to on, and Portfolio is a single administrator product whose one account is
+      # seeded. A self registered row could never sign in (the hooks refuse a user
+      # who is not an active administrator), so the route would only create rows.
+      IDENTITY_REGISTRATION_ENABLED = "false"
     } : {},
   )
 
