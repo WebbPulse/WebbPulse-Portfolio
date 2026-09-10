@@ -210,7 +210,46 @@
 # no timeout, so every provider call carries an explicit timeout and a provider
 # that accepts a connection and never answers cannot hold a Lambda execution
 # environment open until the function times out.
-webbpulse[fastapi,dynamodb,otel,aws-otel,security,identity,oauth]==0.14.0
+# 0.15.0 adds identity M5: passkeys. WebAuthn registration, passwordless sign
+# in, credential management, and the two tables `terraform/identity.tf` already
+# created in the M6 apply. Additive on the rule every milestone since M2 has
+# followed: nothing existing changes shape and no route contract moves.
+#
+# THE SEVEN PASSKEY ROUTES MOUNT ONLY WHEN THREE THINGS HOLD AT ONCE:
+# `passkeys_enabled` on the settings, a `passkeys` store, and a
+# `webauthn_challenges` store. The composition root supplies both stores
+# unconditionally, so the switch that is left is `IDENTITY_PASSKEYS_ENABLED`,
+# which `terraform/lambda_domains.tf` renders from a variable defaulting to
+# false. So this bump mounts nothing on the day it deploys, exactly as the M6
+# bump did, and turning passkeys on is one HCP variable and a redeploy.
+#
+# The package's own default for both flags is TRUE, which is the opposite of
+# what this product ships. That is deliberate and is why the variable is set
+# explicitly rather than omitted: the standard treats the baseline as mandatory
+# and the flags as a way to stage a rollout, and staging a rollout is exactly
+# what this is. An omitted variable here would mount seven routes the frontend
+# has no code for.
+#
+# What the bump makes available: `webbpulse.identity.passkeys` with
+# `PasskeyService`, the WebAuthn ceremonies, the challenge lifecycle and the
+# signature counter check; `webbpulse.identity.passkey_routes` with the seven
+# routes; `PasskeyStore` and `WebAuthnChallengeStore` in their Dynamo and in
+# memory forms; `IdentityStores.passkeys` and `.webauthn_challenges`; and
+# `passkeys_enabled`, `passkeys_passwordless`, `rp_name` and `webauthn_origins`
+# on `IdentitySettings`.
+#
+# NO SHARED INTERFACE CHANGES. `IdentityHooks` is byte identical in 0.15.0 to
+# what it was in 0.14.0: M5 adds no hook method, so `PortfolioIdentityHooks`
+# satisfies the protocol unchanged and `tests/test_identity_m2.py`'s structural
+# `isinstance` check is what proves that rather than a claim about it.
+#
+# `passkeys` IS A NEW EXTRA, and the only one this bump adds. It pulls in
+# `webauthn` for the two ceremonies. The package imports it lazily inside the
+# methods that need it, so a deployment with passkeys off never loads it, but it
+# is installed rather than omitted because the flag is a runtime switch: leaving
+# the extra out would turn flipping one HCP variable into an ImportError on the
+# first registration instead of a working route.
+webbpulse[fastapi,dynamodb,otel,aws-otel,security,identity,oauth,passkeys]==0.15.0
 
 fastapi==0.115.12
 boto3==1.38.46

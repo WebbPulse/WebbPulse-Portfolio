@@ -5,10 +5,13 @@ from webbpulse.identity import (
     OAUTH_LINK_USER_INDEX,
     OAUTH_LINKS_TABLE,
     OAUTH_STATES_TABLE,
+    PASSKEY_CREDENTIAL_INDEX,
+    PASSKEYS_TABLE,
     RECOVERY_CODES_TABLE,
     REFRESH_FAMILY_INDEX,
     REFRESH_TOKENS_TABLE,
     TOTP_FACTORS_TABLE,
+    WEBAUTHN_CHALLENGES_TABLE,
 )
 
 ENTITIES = (
@@ -85,6 +88,22 @@ RECOVERY_CODES = RECOVERY_CODES_TABLE
 # it would remove the last way in.
 OAUTH_STATES = OAUTH_STATES_TABLE
 OAUTH_LINKS = OAUTH_LINKS_TABLE
+
+# The identity standard's M5 tables, on the same rule as the eight above: each
+# name is the package's own constant, and `webbpulse.identity.passkeys` is the
+# only code that reads or writes either one.
+#
+# These two are the same opposites-on-TTL pair `oauth-states` and `oauth-links`
+# are, for the same reasons one level along. A `webauthn-challenges` row exists
+# to make one assertion unreplayable and is deleted the moment it is consumed,
+# so its TTL reclaims the rows nobody comes back for; the package re-checks the
+# five minute deadline on every read, so an unreclaimed row is refused rather
+# than accepted. A `passkeys` row is a sign-in method and may be the only one a
+# user has, so it must never expire on a clock: it goes when its owner removes
+# it, and the package refuses that when it would strand somebody outside their
+# own account.
+PASSKEYS = PASSKEYS_TABLE
+WEBAUTHN_CHALLENGES = WEBAUTHN_CHALLENGES_TABLE
 
 COUNTER_PREFIX = "COUNTER#"
 UNIQUE_PREFIX = "UNIQUE#"
@@ -350,6 +369,75 @@ def _oauth_links_table():
     }
 
 
+def _passkeys_table():
+    """Hash `user_id`, range `credential_id`, one index the other way, no TTL.
+
+    The primary key is that way round because the credential management page
+    reads its own writes: listing a user's passkeys has to be a Query on the
+    base table, which can be consistent, rather than on a GSI, which cannot.
+    The login lookup goes the other direction, from a credential id to its
+    owner, and that one tolerates eventual consistency because a credential
+    registered by an already authenticated request is not one somebody is
+    signing in with in the same instant.
+
+    The index name is the package's `PASSKEY_CREDENTIAL_INDEX` and DynamoDB
+    resolves an index by name, so the two cannot differ. Projection is ALL
+    because the login path reads the stored public key and the sign count
+    straight off the index, and KEYS_ONLY would buy a second read per sign in.
+
+    NO TTL, EVER, on the rule `totp-factors`, `recovery-codes` and `oauth-links`
+    already follow. A passkey is a second factor or the only factor, and one
+    that vanished on DynamoDB's reclaim schedule is a credential removed from an
+    account silently, on nobody's deadline.
+    """
+    return {
+        "TableName": PASSKEYS,
+        "BillingMode": "PAY_PER_REQUEST",
+        "KeySchema": [
+            {"AttributeName": "user_id", "KeyType": "HASH"},
+            {"AttributeName": "credential_id", "KeyType": "RANGE"},
+        ],
+        "AttributeDefinitions": [
+            {"AttributeName": "user_id", "AttributeType": "S"},
+            {"AttributeName": "credential_id", "AttributeType": "S"},
+        ],
+        "GlobalSecondaryIndexes": [
+            {
+                "IndexName": PASSKEY_CREDENTIAL_INDEX,
+                "KeySchema": [{"AttributeName": "credential_id", "KeyType": "HASH"}],
+                "Projection": {"ProjectionType": "ALL"},
+            },
+        ],
+    }
+
+
+def _webauthn_challenges_table():
+    """Hash `challenge_id`, no range, no index, and a TTL that reclaims only.
+
+    A WebAuthn challenge is a row rather than a signed token because
+    unreplayability is a claim about state and a token cannot make one: a JWT
+    verifies exactly as well the second time as the first, so a captured
+    options-and-assertion pair would replay for the whole of the token's
+    lifetime. The row is written when options are generated, deleted by a
+    `DeleteItem` with `ReturnValues=ALL_OLD` when it is consumed, and refused
+    once its five minute deadline has passed whether or not DynamoDB has got
+    round to reclaiming it.
+
+    So the TTL here is storage reclamation and never the expiry check, on the
+    same rule `identity-tokens` and `oauth-states` follow. Pointing it at
+    another attribute breaks nothing visibly and grows the table forever, which
+    is why `expires_at` is contract rather than preference.
+    """
+    return {
+        "TableName": WEBAUTHN_CHALLENGES,
+        "BillingMode": "PAY_PER_REQUEST",
+        "KeySchema": [{"AttributeName": "challenge_id", "KeyType": "HASH"}],
+        "AttributeDefinitions": [
+            {"AttributeName": "challenge_id", "AttributeType": "S"}
+        ],
+    }
+
+
 def _pk_table(name):
     return {
         "TableName": name,
@@ -372,6 +460,8 @@ TABLES = {
     RECOVERY_CODES: _recovery_codes_table(),
     OAUTH_STATES: _oauth_states_table(),
     OAUTH_LINKS: _oauth_links_table(),
+    PASSKEYS: _passkeys_table(),
+    WEBAUTHN_CHALLENGES: _webauthn_challenges_table(),
 }
 
 TTL_ATTRIBUTE = "ttl"
@@ -381,10 +471,11 @@ TTL_ATTRIBUTE = "ttl"
 # two names have to stay distinct while both tables exist.
 RATE_LIMIT_TTL_ATTRIBUTE = "expires_at"
 
-# `webbpulse.identity` names its TTL attribute `expires_at` too, on all four
+# `webbpulse.identity` names its TTL attribute `expires_at` too, on all five
 # of its tables that have one: `refresh-tokens`, `login-attempts`,
-# `identity-tokens` and M6's `oauth-states`. `credentials`, `totp-factors`,
-# `recovery-codes` and `oauth-links` are not in here and must never be: a
+# `identity-tokens`, M6's `oauth-states` and M5's `webauthn-challenges`.
+# `credentials`, `totp-factors`, `recovery-codes`, `oauth-links` and M5's
+# `passkeys` are not in here and must never be: a
 # credential, a second factor or a linked provider that expired on a storage
 # reclaim schedule would sign somebody out of their own account, on DynamoDB's
 # timetable rather than on a deadline anybody chose, and for the two M4 tables
@@ -408,6 +499,8 @@ ALL_TABLES = (
     (RECOVERY_CODES, None),
     (OAUTH_STATES, IDENTITY_TTL_ATTRIBUTE),
     (OAUTH_LINKS, None),
+    (PASSKEYS, None),
+    (WEBAUTHN_CHALLENGES, IDENTITY_TTL_ATTRIBUTE),
 )
 
 

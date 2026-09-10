@@ -170,7 +170,95 @@ It is implemented rather than left to a default because the default's whole
 point is to be conservative in one direction, and Portfolio can answer the
 question exactly. `identity_hooks.py` has the reasoning.
 
-Passkeys are M5, per section 9.1.
+## What M5 mounts, and why it mounts nothing today
+
+`build_identity_router` in 0.15.0 also declares seven passkey routes:
+
+    POST   /passkeys/register/options
+    POST   /passkeys/register/verify
+    POST   /login/passkey/options
+    POST   /login/passkey/verify
+    GET    /passkeys
+    PATCH  /passkeys/{credential_id}
+    DELETE /passkeys/{credential_id}
+
+**and it declares none of them in either environment right now**, on exactly the
+shape M6's OAuth routes follow. The package's condition is three things at once:
+a `stores` carrying both `passkeys` and `webauthn_challenges`, which this module
+supplies unconditionally below, AND `passkeys_enabled` on the settings.
+`terraform/lambda_domains.tf` renders that last one from a variable defaulting to
+false, so the list of mounted routes is unchanged and the served API is byte
+identical to what 0.14.0 served.
+
+**The package's own default for both passkey flags is `True`, and this product
+ships them false.** That inversion is the one thing about this adoption worth
+reading twice, because it means an omitted environment variable is not a
+no-op here: it would mount seven routes. The package defaults them on because
+the standard treats the baseline as mandatory and the flags exist to stage a
+rollout rather than to opt out permanently, which is precisely what this is, and
+staging it is why `IDENTITY_PASSKEYS_ENABLED` is set explicitly rather than left
+to the default. The frontend has no passkey code until `@webbpulse/auth` 0.8.0,
+so a mounted route today is a route nothing calls and one that a curious client
+could enrol a credential against, against an RP id that is immutable for that
+credential's life.
+
+Switching passkeys on later is configuration and not code: one HCP Terraform
+variable per environment and a redeploy. `docs/identity-cutover.md` has the
+sequence.
+
+## The second flag, which stays off after the first one goes on
+
+`passkeys_passwordless` is a separate switch and is deliberately not the same
+one. With `passkeys_enabled` true and `passkeys_passwordless` false, all five
+management routes mount and both `/login/passkey/*` routes refuse: a passkey is
+a credential a user can enrol, list, rename and delete, and a second factor, but
+not an entry point. Turning it on makes a passkey a way into the account with no
+password at all.
+
+That is a policy decision rather than a rollout step, which is why it has its own
+variable and why it stays false until the owner decides. The package's own note
+is that `POST /login/passkey/options` answers any input, including an unknown
+address, returning a challenge and an empty `allowCredentials` so the anonymous
+route cannot become an account oracle. That property is what makes passwordless
+safe to turn on; it is not what makes it the right choice for a single
+administrator product, and nothing here presumes on that.
+
+## Where the RP id and the origins come from, and why both are required
+
+`rp_id` is the registrable domain, hashed into every credential and immutable
+for that credential's life, so it is the one identity setting that cannot be
+corrected later without invalidating every passkey enrolled under the old value.
+It arrives as `IDENTITY_RP_ID` from `module.identity`, which takes it as
+`registrable_domain` and refuses a URL, and it is the same string the refresh
+cookie is scoped to. Nothing here sets it.
+
+`IDENTITY_WEBAUTHN_ORIGINS` is this product's, and it is a JSON array because
+`IdentitySettings.webauthn_origins` is a list field and the class refuses bare
+comma separated values for those, the same rule `IDENTITY_SIGNING_KEY_ARNS` and
+`IDENTITY_OAUTH_REDIRECT_URIS` follow. It carries the frontend origin, derived
+in Terraform from the same `local.domain` that `IDENTITY_FRONTEND_BASE_URL` is
+built from, so the origin a browser sends and the origin the ceremony checks
+cannot drift apart.
+
+The package requires both rather than defaulting either, and raises naming the
+variable when one is missing. That is the right severity: an empty origin list
+makes the origin check vacuous, and the origin check is the whole of what makes
+a passkey phishing resistant.
+
+## What M5 does not change, which is the hooks
+
+`IdentityHooks` is byte identical in 0.15.0 to what it was in 0.14.0. M5 adds no
+hook method, so `PortfolioIdentityHooks` satisfies the protocol untouched, and
+`tests/test_identity_m2.py`'s `isinstance` check against the runtime checkable
+`Protocol` is what proves that rather than a claim about it.
+
+The rule the package could have asked a hook for and did not is that the last
+passkey cannot be deleted by a user with no password. It reads "has a password"
+from the `credentials` store, which is where this package's own password lives,
+so it needs nothing from the product. A product whose users can sign in some way
+the package cannot see still has `may_authenticate` and `has_other_sign_in_method`
+to refuse the delete in front of the route; Portfolio's answer to the latter is
+already `False` and is unchanged by M5.
 
 **The existing `POST /api/v1/admin/login` is untouched.** It is a different
 router in `app/domains/identity/router.py`, mounted at a different prefix, looking
@@ -308,6 +396,14 @@ def build_router(settings: Settings) -> APIRouter:
     client id from the environment, and neither is set. So the two stores below
     and the `oauth_client_secrets` argument are both live wiring against a
     switch that is currently off. See the module docstring.
+
+    M5's seven passkey routes are the same rule once more. Supplying `passkeys`
+    and `webauthn_challenges` is necessary and not sufficient: the package also
+    needs `passkeys_enabled`, which comes from `IDENTITY_PASSKEYS_ENABLED` and
+    is false in both environments. The two stores below are live wiring against
+    a switch that is off, and unlike M6's the package's own default for that
+    switch is on, so it is set explicitly rather than omitted. See the module
+    docstring.
     """
     import boto3
     from webbpulse.dynamodb import Repository
@@ -317,9 +413,11 @@ def build_router(settings: Settings) -> APIRouter:
         DynamoLoginAttemptStore,
         DynamoOAuthLinkStore,
         DynamoOAuthStateStore,
+        DynamoPasskeyStore,
         DynamoRecoveryCodeStore,
         DynamoRefreshTokenStore,
         DynamoTotpFactorStore,
+        DynamoWebAuthnChallengeStore,
         IdentityStores,
         build_identity_router,
     )
@@ -330,15 +428,17 @@ def build_router(settings: Settings) -> APIRouter:
         LOGIN_ATTEMPTS,
         OAUTH_LINKS,
         OAUTH_STATES,
+        PASSKEYS,
         RECOVERY_CODES,
         REFRESH_TOKENS,
         TOTP_FACTORS,
+        WEBAUTHN_CHALLENGES,
     )
     from ..version import VERSION
     from .identity_hooks import PortfolioIdentityHooks
 
     def repository(logical_name: str) -> Repository:
-        """A package repository for one of the six identity tables.
+        """A package repository for one of the ten identity tables.
 
         Prefix and endpoint are passed explicitly rather than left to the
         package's environment lookup, so this reads the same `Settings` the rest
@@ -383,6 +483,28 @@ def build_router(settings: Settings) -> APIRouter:
         # an OAuth app a configuration change rather than a code change.
         oauth_states=DynamoOAuthStateStore(repository(OAUTH_STATES)),
         oauth_links=DynamoOAuthLinkStore(repository(OAUTH_LINKS)),
+        # M5. Supplied unconditionally, on exactly the reasoning the M6 pair
+        # above carries, and NOT what decides whether the passkey routes exist.
+        # The package's condition is both stores AND `passkeys_enabled`, and
+        # `IDENTITY_PASSKEYS_ENABLED` is false in both environments, so no
+        # passkey route is declared. These two stores then cost one `Repository`
+        # construction each and touch DynamoDB not at all: a `Repository`
+        # resolves its table lazily per call.
+        #
+        # Supplying them unconditionally rather than behind a check on the flag
+        # keeps the switch in exactly one place. A second condition here could
+        # only ever disagree with the settings object, and disagreeing would
+        # present as a flag flipped in Terraform that changes nothing, with no
+        # error anywhere to say why.
+        #
+        # The tables both exist already: `terraform/identity.tf` created all
+        # four of M5's and M6's in the apply that landed M6, deliberately ahead
+        # of the code that reads them, so this adoption is a backend change with
+        # no apply in front of it.
+        passkeys=DynamoPasskeyStore(repository(PASSKEYS)),
+        webauthn_challenges=DynamoWebAuthnChallengeStore(
+            repository(WEBAUTHN_CHALLENGES)
+        ),
     )
 
     return build_identity_router(
