@@ -130,6 +130,46 @@ locals {
         ttl_attribute          = "expires_at"
         point_in_time_recovery = false
       }
+
+      # ---------------------------------------------------------------
+      # The identity standard's M3 table. One item is one single-use link,
+      # for either purpose: email verification or password reset. Section
+      # 4.1's row for it, and webbpulse.identity.storage's own table, are
+      # hash token_hash, no range key, no index, TTL expires_at.
+      # ---------------------------------------------------------------
+
+      # Keyed on the SHA-256 of the mailed token, never on the token, so a
+      # read of this table cannot be turned into a working link. The hot
+      # path, "is this presented link valid", is therefore a single GetItem
+      # on the primary key.
+      #
+      # No index, deliberately, and it should stay that way. The package's
+      # DynamoIdentityTokenStore.revoke_for_user raises rather than scanning,
+      # and the package's M3 decision 6 is explicit: a user index would cost
+      # a write on the click path to serve the issue path, and what it would
+      # close is a link the user asked for that expires on its own inside an
+      # hour. `purpose` is an attribute rather than a second table, and
+      # LinkService.confirm asserts the purpose it wanted against the stored
+      # record, so one table does not make a verification link a valid reset
+      # link.
+      #
+      # TTL expires_at reclaims storage and is never the expiry check.
+      # DynamoDB deletes on its own schedule, typically within a couple of
+      # days, so an expired row stays readable long after it lapsed and
+      # confirm re-checks the deadline against the clock every time.
+      #
+      # No point in time recovery. Every item is a link that expires within
+      # a day at the outside, and restoring one to a point in time would
+      # restore a consumed link to its unconsumed state, which is the one
+      # thing the single-use guarantee exists to prevent.
+      "identity-tokens" = {
+        hash_key = "token_hash"
+        attributes = [
+          { name = "token_hash", type = "S" },
+        ]
+        ttl_attribute          = "expires_at"
+        point_in_time_recovery = false
+      }
     },
   )
 }

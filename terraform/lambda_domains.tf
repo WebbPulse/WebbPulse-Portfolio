@@ -58,16 +58,19 @@ locals {
       read_tables = ["site-content", "users"]
     }
     # credentials, refresh-tokens and login-attempts are the identity
-    # standard's M2 tables, and identity is the only domain that touches any
-    # of them. They are write tables rather than read tables because every
-    # flow that reads one also writes it: a login verifies a credential and
-    # records an attempt, a refresh consumes a generation and writes its
-    # successor. refresh-tokens is queried through
-    # family_id-generation-index, which the /index/* ARN below already covers.
+    # standard's M2 tables, and identity-tokens is M3's. identity is the only
+    # domain that touches any of them. They are write tables rather than read
+    # tables because every flow that reads one also writes it: a login verifies
+    # a credential and records an attempt, a refresh consumes a generation and
+    # writes its successor, and a verification link is read to check its purpose
+    # and expiry and then consumed by a conditional write in the same request.
+    # refresh-tokens is queried through family_id-generation-index, which the
+    # /index/* ARN below already covers; identity-tokens has no index and needs
+    # none, because its only lookup is a GetItem on the token hash.
     identity = {
       secrets     = true
       memory      = 512
-      tables      = ["users", "rate-limits", "meta", "credentials", "refresh-tokens", "login-attempts"]
+      tables      = ["users", "rate-limits", "meta", "credentials", "refresh-tokens", "login-attempts", "identity-tokens"]
       read_tables = []
     }
     public = {
@@ -314,6 +317,38 @@ module "lambda_domain" {
       IDENTITY_PRODUCT_NAME      = "WebbPulse Portfolio"
       IDENTITY_SUPPORT_EMAIL     = "support@${local.domain}"
       IDENTITY_FRONTEND_BASE_URL = "https://${local.domain}"
+
+      # M3's two SES settings, and the pair that decides whether the four email
+      # routes exist at all.
+      #
+      # IDENTITY_EMAIL_FROM EMPTY IS THE OFF SWITCH, NOT A MISCONFIGURATION.
+      # Both locals are empty where local.custom_domains_enabled is false, which
+      # is where there is no hosted zone to verify a sending domain in;
+      # `build_email_sender` in app/composition/identity.py returns None on an
+      # empty from address, and the package declares none of the four routes
+      # without a sender. So a deployment with no SES serves the M1 documents
+      # and the six M2 flows and promises nothing it cannot do, rather than
+      # declaring four routes that answer 503. terraform/ses.tf has the detail.
+      #
+      # IDENTITY_SES_CONFIGURATION_SET is set rather than omitted because the
+      # set exists wherever the identity does: they are created together in
+      # ses.tf and the identity names the set as its default. The package omits
+      # the key from the SendEmail call when the setting is empty rather than
+      # sending an empty string, which is the right behaviour and not one this
+      # product needs, since an empty name is a set that does not exist and a
+      # set that does not exist fails every send.
+      #
+      # The frontend link paths are NOT set here. IdentitySettings has no field
+      # for them: `VERIFY_LINK_PATH` and `RESET_LINK_PATH` are module constants
+      # in webbpulse.identity.verification, `/verify-email` and
+      # `/reset-password`, and the link is built as
+      # IDENTITY_FRONTEND_BASE_URL plus the path plus `?token=`. So the two
+      # pages the frontend has to serve are fixed by the package, and the one
+      # value this product controls is the base URL above. A product that needs
+      # different paths overrides the constants rather than an environment
+      # variable, which the package documents in its M3 decision 1.
+      IDENTITY_EMAIL_FROM            = local.identity_email_from
+      IDENTITY_SES_CONFIGURATION_SET = local.identity_ses_configuration_set
       # Off explicitly rather than by omission: the package defaults registration
       # to on, and Portfolio is a single administrator product whose one account is
       # seeded. A self registered row could never sign in (the hooks refuse a user

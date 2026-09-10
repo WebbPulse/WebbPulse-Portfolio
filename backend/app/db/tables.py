@@ -1,5 +1,6 @@
 from webbpulse.identity import (
     CREDENTIALS_TABLE,
+    IDENTITY_TOKENS_TABLE,
     LOGIN_ATTEMPTS_TABLE,
     REFRESH_FAMILY_INDEX,
     REFRESH_TOKENS_TABLE,
@@ -40,6 +41,11 @@ RATE_LIMITS = "rate-limits"
 CREDENTIALS = CREDENTIALS_TABLE
 REFRESH_TOKENS = REFRESH_TOKENS_TABLE
 LOGIN_ATTEMPTS = LOGIN_ATTEMPTS_TABLE
+
+# The identity standard's M3 table, on the same rule as the three above: the
+# name is the package's own constant, and `webbpulse.identity.verification` is
+# the only code that reads or writes it.
+IDENTITY_TOKENS = IDENTITY_TOKENS_TABLE
 
 COUNTER_PREFIX = "COUNTER#"
 UNIQUE_PREFIX = "UNIQUE#"
@@ -137,6 +143,36 @@ def _refresh_tokens_table():
     }
 
 
+def _identity_tokens_table():
+    """Hash `token_hash`, no range, no index, and a TTL that reclaims only.
+
+    One item is one single-use link, for either purpose: `purpose` is an
+    attribute on the record rather than a second table, which is what makes
+    verification and reset the same primitive with the same expiry check and
+    the same atomic consumption. `LinkService.confirm` asserts the purpose it
+    wanted against the stored record, so one table does not make a verification
+    link a valid reset link.
+
+    No index. `DynamoIdentityTokenStore.revoke_for_user` raises rather than
+    scanning, and the package's M3 decision 6 is explicit that this stays so: a
+    user index would cost a write on the click path to serve the issue path, and
+    what it would close is a link the user asked for that expires on its own
+    inside an hour.
+
+    The TTL is storage reclamation and never the expiry check. DynamoDB deletes
+    on its own schedule, typically within a couple of days, so `confirm`
+    re-checks `expires_at` against the clock every time.
+    """
+    return {
+        "TableName": IDENTITY_TOKENS,
+        "BillingMode": "PAY_PER_REQUEST",
+        "KeySchema": [{"AttributeName": "token_hash", "KeyType": "HASH"}],
+        "AttributeDefinitions": [
+            {"AttributeName": "token_hash", "AttributeType": "S"},
+        ],
+    }
+
+
 def _login_attempts_table():
     """Hash `identity_key`, range `attempted_at`, so an attempt is an append.
 
@@ -175,6 +211,7 @@ TABLES = {
     CREDENTIALS: _credentials_table(),
     REFRESH_TOKENS: _refresh_tokens_table(),
     LOGIN_ATTEMPTS: _login_attempts_table(),
+    IDENTITY_TOKENS: _identity_tokens_table(),
 }
 
 TTL_ATTRIBUTE = "ttl"
@@ -184,10 +221,11 @@ TTL_ATTRIBUTE = "ttl"
 # two names have to stay distinct while both tables exist.
 RATE_LIMIT_TTL_ATTRIBUTE = "expires_at"
 
-# `webbpulse.identity` names its TTL attribute `expires_at` too, on both tables
-# that have one. `credentials` is not in here and must never be: a credential
-# that expired on a storage reclaim schedule would sign somebody out of their
-# own account, on DynamoDB's timetable rather than on a deadline anybody chose.
+# `webbpulse.identity` names its TTL attribute `expires_at` too, on all three
+# of its tables that have one. `credentials` is not in here and must never be:
+# a credential that expired on a storage reclaim schedule would sign somebody
+# out of their own account, on DynamoDB's timetable rather than on a deadline
+# anybody chose.
 IDENTITY_TTL_ATTRIBUTE = "expires_at"
 
 #: Every table this backend owns, in the order they are created, paired with the
@@ -201,6 +239,7 @@ ALL_TABLES = (
     (CREDENTIALS, None),
     (REFRESH_TOKENS, IDENTITY_TTL_ATTRIBUTE),
     (LOGIN_ATTEMPTS, IDENTITY_TTL_ATTRIBUTE),
+    (IDENTITY_TOKENS, IDENTITY_TTL_ATTRIBUTE),
 )
 
 

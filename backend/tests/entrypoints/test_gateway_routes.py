@@ -647,6 +647,27 @@ IDENTITY_M2_ROUTE_KEYS = {
     "POST /api/auth/logout-all",
 }
 
+#: M3's four email keys, excluded from `identity_route_keys()` for the same
+#: reason M1's three and M2's six are.
+#:
+#: Two request routes and two confirm routes, one pair for verifying an address
+#: and one pair for resetting a password. `build_identity_router` mounts them
+#: only when it is handed both an `EmailSender` and an identity-tokens store,
+#: which `composition/identity.py` supplies whenever `IDENTITY_EMAIL_FROM` is
+#: set. The route keys are unconditional anyway: a key with no path behind it is
+#: a 404 from the function, while a path with no key is a gateway 404 that
+#: reaches no function at all, and the second is the worse failure.
+#:
+#: None of them is anonymous, for the same reason none of M2's is. Both request
+#: routes answer 200 for any address by design, which is section 5.4's
+#: enumeration rule and not a reason to put them outside the staging gate.
+IDENTITY_M3_ROUTE_KEYS = {
+    "POST /api/auth/verify-email",
+    "POST /api/auth/verify-email/confirm",
+    "POST /api/auth/reset",
+    "POST /api/auth/reset/confirm",
+}
+
 IDENTITY_SPIKE_TF = REPO / "terraform" / "identity_spike.tf"
 
 # `route_key = "<METHOD> <path>"` on a standalone aws_apigatewayv2_route. The
@@ -691,15 +712,17 @@ def identity_route_keys() -> set[str]:
     `expand_for_expression_keys`. Cut 4 covers one prefix and writes both keys
     out, so `gateway_route_keys` reads them straight from the file.
 
-    The M0 spike's keys, M1's permanent identity keys and M2's six flow keys are
-    all subtracted. See `IDENTITY_SPIKE_ROUTE_KEYS`, `IDENTITY_M1_ROUTE_KEYS`
-    and `IDENTITY_M2_ROUTE_KEYS`.
+    The M0 spike's keys, M1's permanent identity keys, M2's six flow keys and
+    M3's four email keys are all subtracted. See `IDENTITY_SPIKE_ROUTE_KEYS`,
+    `IDENTITY_M1_ROUTE_KEYS`, `IDENTITY_M2_ROUTE_KEYS` and
+    `IDENTITY_M3_ROUTE_KEYS`.
     """
     keys = (
         gateway_route_keys()["identity"]
         - IDENTITY_SPIKE_ROUTE_KEYS
         - IDENTITY_M1_ROUTE_KEYS
         - IDENTITY_M2_ROUTE_KEYS
+        - IDENTITY_M3_ROUTE_KEYS
     )
     assert keys, "no identity route keys were parsed out of apigateway.tf"
     return keys
@@ -831,6 +854,91 @@ def test_the_m2_keys_route_to_the_identity_function():
     """
     for key in IDENTITY_M2_ROUTE_KEYS:
         assert key in gateway_route_keys()["identity"], key
+
+
+def test_the_m3_email_keys_are_present_unconditionally():
+    """M3's four keys exist whether or not the sender is configured.
+
+    The routes themselves are conditional inside the package: no
+    `IDENTITY_EMAIL_FROM` means no `SesV2EmailSender`, which means
+    `build_identity_router` declines to mount them. The keys are not, and the
+    asymmetry is deliberate. A key whose path the function does not serve is a
+    404 from a function that answered; a path with no key is API Gateway's own
+    404 with `default_integration = null`, and no request ever reaches the
+    function. Keys that appear and disappear with a deployment profile are also
+    keys `test_route_keys_and_served_paths_agree` cannot check.
+    """
+    assert IDENTITY_M3_ROUTE_KEYS <= gateway_route_keys()["identity"]
+
+
+def test_the_m3_keys_are_literal_and_do_not_end_in_a_slash():
+    """No `{proxy+}` and no trailing slash, exactly as M1's and M2's are checked.
+
+    The trailing slash matters more here than anywhere else in the identity set,
+    because two of the four are nested one segment deeper than their siblings.
+    `POST /api/auth/reset/confirm` is a sibling path of `POST /api/auth/reset`
+    rather than a child route of it, and writing the parent as
+    `POST /api/auth/reset/` to distinguish them is the exact mistake that
+    applies green and fails with a BadRequestException saying part of the given
+    route key path is empty.
+    """
+    for key in IDENTITY_M3_ROUTE_KEYS:
+        path = key.split(" ", 1)[1]
+        assert "{" not in key, key
+        assert not path.endswith("/"), key
+
+
+def test_every_m3_key_is_a_post():
+    """All four are POSTs, including the two confirmations.
+
+    The confirm routes take the mailed token in a body rather than in a query
+    string, so the token stays out of access logs, out of `Referer` headers and
+    out of browser history. A GET here would be a link that leaks the credential
+    it carries to every intermediary that logs a URL.
+    """
+    for key in IDENTITY_M3_ROUTE_KEYS:
+        assert key.startswith("POST "), key
+
+
+def test_no_m3_email_route_is_anonymous():
+    """The staging access gate stays exactly two documents wide, again.
+
+    Worth stating separately from M2's version because the argument for making
+    these anonymous is more tempting: a password reset is by definition
+    something a signed out person does. It is still wrong. The staging access
+    gate is not authentication, it is the fence around a non production
+    environment, and a reset flow inside it is reached by someone who already
+    got through the fence.
+    """
+    anonymous = set(ANONYMOUS_ROUTE_ENTRY.findall(_terraform_source()))
+
+    assert IDENTITY_M3_ROUTE_KEYS & anonymous == set(), sorted(
+        IDENTITY_M3_ROUTE_KEYS & anonymous
+    )
+
+
+def test_the_m3_keys_route_to_the_identity_function():
+    """Not to `content`, and not to `public` because they are signed out flows.
+
+    `public` serves the routes that need no identity at all. These need the
+    identity function specifically: they read and write the identity-tokens
+    table, they call SES with the identity role's grant, and only that function
+    has either.
+    """
+    for key in IDENTITY_M3_ROUTE_KEYS:
+        assert key in gateway_route_keys()["identity"], key
+
+
+def test_the_reset_pair_does_not_collide_with_the_verify_pair():
+    """Four distinct keys, two prefixes, no key that is a prefix of another.
+
+    API Gateway routes a literal key by exact match, so `POST /api/auth/reset`
+    and `POST /api/auth/reset/confirm` coexist without either shadowing the
+    other. This pins that they really are four separate keys rather than three
+    plus a typo, which is the shape a copied line produces.
+    """
+    assert len(IDENTITY_M3_ROUTE_KEYS) == 4
+    assert len(IDENTITY_M2_ROUTE_KEYS & IDENTITY_M3_ROUTE_KEYS) == 0
 
 
 def test_the_well_known_pair_is_anonymous_and_the_health_route_is_gated():

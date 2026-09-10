@@ -436,6 +436,46 @@ module "api" {
       "POST /api/auth/logout-all" = { integration = "identity" }
     },
 
+    # The identity standard's M3 email flows: the four POST routes
+    # `build_identity_router` mounts once the product supplies an email sender
+    # and an `identity-tokens` store, on the same rule the six above follow.
+    # `terraform/ses.tf` creates the sending identity and the configuration set
+    # and `terraform/lambda_domains.tf` passes them, which is what supplies the
+    # sender.
+    #
+    # **Exactly the same authorizer treatment as the six above**, which means
+    # `authorization_type` omitted and the module's CUSTOM default taken: the
+    # staging access gate in staging, and NONE in production where no gate
+    # authorizer exists. Not `authorization_type = "NONE"`. These are state
+    # changing routes, and the anonymous hole exists only because API Gateway
+    # fetches the two discovery documents from its own infrastructure at
+    # `CreateAuthorizer` time with no cookie to present. Section 2.5 says it
+    # should stay exactly two documents wide, and a test asserts it does.
+    #
+    # They are not behind the identity JWT authorizer either, and could not be
+    # even if the gate's slot were free. All four are anonymous by design: a
+    # person who cannot sign in is precisely who asks for a password reset, and
+    # a person confirming an address has no token yet. Section 5.4 is why both
+    # request routes answer 200 for any address, and the package's flow methods
+    # return `None` on every path so a router cannot branch on the outcome even
+    # by accident.
+    #
+    # `verify-email` and `verify-email/confirm` are two separate literal keys
+    # rather than one greedy `verify-email/{proxy+}`. A greedy key would route
+    # any future path under `verify-email/` to this function without anybody
+    # declaring it, which is the by-omission widening the rest of this file
+    # avoids. `POST /api/auth/reset` and `POST /api/auth/reset/confirm` are
+    # distinct keys for the same reason.
+    #
+    # Literal, POST, and no trailing slash: a route key path segment may not be
+    # empty, and a trailing slash fails at apply with a green plan.
+    {
+      "POST /api/auth/verify-email"         = { integration = "identity" }
+      "POST /api/auth/verify-email/confirm" = { integration = "identity" }
+      "POST /api/auth/reset"                = { integration = "identity" }
+      "POST /api/auth/reset/confirm"        = { integration = "identity" }
+    },
+
     # The identity standard's M0 spike, which is now only its mint route.
     #
     # The two `.well-known` keys used to be part of this block and are now
