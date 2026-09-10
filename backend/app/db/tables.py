@@ -2,6 +2,9 @@ from webbpulse.identity import (
     CREDENTIALS_TABLE,
     IDENTITY_TOKENS_TABLE,
     LOGIN_ATTEMPTS_TABLE,
+    OAUTH_LINK_USER_INDEX,
+    OAUTH_LINKS_TABLE,
+    OAUTH_STATES_TABLE,
     RECOVERY_CODES_TABLE,
     REFRESH_FAMILY_INDEX,
     REFRESH_TOKENS_TABLE,
@@ -66,6 +69,22 @@ IDENTITY_TOKENS = IDENTITY_TOKENS_TABLE
 # no fifth identity table for it.
 TOTP_FACTORS = TOTP_FACTORS_TABLE
 RECOVERY_CODES = RECOVERY_CODES_TABLE
+
+# The identity standard's M6 tables, on the same rule as the six above: each
+# name is the package's own constant, and `webbpulse.identity.oauth` is the only
+# code that reads or writes either one.
+#
+# The two are opposites on TTL, and the difference is the whole design. An
+# `oauth-states` row exists to bind a callback to the request that started it
+# and is spent by a conditional delete the moment it is used, so a TTL is the
+# reclaim for the ones nobody comes back for; the package re-checks the deadline
+# on every read, so an unreclaimed row is refused rather than accepted, which is
+# the same rule `identity-tokens` follows. An `oauth-links` row is a sign-in
+# method and may be the only one a user has, so it must never expire on a clock:
+# it goes when the user detaches the provider, and the package refuses that when
+# it would remove the last way in.
+OAUTH_STATES = OAUTH_STATES_TABLE
+OAUTH_LINKS = OAUTH_LINKS_TABLE
 
 COUNTER_PREFIX = "COUNTER#"
 UNIQUE_PREFIX = "UNIQUE#"
@@ -258,6 +277,79 @@ def _recovery_codes_table():
     }
 
 
+def _oauth_states_table():
+    """Hash `state`, no range key, no index, and a TTL that reclaims only.
+
+    One row is one in-flight authorization request. It is written when the start
+    route builds the provider URL and spent by a conditional `DeleteItem` with
+    `ReturnValues=ALL_OLD`, which is what makes it single use even when two
+    callbacks race: exactly one of them gets the old image back and the other
+    gets nothing.
+
+    No index, because there is no query here that is not a point read: a
+    callback arrives carrying the state, and that is the primary key.
+
+    The TTL is storage reclamation and never the expiry check, on the same rule
+    `identity-tokens` follows. The package's deadline is ten minutes and it is
+    re-checked against the clock on every read, so a row DynamoDB has not got
+    round to deleting is refused rather than accepted.
+
+    The PKCE verifier is an ordinary attribute on this row and is deliberately
+    not in the authorization URL: a verifier the browser can read protects
+    against nothing.
+    """
+    return {
+        "TableName": OAUTH_STATES,
+        "BillingMode": "PAY_PER_REQUEST",
+        "KeySchema": [{"AttributeName": "state", "KeyType": "HASH"}],
+        "AttributeDefinitions": [{"AttributeName": "state", "AttributeType": "S"}],
+    }
+
+
+def _oauth_links_table():
+    """Hash `provider_subject`, plus the user index, and deliberately no TTL.
+
+    The primary key is the provider identity, `<provider>#<subject>`, which
+    makes the uniqueness constraint the primary key rather than something
+    enforced beside it: attaching a provider is one conditional put on
+    `attribute_not_exists(provider_subject)`, so two simultaneous attempts to
+    claim the same provider identity resolve to one winner with no
+    read-then-write and none of the pointer items this repository's own
+    uniqueness uses elsewhere.
+
+    `user_id-index` answers the other direction, "every link for this user",
+    which both the listing route and the last-method count in unlink need. Its
+    name is the package's `OAUTH_LINK_USER_INDEX`, which DynamoDB resolves by
+    name, so the two cannot differ. Projection is ALL because the listing route
+    renders the whole record.
+
+    The index is eventually consistent, and the one place that is not acceptable
+    is the last-method count, because over-counting a remaining method is how a
+    user loses their last way in permanently. The package handles that itself by
+    re-reading the base table by primary key for each candidate before counting
+    it, so nothing about it reaches this schema.
+
+    NO TTL, EVER. A link is a sign-in method and may be the only one, so a row
+    that vanished on DynamoDB's reclaim schedule would lock the account.
+    """
+    return {
+        "TableName": OAUTH_LINKS,
+        "BillingMode": "PAY_PER_REQUEST",
+        "KeySchema": [{"AttributeName": "provider_subject", "KeyType": "HASH"}],
+        "AttributeDefinitions": [
+            {"AttributeName": "provider_subject", "AttributeType": "S"},
+            {"AttributeName": "user_id", "AttributeType": "S"},
+        ],
+        "GlobalSecondaryIndexes": [
+            {
+                "IndexName": OAUTH_LINK_USER_INDEX,
+                "KeySchema": [{"AttributeName": "user_id", "KeyType": "HASH"}],
+                "Projection": {"ProjectionType": "ALL"},
+            },
+        ],
+    }
+
+
 def _pk_table(name):
     return {
         "TableName": name,
@@ -278,6 +370,8 @@ TABLES = {
     IDENTITY_TOKENS: _identity_tokens_table(),
     TOTP_FACTORS: _totp_factors_table(),
     RECOVERY_CODES: _recovery_codes_table(),
+    OAUTH_STATES: _oauth_states_table(),
+    OAUTH_LINKS: _oauth_links_table(),
 }
 
 TTL_ATTRIBUTE = "ttl"
@@ -287,13 +381,15 @@ TTL_ATTRIBUTE = "ttl"
 # two names have to stay distinct while both tables exist.
 RATE_LIMIT_TTL_ATTRIBUTE = "expires_at"
 
-# `webbpulse.identity` names its TTL attribute `expires_at` too, on all three
-# of its tables that have one. `credentials`, `totp-factors` and
-# `recovery-codes` are not in here and must never be: a credential or a second
-# factor that expired on a storage reclaim schedule would sign somebody out of
-# their own account, on DynamoDB's timetable rather than on a deadline anybody
-# chose, and for the two M4 tables it would lock the account rather than merely
-# end a session.
+# `webbpulse.identity` names its TTL attribute `expires_at` too, on all four
+# of its tables that have one: `refresh-tokens`, `login-attempts`,
+# `identity-tokens` and M6's `oauth-states`. `credentials`, `totp-factors`,
+# `recovery-codes` and `oauth-links` are not in here and must never be: a
+# credential, a second factor or a linked provider that expired on a storage
+# reclaim schedule would sign somebody out of their own account, on DynamoDB's
+# timetable rather than on a deadline anybody chose, and for the two M4 tables
+# and for `oauth-links` it would lock the account rather than merely end a
+# session.
 IDENTITY_TTL_ATTRIBUTE = "expires_at"
 
 #: Every table this backend owns, in the order they are created, paired with the
@@ -310,6 +406,8 @@ ALL_TABLES = (
     (IDENTITY_TOKENS, IDENTITY_TTL_ATTRIBUTE),
     (TOTP_FACTORS, None),
     (RECOVERY_CODES, None),
+    (OAUTH_STATES, IDENTITY_TTL_ATTRIBUTE),
+    (OAUTH_LINKS, None),
 )
 
 

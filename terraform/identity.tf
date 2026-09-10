@@ -144,7 +144,9 @@ locals {
 #    grants the identity Lambda role kms:Sign and kms:GetPublicKey.
 #  - The identity tables. Four of them, credentials, refresh-tokens,
 #    login-attempts and identity-tokens, moved out of module.dynamodb; two more,
-#    totp-factors and recovery-codes, are created by this change for M4.
+#    totp-factors and recovery-codes, were created for M4; and four more,
+#    passkeys, webauthn-challenges, oauth-states and oauth-links, are created by
+#    this change for M5 and M6.
 #  - The two IAM role policies, identity-signing and identity-tables, on the
 #    identity function's role.
 #
@@ -152,16 +154,28 @@ locals {
 # the module changes no resource in AWS beyond the two metadata differences the
 # PR body lists.
 #
-# The pin is 2.7, which brought the M4 resources the module added in that
-# release: the symmetric TOTP envelope key, its alias, the identity-mfa role
-# policy granting kms:GenerateDataKey and kms:Decrypt on it, and the
-# IDENTITY_DATA_KEY_ARN environment variable. All four already exist, applied
-# with PR 164, and the identity Lambda ignored the variable until now.
+# The pin is 2.8, which added four tables to the module's default map and
+# nothing else: M5's `passkeys` and `webauthn-challenges`, and M6's
+# `oauth-states` and `oauth-links`. The release is additive in the strict
+# sense, no input, output or existing resource changed, so the bump itself
+# contributes no diff and the four tables reach this workspace only because
+# they are written into the `tables` map below.
 #
-# THIS CHANGE IS THE OTHER HALF: the backend adopts webbpulse 0.12.1 and mounts
-# the six MFA routes, so the two M4 tables are added to the `tables` map below
-# and IDENTITY_DATA_KEY_ARN is finally read. Nothing about the key, the alias or
-# the policy changes here; they were created for exactly this.
+# THIS CHANGE IS THE OTHER HALF FOR M6: the backend adopts webbpulse 0.14.0 and
+# mounts the five OAuth routes, so `oauth-states` and `oauth-links` are created
+# and read. The two M5 tables are created in the same apply and stay empty; the
+# note in the map below says why that is the cheaper order.
+#
+# OAUTH IS INERT UNTIL A CLIENT ID EXISTS, and that is the property this change
+# is built around rather than a caveat on it. `var.oauth_google_client_id` and
+# `var.oauth_github_client_id` both default to "", the package's
+# `OAuthService.enabled_providers()` counts a provider only when it carries a
+# client id, and `build_identity_router` declares no OAuth route when that list
+# is empty. So this applies into an environment with no OAuth apps registered,
+# creates the two tables, sets two empty environment variables, and changes the
+# served API not at all. Registering the apps and setting the HCP variables is
+# a later, separate change with no code in it; docs/identity-cutover.md lists
+# exactly what the owner has to create.
 #
 # The tables have to be listed rather than inherited. `tables` is passed
 # explicitly, which replaces the module's default map wholesale rather than
@@ -198,9 +212,81 @@ locals {
 # The PR body lists all four addresses.
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# M6's two OAuth client ids, and why they are variables with an empty default.
+#
+# A client id is not a secret. It travels in the authorization URL in the user's
+# own browser on every sign in, so hiding it buys nothing, and the control that
+# actually bounds what an attacker can do with one is the redirect URI allow
+# list registered with the provider plus the client secret held at the token
+# exchange. Both of those are elsewhere: the allow list is registered with
+# Google and GitHub and re-checked by the package against
+# `IDENTITY_OAUTH_REDIRECT_URIS` below, and the secret is a key of the
+# `webbpulse-<env>/app` Secrets Manager secret. So these two are ordinary
+# Terraform variables rendered into the function's environment rather than
+# secret material.
+#
+# BOTH DEFAULT TO EMPTY, AND EMPTY IS THE OFF SWITCH RATHER THAN A
+# MISCONFIGURATION. This is the same arrangement `IDENTITY_EMAIL_FROM` already
+# uses for the four M3 email routes, for the same reason. The package's
+# `OAuthService.enabled_providers()` counts a provider only when it carries a
+# client id, and `build_identity_router` declares no OAuth route when that list
+# comes back empty, so a deployment with neither id set serves exactly the
+# routes it served before this change. A route that could only ever answer 503
+# because nobody registered an OAuth app is worse than a route that is not in
+# the OpenAPI document at all.
+#
+# That is what makes this change safe to apply before the owner has created
+# anything. The tables exist, the variables are empty, no route is declared, and
+# switching a provider on later is one HCP variable, one secret key and a
+# redeploy with no Terraform edit in it.
+#
+# The provider names are fixed by the package: `IdentitySettings.oauth_providers`
+# is a `Literal["google", "github"]`, so there is no third id to add here
+# without a package release first.
+# ---------------------------------------------------------------------------
+
+variable "oauth_google_client_id" {
+  description = "Google OAuth client id for identity M6 sign in, from the OAuth client the owner creates in the Google Cloud console. Empty means Google sign in is off and the package declares no OAuth route for it. Not a secret: it travels in the authorization URL in the user's browser. The matching secret is the `oauth_google_client_secret` key of the webbpulse-<env>/app secret."
+  type        = string
+  default     = ""
+}
+
+variable "oauth_github_client_id" {
+  description = "GitHub OAuth client id for identity M6 sign in, from the OAuth app the owner creates in GitHub developer settings. Empty means GitHub sign in is off and the package declares no OAuth route for it. Not a secret, on the same reasoning as the Google id. The matching secret is the `oauth_github_client_secret` key of the webbpulse-<env>/app secret."
+  type        = string
+  default     = ""
+}
+
+locals {
+  # The redirect URI allow list, as the JSON array IDENTITY_OAUTH_REDIRECT_URIS
+  # expects.
+  #
+  # The package matches a requested `redirect_uri` against this list BY EXACT
+  # STRING EQUALITY and never by prefix, and its own docstring gives the reason:
+  # a prefix check on `https://app.example.com` also admits
+  # `https://app.example.com.attacker.test`, which is a different registrable
+  # domain that the provider will happily deliver a live authorization code to.
+  # An unchecked redirect URI is a code exfiltration primitive rather than an
+  # ordinary open redirect.
+  #
+  # One entry, and it is the package's own default anyway: `<issuer>/oauth/callback`,
+  # which for this product is https://<api host>/api/auth/oauth/callback. Setting
+  # it explicitly rather than leaving the list empty is worth the line, because
+  # the string that has to be registered with Google and with GitHub is then
+  # visible in the plan and in the console instead of being derived inside the
+  # package, and this is exactly the value that a reviewer has to be able to
+  # compare against what is registered with the provider.
+  #
+  # It is built from local.identity_issuer, the same local the `iss` claim, the
+  # discovery document and the authorizer are all built from, so the callback
+  # the package will accept and the callback it advertises cannot disagree.
+  identity_oauth_redirect_uris = jsonencode(["${local.identity_issuer}/oauth/callback"])
+}
+
 module "identity" {
   source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/identity"
-  version = "~> 2.7"
+  version = "~> 2.8"
 
   name_prefix        = local.prefix
   issuer             = local.identity_issuer
@@ -340,6 +426,132 @@ module "identity" {
       hash_key  = "user_id"
       range_key = "code_hash"
     }
+
+    # ------------------------------------------------------------------
+    # M5's two tables and M6's two, all four creates for the same reason
+    # the M4 pair above were: this call passes `tables` explicitly, so the
+    # module's default map is not what is in effect and an entry the module
+    # gained in 2.8.0 does not reach this workspace until it is written out
+    # here. Each block below is byte identical to the module's own default
+    # for that key, which is itself copied from `webbpulse.identity.storage`,
+    # so the key schemas the store writes and the key schemas DynamoDB
+    # enforces are the same strings.
+    #
+    # THE TWO M5 TABLES ARE CREATED AHEAD OF THE CODE THAT READS THEM, and
+    # that is deliberate rather than an oversight. This change adopts
+    # webbpulse 0.14.0, which is M6 only: the backend mounts no passkey route
+    # and `IdentityStores` is given no passkey store, so `passkeys` and
+    # `webauthn-challenges` sit empty until M5 is adopted. Creating them now
+    # costs nothing on PAY_PER_REQUEST, keeps the module pin and the table
+    # set in step at one version each, and means M5's adoption is a backend
+    # change with no apply in front of it. An empty table is cheaper than a
+    # second row-cut.
+    # ------------------------------------------------------------------
+
+    # M5. Hash user_id, range credential_id, with one index the other way
+    # round. The primary key is that way because the credential management
+    # page reads its own writes, and a consistent read is only available on
+    # the base table; `credential_id-index` serves the login lookup, which
+    # goes from a credential id to its owner and tolerates the index's
+    # eventual consistency, because a credential written by an already
+    # authenticated request is not one somebody is signing in with in the
+    # same instant.
+    #
+    # The index name is a literal in the package, PASSKEY_CREDENTIAL_INDEX in
+    # storage.py, so a rename here is a failed Query on the login path rather
+    # than a plan diff. Projection is ALL because the login path reads the
+    # stored public key and the sign count straight off the index, and
+    # KEYS_ONLY would buy a second read on every sign in.
+    #
+    # NO TTL, EVER, on the rule totp-factors and recovery-codes already
+    # follow. A passkey is a second factor, or the only factor, and one that
+    # vanishes on DynamoDB's reclaim schedule is a credential removed from an
+    # account silently. It goes when its owner removes it.
+    passkeys = {
+      attributes = [
+        { name = "user_id", type = "S" },
+        { name = "credential_id", type = "S" },
+      ]
+      hash_key  = "user_id"
+      range_key = "credential_id"
+      global_secondary_indexes = [
+        {
+          name            = "credential_id-index"
+          hash_key        = "credential_id"
+          projection_type = "ALL"
+        },
+      ]
+    }
+
+    # M5. Hash challenge_id, no range, no index, and one of the two tables in
+    # this map whose rows are meant to disappear.
+    #
+    # A WebAuthn challenge is a row rather than a signed token because
+    # unreplayability is a claim about state and a token cannot make it: a JWT
+    # verifies exactly as well the second time as the first. The row is
+    # written when options are generated, deleted when it is consumed, and
+    # refused past its deadline whether or not DynamoDB has got round to
+    # reclaiming it, so the TTL here is storage reclamation and never access
+    # control. Pointing it at another attribute breaks nothing visibly and
+    # grows the table forever, which is why `expires_at` is contract.
+    "webauthn-challenges" = {
+      attributes    = [{ name = "challenge_id", type = "S" }]
+      hash_key      = "challenge_id"
+      ttl_attribute = "expires_at"
+    }
+
+    # M6. Hash state, no range, no index, TTL on expires_at. The OAuth
+    # analogue of webauthn-challenges and a row for the same reason: a state
+    # binds a callback to the request that started it, and it is spent by a
+    # conditional DeleteItem with ReturnValues=ALL_OLD, so it is single use
+    # even under a concurrent replay. Expiry is re-checked on every read, so
+    # an unreclaimed row is refused rather than accepted; ten minutes is the
+    # package's deadline and is not configured from here.
+    "oauth-states" = {
+      attributes    = [{ name = "state", type = "S" }]
+      hash_key      = "state"
+      ttl_attribute = "expires_at"
+    }
+
+    # M6. Hash provider_subject ("<provider>#<subject>"), no range, with one
+    # index the other way round on user_id.
+    #
+    # The primary key is the provider identity, which makes the uniqueness
+    # constraint the primary key: attaching a provider is one conditional put
+    # on attribute_not_exists(provider_subject), so a race resolves to one
+    # winner with no read-then-write and no synthetic reservation rows. This
+    # diverges from section 4.2 of the standard, which sketched a synthetic
+    # id, and the package's 0.14.0 changelog says so explicitly.
+    #
+    # user_id-index answers "every link for this user", which both listing and
+    # the last-method count in unlink need. A GSI rather than a second table
+    # because two tables would need both rows written and deleted in step with
+    # no cross-table transaction available, and a half-failed pair is an
+    # orphaned link unlink cannot find. An index cannot disagree with its base
+    # table. The price is eventual consistency, which the package buys out by
+    # re-reading the base table by primary key before counting a candidate as
+    # a remaining sign-in method.
+    #
+    # The index name is a literal in the package, OAUTH_LINK_USER_INDEX in
+    # storage.py.
+    #
+    # NO TTL. A link is a sign-in method and may be the only one; it goes when
+    # the user detaches the provider, which the package refuses when doing so
+    # would remove the last way in.
+    "oauth-links" = {
+      attributes = [
+        { name = "provider_subject", type = "S" },
+        { name = "user_id", type = "S" },
+      ]
+      hash_key = "provider_subject"
+      global_secondary_indexes = [
+        {
+          name            = "user_id-index"
+          hash_key        = "user_id"
+          projection_type = "ALL"
+        },
+      ]
+    }
   }
 }
 
@@ -369,7 +581,7 @@ output "identity_signing_key_alias" {
 }
 
 output "identity_table_names" {
-  description = "Logical name to physical name for the six identity tables the module creates. The application derives the same strings from DYNAMODB_TABLE_PREFIX rather than reading this, so it is here for a reviewer checking an apply rather than for a consumer."
+  description = "Logical name to physical name for the ten identity tables the module creates. The application derives the same strings from DYNAMODB_TABLE_PREFIX rather than reading this, so it is here for a reviewer checking an apply rather than for a consumer."
   value       = module.identity.table_names
 }
 

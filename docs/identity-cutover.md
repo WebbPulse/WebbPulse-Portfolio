@@ -195,6 +195,100 @@ cannot be unsealed as another user's. The key ARN reaches the function as
 variable is missing still serves all six routes and fails at the first enrolment
 with an error naming the variable, rather than hiding the routes.
 
+## OAuth providers, once M6 is applied
+
+M6 adds five routes under `/api/auth/oauth` and four DynamoDB tables:
+`oauth-states`, `oauth-links` and, ahead of M5, `passkeys` and
+`webauthn-challenges`. The tables are created by this apply, but **none of the
+five routes mount until a provider client id is configured**. With both client
+id variables empty, which is how this PR ships, the identity function serves
+exactly the routes it served before and the OpenAPI document contains no
+`/api/auth/oauth` path at all. That is asserted by
+`backend/tests/test_identity_m6.py`, so applying this PR changes no behaviour
+that anybody can reach.
+
+Turning a provider on is therefore a configuration change and not a code change.
+What follows is the owner's part of it.
+
+### 1. Register the applications
+
+Two things have to be created by hand, one per provider. Neither can be created
+by Terraform: both consoles are outside AWS and neither has an API this project
+is set up to call.
+
+**Google.** In the Google Cloud console, under **APIs and Services, Credentials**
+of the project that owns the sign in, create an **OAuth client ID** of type
+**Web application**. Give it the authorised redirect URI for the environment from
+the table below, and nothing else. It needs no scopes configured in the console:
+the package asks for `openid email profile` at authorisation time. The consent
+screen has to exist first, and while it is in testing mode only accounts on its
+test user list can sign in, which is a reasonable place to leave staging.
+
+**GitHub.** Under **Settings, Developer settings, OAuth Apps**, create a **New
+OAuth App**. The **Authorization callback URL** is the same redirect URI from the
+table below. GitHub allows exactly one callback URL per app, so staging and
+production need two separate apps. Nothing else on the form matters to this
+backend.
+
+### 2. Redirect URI, per environment
+
+The redirect URI is derived in Terraform from the identity issuer, so it is not
+a value anybody types into HCP. It is the value to paste into both provider
+consoles:
+
+| Environment | Redirect URI |
+|---|---|
+| staging | `https://api.staging.webbpulse.com/api/auth/oauth/callback` |
+| production | `https://api.webbpulse.com/api/auth/oauth/callback` |
+
+Both are `${local.identity_issuer}/oauth/callback`, and `local.identity_issuer`
+is built from `local.api_host`, which is the custom hostname in both
+environments and does not change shape with `staging_profile`. The workspace
+output `identity_issuer` is the authoritative value if either ever moves.
+
+Both providers match this string exactly, including the scheme and any trailing
+character, and a mismatch is a provider error page rather than anything this
+backend logs.
+
+### 3. Where the id and the secret go
+
+The two halves go to different places on purpose. A client id is public, appears
+in the authorisation URL a browser follows, and is a plain Terraform variable. A
+client secret is not, and never becomes an environment variable on the function.
+
+| Value | Where it goes | Name |
+|---|---|---|
+| Google client id | HCP Terraform workspace variable, Terraform category, not sensitive | `oauth_google_client_id` |
+| GitHub client id | HCP Terraform workspace variable, Terraform category, not sensitive | `oauth_github_client_id` |
+| Google client secret | key in the per environment `app` JSON secret | `oauth_google_client_secret` |
+| GitHub client secret | key in the per environment `app` JSON secret | `oauth_github_client_secret` |
+
+The workspace variables are `WebbPulse-Portfolio-staging` and
+`WebbPulse-Portfolio`. Both client id variables default to the empty string, so a
+workspace that has never had them set plans and applies cleanly, and setting one
+later is a one line plan against the identity function's environment.
+
+The secret is `webbpulse-<env>/app`, the single JSON secret this service already
+reads through `APP_SECRETS_ARN`. Add the two keys to the existing document
+rather than creating a new secret. The backend reads them optionally: a document
+with neither key present yields an empty mapping and the routes stay unmounted,
+which is exactly the state before step 1.
+
+### 4. What to expect after setting them
+
+Setting a client id alone mounts the routes. Setting it **without** the matching
+secret mounts routes that will fail the token exchange at the provider, so set
+the secret first, then the variable, then apply. The apply is a Lambda
+environment update and a new deployment picks the secret up on its next cold
+start, since the secret document is cached for the life of an execution
+environment.
+
+`GET /api/auth/oauth/links` lists the links on the signed in account and
+`DELETE /api/auth/oauth/{provider}/link` removes one. Unlinking is refused when
+it would leave an account with no way back in; see
+`has_other_sign_in_method` in `backend/app/composition/identity_hooks.py` for how
+Portfolio answers that question today and why.
+
 ## Rolling back
 
 Set the variable back and redeploy:

@@ -350,6 +350,38 @@ module "lambda_domain" {
       # seeded. A self registered row could never sign in (the hooks refuse a user
       # who is not an active administrator), so the route would only create rows.
       IDENTITY_REGISTRATION_ENABLED = "false"
+
+      # M6's three OAuth variables, and all three are inert until the owner
+      # registers an OAuth app. identity.tf carries the full note on why the two
+      # client ids are ordinary variables with an empty default and why empty is
+      # the off switch; the short version is that the package's
+      # `enabled_providers()` counts a provider only when it has a client id, and
+      # `build_identity_router` declares no OAuth route when that list is empty.
+      # So with both unset this block adds three environment variables and
+      # changes the served API not at all.
+      #
+      # THE CLIENT SECRETS ARE NOT HERE, and that is the one part of this worth
+      # stating twice. They are keys of the single `webbpulse-<env>/app` secret
+      # that APP_SECRETS_ARN already names, read at composition time by
+      # `app/composition/identity.py` and passed to `build_identity_router` as
+      # `oauth_client_secrets`. The package takes them as an argument rather than
+      # as an `IdentitySettings` field for exactly the reason they are not
+      # environment variables here: a secret on the settings object is a secret in
+      # a repr, in a pydantic validation error and in whatever log line prints
+      # the settings, and a secret in a Lambda environment variable is a secret in
+      # the console, in `get-function-configuration` and in every plan.
+      #
+      # IDENTITY_OAUTH_REDIRECT_URIS is a JSON array because
+      # `IdentitySettings.oauth_redirect_uris` is a list field and the class
+      # refuses bare comma separated values for those, the same rule
+      # IDENTITY_SIGNING_KEY_ARNS follows. It carries the one callback this
+      # product has, and it is the string that must also be registered with each
+      # provider: the provider's own allow list and this one are two independent
+      # checks on the same value, and a mismatch on either is a refused sign in
+      # rather than a silent redirect somewhere else.
+      IDENTITY_OAUTH_REDIRECT_URIS = local.identity_oauth_redirect_uris
+      IDENTITY_GOOGLE_CLIENT_ID    = var.oauth_google_client_id
+      IDENTITY_GITHUB_CLIENT_ID    = var.oauth_github_client_id
       },
 
       # The module's own map, merged last so it wins over anything above it.
