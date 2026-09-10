@@ -1,3 +1,10 @@
+from webbpulse.identity import (
+    CREDENTIALS_TABLE,
+    LOGIN_ATTEMPTS_TABLE,
+    REFRESH_FAMILY_INDEX,
+    REFRESH_TOKENS_TABLE,
+)
+
 ENTITIES = (
     "users",
     "categories",
@@ -18,6 +25,21 @@ META = "meta"
 # access to it. The limiter items live here instead, keyed and named to match
 # `webbpulse.ratelimit` so PR 4 can swap the package implementation in.
 RATE_LIMITS = "rate-limits"
+
+# The identity standard's M2 tables. Every name below is copied from
+# `webbpulse.identity.storage` and `webbpulse.identity.lockout`, which is the
+# code that reads and writes them, and `terraform/dynamodb.tf` declares the same
+# shapes for the deployed tables. `tests/test_identity_m2.py` asserts the two
+# sides agree against the constants the package exports, so a rename in the
+# package is a failing test here rather than a ValidationException in staging.
+#
+# These are registered here, and not only in Terraform, because the test suite
+# and `scripts/create_local_tables.py` both build their tables from this module.
+# A table the package writes to that is missing from `TABLES` is a suite that
+# cannot exercise a single M2 flow.
+CREDENTIALS = CREDENTIALS_TABLE
+REFRESH_TOKENS = REFRESH_TOKENS_TABLE
+LOGIN_ATTEMPTS = LOGIN_ATTEMPTS_TABLE
 
 COUNTER_PREFIX = "COUNTER#"
 UNIQUE_PREFIX = "UNIQUE#"
@@ -64,6 +86,78 @@ def _posts_table():
     return spec
 
 
+def _credentials_table():
+    """Hash `user_id`, range `credential_type`, and deliberately no TTL.
+
+    The range key is what lets a second credential kind exist later without
+    another attribute on the user record, and keeping the password hash in its
+    own table is what stops a route that returns a user from serialising one.
+    """
+    return {
+        "TableName": CREDENTIALS,
+        "BillingMode": "PAY_PER_REQUEST",
+        "KeySchema": [
+            {"AttributeName": "user_id", "KeyType": "HASH"},
+            {"AttributeName": "credential_type", "KeyType": "RANGE"},
+        ],
+        "AttributeDefinitions": [
+            {"AttributeName": "user_id", "AttributeType": "S"},
+            {"AttributeName": "credential_type", "AttributeType": "S"},
+        ],
+    }
+
+
+def _refresh_tokens_table():
+    """Hash `token_hash`, plus the family index reuse detection revokes on.
+
+    Verification is a GetItem on the primary key with no index in the way. The
+    index is only for revoking a whole family once a replayed token is seen, and
+    its name is the package's `REFRESH_FAMILY_INDEX`, which DynamoDB resolves by
+    name, so the two cannot differ.
+    """
+    return {
+        "TableName": REFRESH_TOKENS,
+        "BillingMode": "PAY_PER_REQUEST",
+        "KeySchema": [{"AttributeName": "token_hash", "KeyType": "HASH"}],
+        "AttributeDefinitions": [
+            {"AttributeName": "token_hash", "AttributeType": "S"},
+            {"AttributeName": "family_id", "AttributeType": "S"},
+            {"AttributeName": "generation", "AttributeType": "N"},
+        ],
+        "GlobalSecondaryIndexes": [
+            {
+                "IndexName": REFRESH_FAMILY_INDEX,
+                "KeySchema": [
+                    {"AttributeName": "family_id", "KeyType": "HASH"},
+                    {"AttributeName": "generation", "KeyType": "RANGE"},
+                ],
+                "Projection": {"ProjectionType": "ALL"},
+            },
+        ],
+    }
+
+
+def _login_attempts_table():
+    """Hash `identity_key`, range `attempted_at`, so an attempt is an append.
+
+    `identity_key` is `email#<lower>` or `ip#<addr>`. Ranging on the timestamp
+    is what makes the progressive lockout read the recent history newest first
+    rather than scanning every attempt ever recorded.
+    """
+    return {
+        "TableName": LOGIN_ATTEMPTS,
+        "BillingMode": "PAY_PER_REQUEST",
+        "KeySchema": [
+            {"AttributeName": "identity_key", "KeyType": "HASH"},
+            {"AttributeName": "attempted_at", "KeyType": "RANGE"},
+        ],
+        "AttributeDefinitions": [
+            {"AttributeName": "identity_key", "AttributeType": "S"},
+            {"AttributeName": "attempted_at", "AttributeType": "S"},
+        ],
+    }
+
+
 def _pk_table(name):
     return {
         "TableName": name,
@@ -78,6 +172,9 @@ TABLES = {
     "posts": _posts_table(),
     META: _pk_table(META),
     RATE_LIMITS: _pk_table(RATE_LIMITS),
+    CREDENTIALS: _credentials_table(),
+    REFRESH_TOKENS: _refresh_tokens_table(),
+    LOGIN_ATTEMPTS: _login_attempts_table(),
 }
 
 TTL_ATTRIBUTE = "ttl"
@@ -86,6 +183,25 @@ TTL_ATTRIBUTE = "ttl"
 # meta table uses, and the Terraform table declaration follows the package. The
 # two names have to stay distinct while both tables exist.
 RATE_LIMIT_TTL_ATTRIBUTE = "expires_at"
+
+# `webbpulse.identity` names its TTL attribute `expires_at` too, on both tables
+# that have one. `credentials` is not in here and must never be: a credential
+# that expired on a storage reclaim schedule would sign somebody out of their
+# own account, on DynamoDB's timetable rather than on a deadline anybody chose.
+IDENTITY_TTL_ATTRIBUTE = "expires_at"
+
+#: Every table this backend owns, in the order they are created, paired with the
+#: TTL attribute each one enables or `None`. `tests/conftest.py` and
+#: `scripts/create_local_tables.py` both walk this rather than keeping their own
+#: lists, so a table added to `TABLES` is a table both of them create.
+ALL_TABLES = (
+    *((entity, None) for entity in ENTITIES),
+    (META, TTL_ATTRIBUTE),
+    (RATE_LIMITS, RATE_LIMIT_TTL_ATTRIBUTE),
+    (CREDENTIALS, None),
+    (REFRESH_TOKENS, IDENTITY_TTL_ATTRIBUTE),
+    (LOGIN_ATTEMPTS, IDENTITY_TTL_ATTRIBUTE),
+)
 
 
 def table_name(prefix, entity):

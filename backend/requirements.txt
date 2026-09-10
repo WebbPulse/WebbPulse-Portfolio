@@ -68,7 +68,26 @@
 # `.well-known` documents and `/health` with the Cache-Control headers the
 # standard's section 3.4 specifies. The `identity` extra is unchanged at
 # `PyJWT[crypto]` and `fastapi`, so this line gains no dependency.
-webbpulse[fastapi,dynamodb,otel,aws-otel,security,identity]==0.9.0
+#
+# 0.10.0 is identity milestone M2: the password and session flows, plus the
+# progressive lockout and the password policy behind them. Additive for a
+# consumer that mounts only the documents, and this one no longer is: PR B
+# supplies hooks and a credential store, so the six POST flow routes mount.
+#
+# One breaking change matters here, and it is the one this repository reported.
+# Every route now mounts under the issuer's path, derived inside the package by
+# `identity_prefix(settings)`, rather than at the origin. 0.9.0 served the two
+# `.well-known` documents at the origin whatever the issuer said, and the
+# workaround was to mount the router with `prefix="/api/auth"` in
+# `app/composition/wiring.py`. That prefix is removed in this change, because
+# leaving it would double every route to `/api/auth/api/auth/...`. The
+# `identity_mount_prefix` helper that computed it is gone with it: the package
+# derives the prefix now, so a second implementation here could only disagree.
+#
+# `cookie_path` also defaults to the issuer's path rather than a literal
+# `/api/auth`, which needs no change here: the issuer already carries that path,
+# so the derived value is the one this product was going to set by hand.
+webbpulse[fastapi,dynamodb,otel,aws-otel,security,identity]==0.10.0
 
 fastapi==0.115.12
 boto3==1.38.46

@@ -19,26 +19,39 @@ builds an `IdentitySettings`, hands it to `build_identity_router`, and mounts th
 result at the issuer's path. Everything the package fixes lives in the package;
 everything this product owns stays here.
 
-## What M1 mounts, and what it does not
+## What M2 mounts, and what it does not
 
-`build_identity_router` in 0.9.0 serves exactly three routes:
+`build_identity_router` in 0.10.0 serves the three M1 documents:
 
     GET /.well-known/openid-configuration
     GET /.well-known/jwks.json
     GET /health
 
-and nothing else. Login, refresh rotation, MFA, passkeys and OAuth are M2 and
-later, per section 9.1. The existing `POST /api/v1/admin/login` is untouched by
-this module and keeps working exactly as it did: it is a different router,
-mounted at a different prefix, signing a different kind of token. The two coexist
-until M2 replaces the second with the first, which is the whole reason M1 is
-additive.
+and, because this module now passes `hooks` and a `stores` carrying a credential
+store, the six M2 flow routes as well:
 
-`hooks` and `stores` are not passed. The package accepts both and holds them
-unused in 0.9.0, so passing them now would be writing a `PortfolioIdentityHooks`
-whose every method is dead code until the milestone that calls it. Section 8.2
-already records what those hooks will say for this product, which is the useful
-half of writing them early.
+    POST /register
+    POST /login
+    POST /password
+    POST /refresh
+    POST /logout
+    POST /logout-all
+
+all of them under the issuer's path, so `/api/auth/login` and the rest. The
+mounting is conditional inside the package on exactly that pair being present,
+which is why supplying them is the whole of what turns M2 on here.
+
+MFA, passkeys and OAuth are M4 and later, per section 9.1.
+
+**The existing `POST /api/v1/admin/login` is untouched.** It is a different
+router in `app/domains/identity/router.py`, mounted at a different prefix, looking
+the user up by username, and signing an HS256 token with a shared secret rather
+than a KMS key. Nothing in this change removes it, redirects it, or alters what
+it accepts. The two flows run side by side, which is what M2 adoption is: the
+cutover that retires the legacy one is M9.
+
+`hooks` is `PortfolioIdentityHooks` from `identity_hooks.py`. Section 8.2's
+mapping, and that module's docstring, are where the policy is written down.
 
 ## Where the router mounts, which is the issuer's path and not the origin
 
@@ -57,11 +70,18 @@ that `jwks_uri` literally rather than guessing, which M0's access log confirms,
 so a document advertising a path the router does not serve fails
 `CreateAuthorizer` at M2 just as a missing document does.
 
-So `identity_mount_prefix` reads the path back off the issuer, and
-`app/composition/wiring.py` mounts the router there. Deriving it rather than
-writing `/api/auth` out in two places is what keeps the mount point and the
-advertised URLs from drifting apart: change the issuer and both move together.
-`terraform/apigateway.tf` carries route keys for the same two paths.
+0.10.0 moved that derivation into the package: `build_identity_router` places
+every route it declares under `identity_prefix(settings)`, which is the issuer's
+path with any trailing slash stripped. So `app/composition/wiring.py` mounts the
+router **with no prefix of its own**.
+
+That is the breaking change in this bump, and it is the one this repository
+reported. 0.9.0 served the documents at the origin whatever the issuer said, and
+the workaround here was an `identity_mount_prefix` helper feeding
+`include_router(..., prefix=...)`. Both are gone: leaving the prefix would double
+every route to `/api/auth/api/auth/...`, and keeping the helper would be a second
+implementation of a derivation the package now owns, which can only ever drift
+from it. `terraform/apigateway.tf` carries route keys for the nine served paths.
 
 ## Why the KMS client is constructed here
 
@@ -126,34 +146,64 @@ def build_identity_settings(settings: Settings) -> Any:
     return IdentitySettings()  # pyright: ignore[reportCallIssue]
 
 
-def identity_mount_prefix(settings: Settings) -> str:
-    """The path component of the issuer, which is where the router mounts.
-
-    `https://api.staging.webbpulse.com/api/auth` gives `/api/auth`, and an issuer
-    with no path gives `""`, which FastAPI takes as mounting at the root. Both
-    are valid issuers; which one this product uses is Terraform's decision, and
-    this follows it rather than restating it.
-
-    The trailing slash is stripped because `include_router` rejects a prefix that
-    ends in one, and because the standard warns that a trailing slash on the
-    issuer is the classic way to produce a mismatch nothing logs.
-    """
-    from urllib.parse import urlsplit
-
-    issuer = build_identity_settings(settings).issuer
-    return urlsplit(str(issuer)).path.rstrip("/")
-
-
 def build_router(settings: Settings) -> APIRouter:
-    """The identity router, mounted at `identity_mount_prefix` by the caller."""
-    import boto3
-    from webbpulse.identity import build_identity_router
+    """The identity router, mounted by the caller with no prefix of its own.
 
+    `build_identity_router` places every route under the issuer's path itself.
+    See the module docstring: a prefix here would double it.
+
+    Passing `hooks` and a `stores` whose `credentials` is set is what mounts the
+    six M2 flow routes; the package's mounting is conditional on exactly that
+    pair, so omitting either would leave this serving the three M1 documents and
+    nothing else.
+    """
+    import boto3
+    from webbpulse.dynamodb import Repository
+    from webbpulse.identity import (
+        DynamoCredentialStore,
+        DynamoLoginAttemptStore,
+        DynamoRefreshTokenStore,
+        IdentityStores,
+        build_identity_router,
+    )
+
+    from ..db.tables import CREDENTIALS, LOGIN_ATTEMPTS, REFRESH_TOKENS
     from ..version import VERSION
+    from .identity_hooks import PortfolioIdentityHooks
+
+    def repository(logical_name: str) -> Repository:
+        """A package repository for one of the three M2 tables.
+
+        Prefix and endpoint are passed explicitly rather than left to the
+        package's environment lookup, so this reads the same `Settings` the rest
+        of the backend does. `DYNAMODB_TABLE_PREFIX` is set on every function by
+        `terraform/lambda_domains.tf` and would resolve identically, but the
+        endpoint would not: `DYNAMODB_ENDPOINT_URL` is how a local run and the
+        test suite point at something other than AWS, and the package reads no
+        such variable.
+        """
+        return Repository(
+            logical_name,
+            prefix=settings.DYNAMODB_TABLE_PREFIX,
+            endpoint_url=settings.DYNAMODB_ENDPOINT_URL,
+        )
+
+    stores = IdentityStores(
+        credentials=DynamoCredentialStore(repository(CREDENTIALS)),
+        refresh_tokens=DynamoRefreshTokenStore(repository(REFRESH_TOKENS)),
+    )
 
     return build_identity_router(
         build_identity_settings(settings),
+        PortfolioIdentityHooks(),
+        stores,
         kms_client=boto3.client("kms"),
         service="webbpulse-portfolio-identity",
         version=VERSION,
+        # Progressive lockout. The package treats this as optional and runs the
+        # flows with lockout disabled when it is absent, which is the right
+        # default for a product that has not created the table. This one has, in
+        # the same apply that creates the other two, so there is no window where
+        # passing it would fail.
+        attempts=DynamoLoginAttemptStore(repository(LOGIN_ATTEMPTS)),
     )

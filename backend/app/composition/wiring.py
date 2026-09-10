@@ -317,6 +317,15 @@ def build_domain_app(
     # the mount point and the advertised URLs cannot drift apart. Mounting at the
     # origin instead would serve both documents at paths nothing fetches.
     #
+    # SINCE 0.10.0 THE PACKAGE DOES THAT DERIVATION AND THIS MOUNTS NO PREFIX.
+    # `build_identity_router` places every route it declares under
+    # `identity_prefix(settings)`, the issuer's path. 0.9.0 served the documents
+    # at the origin whatever the issuer said, and the workaround here was an
+    # `identity_mount_prefix` helper feeding `prefix=`. Passing that prefix now
+    # would double every route to `/api/auth/api/auth/...`, and keeping the
+    # helper would be a second implementation of a derivation the package owns,
+    # which can only drift from it. Both are gone.
+    #
     # This is why it does not go through `domain.load_routers`, which mounts
     # everything it loads at this domain's own `/api/v1/admin`.
     #
@@ -325,9 +334,14 @@ def build_domain_app(
     # route keys unconditionally, and `terraform/identity.tf` creates the signing
     # key they publish in both environments.
     #
+    # As of 0.10.0 this also mounts M2's six flow routes, because
+    # `composition/identity.py` passes hooks and a credential store and the
+    # package mounts the flows conditionally on exactly that pair. They land
+    # under the same issuer path: `/api/auth/register` and the rest.
+    #
     # The existing `POST /api/v1/admin/login` is untouched. It is a different
     # router at a different prefix signing a different kind of token, and the two
-    # coexist until M2 replaces the second with the first.
+    # run side by side. The cutover that retires the legacy one is M9.
     #
     # Wrapped in a guard on the issuer being configured, for the same reason the
     # spike below guards on its own two values: `IdentitySettings` requires
@@ -338,11 +352,9 @@ def build_domain_app(
     # document is missing there; a function whose environment is half configured
     # still fails loudly at startup, inside `IdentitySettings`, naming the field.
     if domain.name == "identity" and resolved.IDENTITY_ISSUER:
-        from .identity import build_router, identity_mount_prefix
+        from .identity import build_router
 
-        app.include_router(
-            build_router(resolved), prefix=identity_mount_prefix(resolved)
-        )
+        app.include_router(build_router(resolved))
 
     # The identity standard's M0 spike, on the `identity` domain only and only
     # when `IDENTITY_SPIKE_ENABLED` is set. Terraform writes that variable onto

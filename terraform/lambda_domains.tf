@@ -57,10 +57,17 @@ locals {
       tables      = ["projects", "experience", "skills", "education", "certifications", "meta"]
       read_tables = ["site-content", "users"]
     }
+    # credentials, refresh-tokens and login-attempts are the identity
+    # standard's M2 tables, and identity is the only domain that touches any
+    # of them. They are write tables rather than read tables because every
+    # flow that reads one also writes it: a login verifies a credential and
+    # records an attempt, a refresh consumes a generation and writes its
+    # successor. refresh-tokens is queried through
+    # family_id-generation-index, which the /index/* ARN below already covers.
     identity = {
       secrets     = true
       memory      = 512
-      tables      = ["users", "rate-limits", "meta"]
+      tables      = ["users", "rate-limits", "meta", "credentials", "refresh-tokens", "login-attempts"]
       read_tables = []
     }
     public = {
