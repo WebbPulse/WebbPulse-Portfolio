@@ -8,6 +8,7 @@ export { SkillForm } from './SkillForm';
 export { EducationForm } from './EducationForm';
 export { CertificationForm } from './CertificationForm';
 export { SiteContentForm } from './SiteContentForm';
+export { SecuritySection } from './SecuritySection';
 export { MarkdownPreview } from './MarkdownPreview';
 export { MarkdownCheatsheet } from './MarkdownCheatsheet';
 export * from './types';

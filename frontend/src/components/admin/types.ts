@@ -116,4 +116,5 @@ export type AdminTab =
   | 'certifications'
   | 'blog'
   | 'categories'
-  | 'site-content';
+  | 'site-content'
+  | 'security';
