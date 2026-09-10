@@ -263,4 +263,139 @@ describe('ApiService', () => {
 
     expect(callArgs().init.credentials).toBe('include');
   });
+
+  // The identity mode, which is written and typed today and switched on by
+  // configuration once the backend serves the routes it calls. These tests are
+  // what make it a real path rather than an untested branch: the wiring is
+  // exercised against a stubbed fetch, so a change that breaks it fails here
+  // and not on the day of the cutover.
+  describe('identity mode', () => {
+    /** The token response the standard's login and refresh routes answer. */
+    function tokenResponse(token: string, expiresIn = 900): Response {
+      return jsonResponse({ access_token: token, expires_in: expiresIn });
+    }
+
+    it('signs in through the auth client and holds no token in localStorage', async () => {
+      fetchMock.mockResolvedValue(tokenResponse('memory-token'));
+      const service = new ApiService(BASE, 'identity');
+
+      const response = await service.login({
+        username: 'admin@example.test',
+        password: 'secret',
+      });
+
+      expect(response.error).toBeUndefined();
+      expect(response.data?.access_token).toBe('memory-token');
+      expect(service.isAuthenticated()).toBe(true);
+      // The point of section 7.1: nothing a script can read back after a
+      // reload.
+      expect(localStorage.getItem('authToken')).toBeNull();
+      expect(localStorage.length).toBe(0);
+    });
+
+    it('posts the username as the email the identity login expects', async () => {
+      fetchMock.mockResolvedValue(tokenResponse('memory-token'));
+      const service = new ApiService(BASE, 'identity');
+
+      await service.login({
+        username: 'admin@example.test',
+        password: 'secret',
+      });
+
+      const { url, init } = callArgs();
+      expect(url).toBe(`${BASE}/api/auth/login`);
+      expect(init.body).toBe(
+        JSON.stringify({ email: 'admin@example.test', password: 'secret' })
+      );
+    });
+
+    it('sends the in memory token as a bearer header on an ordinary request', async () => {
+      fetchMock.mockResolvedValueOnce(tokenResponse('memory-token'));
+      const service = new ApiService(BASE, 'identity');
+      await service.login({ username: 'admin', password: 'secret' });
+
+      fetchMock.mockResolvedValueOnce(jsonResponse({ id: 1 }));
+      await service.getSiteContent();
+
+      const call = fetchMock.mock.calls[1] as [string, RequestInit];
+      expect((call[1].headers as Headers).get('authorization')).toBe(
+        'Bearer memory-token'
+      );
+    });
+
+    it('refreshes once on a 401 and replays the request', async () => {
+      fetchMock.mockResolvedValueOnce(tokenResponse('first-token'));
+      const service = new ApiService(BASE, 'identity');
+      await service.login({ username: 'admin', password: 'secret' });
+
+      fetchMock
+        // The original request, with an expired token.
+        .mockResolvedValueOnce(
+          jsonResponse({ detail: 'expired' }, { status: 401 })
+        )
+        // The refresh, which rotates the cookie and issues a new token.
+        .mockResolvedValueOnce(tokenResponse('second-token'))
+        // The single replay.
+        .mockResolvedValueOnce(jsonResponse({ id: 1 }));
+
+      const response = await service.getSiteContent();
+
+      expect(response.error).toBeUndefined();
+      expect(response.data).toEqual({ id: 1 });
+      const urls = fetchMock.mock.calls.map(call => (call as [string])[0]);
+      expect(urls[2]).toBe(`${BASE}/api/auth/refresh`);
+      // Exactly one refresh, and the replay carries the new token.
+      expect(
+        urls.filter(url => url.endsWith('/api/auth/refresh'))
+      ).toHaveLength(1);
+      const replay = fetchMock.mock.calls[3] as [string, RequestInit];
+      expect((replay[1].headers as Headers).get('authorization')).toBe(
+        'Bearer second-token'
+      );
+    });
+
+    it('reports a failed sign in through the error field rather than throwing', async () => {
+      fetchMock.mockResolvedValue(
+        jsonResponse(
+          { message: 'Email or password is incorrect.' },
+          { status: 401 }
+        )
+      );
+      const service = new ApiService(BASE, 'identity');
+
+      const response = await service.login({
+        username: 'admin',
+        password: 'wrong',
+      });
+
+      expect(response.data).toBeNull();
+      expect(response.error).toBe('Email or password is incorrect.');
+      expect(service.isAuthenticated()).toBe(false);
+    });
+
+    it('reports an MFA challenge as a failed sign in, since there is no form for it yet', async () => {
+      fetchMock.mockResolvedValue(
+        jsonResponse({ mfa_required: true, mfa_ticket: 't', factors: ['totp'] })
+      );
+      const service = new ApiService(BASE, 'identity');
+
+      const response = await service.login({
+        username: 'admin',
+        password: 'secret',
+      });
+
+      expect(response.data).toBeNull();
+      expect(response.error).toContain('second factor');
+    });
+
+    it('exposes the same client the API refreshes through', () => {
+      const service = new ApiService(BASE, 'identity');
+      expect(service.getAuthClient()).not.toBeNull();
+    });
+
+    it('exposes no auth client in bearer mode', () => {
+      const service = new ApiService(BASE, 'bearer');
+      expect(service.getAuthClient()).toBeNull();
+    });
+  });
 });

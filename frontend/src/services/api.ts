@@ -12,16 +12,24 @@
 // error path always returned; the local version declared `data: T` and wrote
 // `null as T` into it, so every call site read a value the type said could not
 // be null.
+//
+// Authentication is mid migration and the mechanism is chosen by
+// configuration. See `services/authMode.ts` for the two modes and
+// `IDENTITY_CUTOVER` below for what the identity mode is waiting on.
 import {
   ApiError,
   createApiClient,
   createEnvelopeClient,
   getWebbPulseError,
   type ApiEnvelope,
+  type AuthTokenProvider,
   type EnvelopeClient,
 } from '@webbpulse/api-client';
-import { loadAppConfig } from '@webbpulse/config';
-import { TokenStore } from '@webbpulse/auth';
+import { ConfigReader, loadAppConfig } from '@webbpulse/config';
+import { createAuthClient, type AuthClient } from '@webbpulse/auth';
+
+import { AUTH_MODES, AUTH_MODE_ENV_KEY, type AuthMode } from './authMode';
+import { BearerTokenStore } from './bearerTokenStore';
 
 /** Key the auth token is stored under. Unchanged, so sessions survive deploy. */
 const TOKEN_STORAGE_KEY = 'authToken';
@@ -38,6 +46,56 @@ const config = loadAppConfig(import.meta.env, {
 });
 
 export const API_BASE_URL = config.apiBaseUrl;
+
+/**
+ * The auth mechanism this bundle runs, read once at startup.
+ *
+ * `ConfigReader` rather than a raw `import.meta.env` read so an unrecognised
+ * value fails by name at startup, next to every other configuration problem,
+ * instead of quietly selecting the fallback. `assertValid` is what turns a
+ * recorded issue into the throw.
+ */
+export const AUTH_MODE: AuthMode = (() => {
+  const reader = new ConfigReader(import.meta.env);
+  const mode = reader.oneOf(AUTH_MODE_ENV_KEY, AUTH_MODES, 'bearer');
+  reader.assertValid();
+  return mode;
+})();
+
+/**
+ * What the identity cutover still needs, in one place.
+ *
+ * The `identity` branch below is written against the real `@webbpulse/auth`
+ * 0.4.0 API and compiles today. It is not switched on because the routes it
+ * calls do not exist in Portfolio yet, and that is a backend milestone rather
+ * than anything left undone here:
+ *
+ * 1. The identity function serves `POST /api/auth/login`, `/api/auth/refresh`
+ *    and `/api/auth/logout`. Staging currently serves only the JWKS,
+ *    the OpenID discovery document and the function's health route.
+ * 2. The refresh cookie is set httpOnly, `SameSite=Lax` and `Secure`, scoped
+ *    to the registrable domain. The www host and the API host share that
+ *    domain, so a fetch between them is same site and Lax is enough; the
+ *    standard rules out `SameSite=None`. The client already sends
+ *    `credentials: 'include'` for the staging access gate, which is the same
+ *    requirement for a cross origin, same site request.
+ * 3. The login route takes the standard's `email` and `password` and answers
+ *    `{ access_token, expires_in }`. Portfolio's current route takes
+ *    `username` and answers `{ access_token, token_type }`, which is why
+ *    `login` below has two shapes rather than one.
+ *
+ * When those are live, `VITE_AUTH_MODE=identity` is set on the environment,
+ * and once every environment carries it the bearer branch,
+ * `BearerTokenStore` and `services/authMode.ts` are deleted together.
+ */
+export const IDENTITY_CUTOVER = {
+  /** Routes `AuthClient` needs that Portfolio does not serve yet. */
+  requiredRoutes: [
+    '/api/auth/login',
+    '/api/auth/refresh',
+    '/api/auth/logout',
+  ] as const,
+} as const;
 
 /**
  * Logs a failed request with the fields the backend's error envelope carries.
@@ -211,40 +269,95 @@ export type ApiResponse<T> = ApiEnvelope<T>;
 
 export class ApiService {
   private readonly client: EnvelopeClient;
-  private readonly tokenStore: TokenStore;
 
-  constructor(baseUrl: string = API_BASE_URL) {
-    // TokenStore degrades to an in memory store when localStorage throws,
-    // which Safari in private mode does, so reading a token cannot break the
-    // application on load.
-    this.tokenStore = new TokenStore(TOKEN_STORAGE_KEY);
-    this.client = createEnvelopeClient(
-      createApiClient({
+  /**
+   * The bearer store, in `bearer` mode only.
+   *
+   * Null under `identity`, where the access token lives in `AuthClient` and
+   * writing it anywhere a script can read back after a reload is the thing the
+   * standard exists to prevent.
+   */
+  private readonly tokenStore: BearerTokenStore | null;
+
+  /** The auth client, in `identity` mode only. */
+  private readonly auth: AuthClient<unknown> | null;
+
+  constructor(baseUrl: string = API_BASE_URL, mode: AuthMode = AUTH_MODE) {
+    // The client defaults to credentials: 'include', which the staging access
+    // gate needs: its CloudFront signed cookies are set on the staging apex, so
+    // a request from the www host to the API host only carries them when
+    // credentials are included. It is also what attaches the identity refresh
+    // cookie cross origin, so both modes need it. Stated explicitly so it is
+    // not lost to a future default change.
+    const credentials = 'include' as const;
+
+    if (mode === 'identity') {
+      this.tokenStore = null;
+      // `AuthClient` builds its own client for the identity routes, which must
+      // stay callable with an expired token, so it is never given a
+      // `getAuthToken` pointing back at itself.
+      this.auth = createAuthClient({
         baseUrl,
-        // The client defaults to credentials: 'include', which the staging
-        // access gate needs: its CloudFront signed cookies are set on the
-        // staging apex, so a request from the www host to the API host only
-        // carries them when credentials are included. Stated explicitly so it
-        // is not lost to a future default change.
-        credentials: 'include',
-        // Read synchronously on every request, which is what the client
-        // requires.
-        getAuthToken: () => this.tokenStore.get(),
-        // The API reissues a token in a response header after a username
-        // change.
-        onTokenRefresh: token => {
-          this.tokenStore.set(token);
-        },
-      }),
-      {
-        // The package logs nothing of its own, so reporting stays a decision
-        // this application makes. Keeping console.error preserves what the
-        // hand rolled adapter did; the hook is where a real reporter goes.
-        onError: error => {
-          logApiFailure(error);
-        },
-      }
-    );
+        clientOptions: { credentials },
+      });
+      this.client = this.buildClient(baseUrl, {
+        credentials,
+        // Passing the client as `auth` turns on the retry-once-on-401
+        // pipeline: one shared refresh, one replay, and a second 401 thrown
+        // rather than a third attempt.
+        auth: this.auth satisfies AuthTokenProvider,
+      });
+      return;
+    }
+
+    // BearerTokenStore degrades to an in memory store when localStorage
+    // throws, which Safari in private mode does, so reading a token cannot
+    // break the application on load.
+    const store = new BearerTokenStore(TOKEN_STORAGE_KEY);
+    this.tokenStore = store;
+    this.auth = null;
+    this.client = this.buildClient(baseUrl, {
+      credentials,
+      // Read synchronously on every request, which is what the client
+      // requires. There is no refresh route in this mode, so an expired token
+      // is a 401 the user resolves by signing in again.
+      getAuthToken: () => store.get(),
+      // The API reissues a token in a response header after a username change.
+      onTokenRefresh: (token: string) => {
+        store.set(token);
+      },
+    });
+  }
+
+  /** The one place the envelope client is constructed, for either mode. */
+  private buildClient(
+    baseUrl: string,
+    options: {
+      credentials: RequestCredentials;
+      auth?: AuthTokenProvider;
+      getAuthToken?: () => string | null;
+      onTokenRefresh?: (token: string) => void;
+    }
+  ): EnvelopeClient {
+    return createEnvelopeClient(createApiClient({ baseUrl, ...options }), {
+      // The package logs nothing of its own, so reporting stays a decision
+      // this application makes. Keeping console.error preserves what the hand
+      // rolled adapter did; the hook is where a real reporter goes.
+      onError: error => {
+        logApiFailure(error);
+      },
+    });
+  }
+
+  /**
+   * The auth client, when this bundle runs the identity mode.
+   *
+   * Exposed so `AuthProvider` from `@webbpulse/auth/react` can be given the
+   * same instance the API client refreshes through, rather than a second one
+   * with its own token and its own in-flight refresh.
+   */
+  getAuthClient(): AuthClient<unknown> | null {
+    return this.auth;
   }
 
   private request<T>(
@@ -258,27 +371,98 @@ export class ApiService {
   }
 
   // Authentication methods
+  //
+  // The signatures are unchanged across both modes, so `AdminPanel` and the
+  // login form do not change when the cutover happens. What changes underneath
+  // is where the token lives and whether a refresh exists.
+
+  /**
+   * Signs in.
+   *
+   * In `identity` mode this goes through `AuthClient`, which holds the access
+   * token in memory and relies on the refresh cookie the route sets. The
+   * standard's login takes `email`, so the username is sent as one: the field
+   * carries an email address in practice, and the identity route is the thing
+   * that defines the name.
+   *
+   * An MFA challenge is a successful outcome of the first leg rather than an
+   * error, and Portfolio has no second factor enrolled, so it is reported as a
+   * failed login here rather than silently read as success. Completing a
+   * challenge needs a form this application does not have; it is added with
+   * the rest of the identity UI when the routes land.
+   */
   async login(credentials: UserLogin): Promise<ApiResponse<Token>> {
+    if (this.auth !== null) {
+      const auth = this.auth;
+      try {
+        const outcome = await auth.login({
+          email: credentials.username,
+          password: credentials.password,
+        });
+        if (outcome.mfaRequired) {
+          return {
+            data: null,
+            error: 'This account requires a second factor to sign in.',
+          };
+        }
+        const token = auth.getAccessToken();
+        return {
+          data:
+            token === null
+              ? null
+              : { access_token: token, token_type: 'bearer' },
+          ...(token === null
+            ? { error: 'Sign in did not return an access token.' }
+            : {}),
+        };
+      } catch (error) {
+        logApiFailure(error);
+        return {
+          data: null,
+          error:
+            error instanceof Error
+              ? error.message
+              : 'Sign in failed. Please try again.',
+        };
+      }
+    }
+
     const response = await this.request<Token>('/admin/login', {
       method: 'POST',
       body: credentials,
     });
 
     if (response.data) {
-      this.tokenStore.set(response.data.access_token);
+      this.tokenStore?.set(response.data.access_token);
     }
 
     return response;
   }
 
+  /**
+   * Signs out.
+   *
+   * Stays synchronous, because every call site treats signing out as immediate
+   * and none of them awaits it. In `identity` mode the backend call that
+   * revokes the refresh family is started and not awaited; `AuthClient` clears
+   * its in-memory token whether or not that call succeeds, so the local
+   * session is gone by the time this returns either way.
+   */
   logout(): void {
-    this.tokenStore.clear();
+    if (this.auth !== null) {
+      void this.auth.logout().catch(logApiFailure);
+      return;
+    }
+    this.tokenStore?.clear();
   }
 
   isAuthenticated(): boolean {
+    if (this.auth !== null) {
+      return this.auth.getState().status === 'authenticated';
+    }
     // Read through on every call rather than caching in a field. The previous
     // cached copy went stale whenever another tab signed in or out.
-    const token = this.tokenStore.get();
+    const token = this.tokenStore?.get() ?? null;
     return token !== null && token !== '';
   }
 
