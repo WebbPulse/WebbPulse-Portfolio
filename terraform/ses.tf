@@ -75,18 +75,37 @@ resource "aws_sesv2_email_identity" "primary" {
 # of three, and each becomes `<token>._domainkey.<domain>` pointing at
 # `<token>.dkim.amazonses.com`.
 #
-# for_each over a toset of the tokens rather than count over an index: the
-# tokens are opaque strings SES chose, and an index keyed address would move
-# every record if SES ever returned them in a different order.
+# COUNT RATHER THAN FOR_EACH, AND THIS IS NOT A STYLE CHOICE. Terraform requires
+# every for_each key to be known at plan time, and these tokens are chosen by
+# SES when the identity is created, so they are unknown on the very apply that
+# needs them. `for_each = toset(...tokens)` therefore fails the plan outright
+# with "Invalid for_each argument ... depends on resource attributes that cannot
+# be determined until apply", which is a plan-time error rather than the kind
+# that waits for an apply. count takes its length from a number, and Easy DKIM
+# always returns exactly three tokens, so the length is known even though the
+# values are not.
+#
+# The cost of count here is the usual one: the address is an index, so if SES
+# ever returned the same three tokens in a different order Terraform would see
+# three changed records rather than none. That is a re-write of three CNAMEs to
+# the same values, not a loss of verification, and it is the cheaper of the two
+# problems. The alternative does not plan at all.
+locals {
+  # Three, fixed by SES's Easy DKIM rather than by anything here. Written as a
+  # length rather than as a literal 3 at the use site so the reason is attached
+  # to the number.
+  ses_dkim_token_count = 3
+}
+
 resource "aws_route53_record" "ses_dkim" {
-  for_each = local.custom_domains_enabled ? toset(aws_sesv2_email_identity.primary[0].dkim_signing_attributes[0].tokens) : toset([])
+  count    = local.custom_domains_enabled ? local.ses_dkim_token_count : 0
   provider = aws.dns
 
   zone_id = local.records_zone_id
-  name    = "${each.value}._domainkey.${local.domain}"
+  name    = "${aws_sesv2_email_identity.primary[0].dkim_signing_attributes[0].tokens[count.index]}._domainkey.${local.domain}"
   type    = "CNAME"
   ttl     = 1800
-  records = ["${each.value}.dkim.amazonses.com"]
+  records = ["${aws_sesv2_email_identity.primary[0].dkim_signing_attributes[0].tokens[count.index]}.dkim.amazonses.com"]
 }
 
 # The configuration set. Section 5.8 of docs/identity-standard.md grants the
