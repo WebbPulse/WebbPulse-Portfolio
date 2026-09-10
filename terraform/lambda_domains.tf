@@ -57,20 +57,22 @@ locals {
       tables      = ["projects", "experience", "skills", "education", "certifications", "meta"]
       read_tables = ["site-content", "users"]
     }
-    # credentials, refresh-tokens and login-attempts are the identity
-    # standard's M2 tables, and identity-tokens is M3's. identity is the only
-    # domain that touches any of them. They are write tables rather than read
-    # tables because every flow that reads one also writes it: a login verifies
-    # a credential and records an attempt, a refresh consumes a generation and
-    # writes its successor, and a verification link is read to check its purpose
-    # and expiry and then consumed by a conditional write in the same request.
-    # refresh-tokens is queried through family_id-generation-index, which the
-    # /index/* ARN below already covers; identity-tokens has no index and needs
-    # none, because its only lookup is a GetItem on the token hash.
+    # The four identity tables are NOT in this list. credentials,
+    # refresh-tokens, login-attempts and identity-tokens live in
+    # module.identity now, and that module attaches its own `identity-tables`
+    # policy to this same role covering all four and their indexes. Listing them
+    # here as well would render the same grant twice on one role, from two
+    # sources that can drift.
+    #
+    # The three that remain are shared infrastructure rather than identity's own
+    # storage: `users` is the product's user record, `rate-limits` is the login
+    # limiter's table and `meta` holds the id allocator and the uniqueness
+    # pointer items. None of the three belongs to the identity standard, so none
+    # of them moved.
     identity = {
       secrets     = true
       memory      = 512
-      tables      = ["users", "rate-limits", "meta", "credentials", "refresh-tokens", "login-attempts", "identity-tokens"]
+      tables      = ["users", "rate-limits", "meta"]
       read_tables = []
     }
     public = {
@@ -261,38 +263,37 @@ module "lambda_domain" {
     # setting is one line here and none in Python, which is the point of the
     # prefix.
     #
-    # IDENTITY_SIGNING_KEY_ARNS is a JSON array rather than the alias the spike
-    # passes, and rather than a bare comma separated string. Three reasons, in
-    # order of how much they cost to get wrong:
+    # THE FIVE VARIABLES THE MODULE OWNS ARE NOT WRITTEN OUT HERE ANY MORE.
+    # IDENTITY_ISSUER, IDENTITY_AUDIENCE, IDENTITY_SIGNING_KEY_ARNS,
+    # IDENTITY_COOKIE_DOMAIN and IDENTITY_RP_ID come from
+    # module.identity.identity_environment, merged last at the bottom of this
+    # map. They are the five that follow from the module's own resources, so
+    # the function and the resources cannot disagree about any of them.
     #
-    #  1. It is a list because section 3.5's rotation is "add a key, deploy,
-    #     wait, promote, deploy, drop", and every one of those steps is an edit
-    #     to this list. A scalar would have to be widened by the change that
-    #     first needs two keys, which is the change least able to afford a
-    #     refactor.
-    #  2. JSON rather than CSV because IdentitySettings deliberately refuses
-    #     bare CSV for list fields: these are ARNs, and a stray comma should be
-    #     an error rather than a silently split entry.
-    #  3. The real ARN rather than the alias, because two aliases would have to
-    #     be created and swapped in lockstep to express a two key overlap.
+    # IDENTITY_SIGNING_KEY_ARNS stays a JSON array of real ARNs rather than the
+    # alias the spike passes or a bare comma separated string, and the module
+    # renders it that way for the same three reasons this file used to give: it
+    # is a list because section 3.5's rotation is an edit to the list at every
+    # step, it is JSON because IdentitySettings refuses bare CSV for list
+    # fields, and it is the ARN rather than the alias because two aliases would
+    # have to be created and swapped in lockstep to express a two key overlap.
     #
-    # Naming the key ARN here does not close the dependency cycle the spike's
-    # comment above avoids, and the difference is worth stating because the two
-    # blocks look contradictory. The cycle exists when the *key* is built from
-    # something this module produces and this module is built from the key.
-    # aws_kms_key.identity_signing takes module.lambda_domain["identity"].role_arn
-    # in its key policy, so the key depends on the role. The role is created by
-    # this module, but the environment variables are an attribute of the
-    # function, not of the role, and Terraform's graph is per resource rather
-    # than per module: role, then key, then function. The alias indirection is
-    # what the spike needed because it wrote the variable at a point where it
-    # would have referenced the key resource from the same module call that the
-    # key's policy references back.
+    # Naming the key ARNs here does not close a dependency cycle, and the point
+    # is worth keeping because this block and the spike's above look
+    # contradictory. The cycle would exist if the key were built from something
+    # this Lambda module produces and this module were built from the key. The
+    # key policy does take module.lambda_domain["identity"].role_arn, so the key
+    # depends on the role; but environment variables are an attribute of the
+    # function rather than of the role, and Terraform's graph is per resource
+    # rather than per module, so the order is role, then key, then function.
+    # The alias indirection is what the spike needed because it wrote the
+    # variable at a point where it would have referenced the key resource from
+    # the same module call the key's policy references back.
     #
     # IDENTITY_ISSUER and IDENTITY_AUDIENCE are passed rather than derived in
     # the application, for the reason identity.tf gives at length: the gateway
-    # and the signer have to agree on both strings byte for byte, and the only
-    # way to guarantee that is for both to read the same Terraform local.
+    # and the signer have to agree on both strings byte for byte, and reading
+    # both from one module output is what guarantees it.
     #
     # IDENTITY_ENVIRONMENT is separate from ENVIRONMENT above even though both
     # carry the same value. IdentitySettings has its own `environment` field
@@ -301,18 +302,13 @@ module "lambda_domain" {
     # Letting it default to `local` in a deployed function would silently switch
     # both of those to their permissive setting, so it is set explicitly.
     #
-    # IDENTITY_COOKIE_DOMAIN and IDENTITY_RP_ID are the registrable domain
-    # rather than the API host. Neither is read by a route in 0.9.0, since the
-    # refresh cookie is M2 and passkeys are M5, but rp_id is hashed into every
-    # credential and immutable for that credential's life (section 6.1), so it
-    # is set now while it is still free to change.
-    each.key == "identity" ? {
+    # IDENTITY_COOKIE_DOMAIN and IDENTITY_RP_ID come from the module too, and
+    # are the registrable domain rather than the API host. rp_id is hashed into
+    # every credential and immutable for that credential's life (section 6.1),
+    # which is why the module takes it as `registrable_domain` and refuses a
+    # URL there.
+    each.key == "identity" ? merge({
       IDENTITY_ENVIRONMENT       = var.environment
-      IDENTITY_ISSUER            = local.identity_issuer
-      IDENTITY_AUDIENCE          = local.identity_audience
-      IDENTITY_SIGNING_KEY_ARNS  = jsonencode(local.identity_signing_key_arns)
-      IDENTITY_COOKIE_DOMAIN     = local.identity_registrable_domain
-      IDENTITY_RP_ID             = local.identity_registrable_domain
       IDENTITY_RP_NAME           = "WebbPulse Portfolio"
       IDENTITY_PRODUCT_NAME      = "WebbPulse Portfolio"
       IDENTITY_SUPPORT_EMAIL     = "support@${local.domain}"
@@ -354,7 +350,30 @@ module "lambda_domain" {
       # seeded. A self registered row could never sign in (the hooks refuse a user
       # who is not an active administrator), so the route would only create rows.
       IDENTITY_REGISTRATION_ENABLED = "false"
-    } : {},
+      },
+
+      # The module's own map, merged last so it wins over anything above it.
+      #
+      # It carries the five variables that follow from module.identity's
+      # resources: IDENTITY_ISSUER, IDENTITY_AUDIENCE,
+      # IDENTITY_SIGNING_KEY_ARNS (a JSON array, active signer first),
+      # IDENTITY_COOKIE_DOMAIN and IDENTITY_RP_ID. Every one of those used to be
+      # written out above from a local; the module is built from the same
+      # locals, so the rendered values are unchanged and the function does not
+      # see a diff.
+      #
+      # It is deliberately not the whole block. IDENTITY_ENVIRONMENT,
+      # IDENTITY_RP_NAME, IDENTITY_PRODUCT_NAME, IDENTITY_SUPPORT_EMAIL,
+      # IDENTITY_FRONTEND_BASE_URL, the two SES strings and the registration
+      # switch are product decisions with no resource behind them, so they stay
+      # here where this product owns them.
+      #
+      # Merging the module last rather than first is what makes the issuer the
+      # gateway is configured from and the issuer the signer stamps the same
+      # string by construction: a product override of IDENTITY_ISSUER would be
+      # a mismatch that denies every request while logging no reason, and this
+      # ordering makes such an override impossible rather than merely unlikely.
+    module.identity.identity_environment) : {},
   )
 
   # 7 days, the retention the platform migration decision settled on, and

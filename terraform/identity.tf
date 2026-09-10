@@ -85,16 +85,13 @@ locals {
 
   # The signing key ARNs, as the JSON array IDENTITY_SIGNING_KEY_ARNS expects.
   #
-  # A list of one today. The list is the whole of section 3.5's rotation design:
-  # the head signs, every element is published in the JWKS, and each step of a
-  # rotation is an edit to this list plus a deploy. Writing it as a list now,
-  # rather than a scalar that a later change has to widen, is what makes step 2
-  # of that procedure a one line change rather than a refactor of this file,
-  # the environment variable, and the settings that read it.
-  #
-  # Sorted through no function: the order is the design. aws_kms_key.identity_signing
-  # is the active signer and belongs first.
-  identity_signing_key_arns = [aws_kms_key.identity_signing.arn]
+  # Read from the module rather than built here. The module owns the keys now,
+  # and `signing_key_arns` is ordered by its `active_signing_key` input and
+  # never sorted, which is the same contract this local carried: the head signs
+  # and every element is published in the JWKS. Section 3.5's rotation is two
+  # applies against `signing_key_count` and `active_signing_key` rather than an
+  # edit to a list here.
+  identity_signing_key_arns = module.identity.signing_key_arns
 
   # The cookie and WebAuthn scope: the registrable domain, not the API host.
   #
@@ -138,152 +135,153 @@ locals {
 }
 
 # ---------------------------------------------------------------------------
-# The signing key.
+# The identity layer, from the shared platform module.
 #
-# RSA_2048 and SIGN_VERIFY. The HTTP API JWT authorizer's token validation
-# workflow says "Currently, only RSA-based algorithms are supported", which is
-# the single sentence that rules out the standard's preferred ES256 and forces
-# RS256. Section 3.1 records the reasoning; M0 confirmed the outcome end to end.
+# This replaced three hand-written resources and four table definitions that
+# lived in two files. What the module owns now:
 #
-# 2048 rather than 4096: a larger key means a larger signature and a slower,
-# more expensive kms:Sign on the hot path of every login and every refresh, for
-# no benefit any verifier can see. 2048 is what every OIDC provider in wide use
-# serves.
+#  - The RSA_2048 SIGN_VERIFY signing key, its alias, and the key policy that
+#    grants the identity Lambda role kms:Sign and kms:GetPublicKey.
+#  - The four identity tables, credentials, refresh-tokens, login-attempts and
+#    identity-tokens, which moved out of module.dynamodb.
+#  - The two IAM role policies, identity-signing and identity-tables, on the
+#    identity function's role.
 #
-# ROTATION IS OFF, AND THAT IS A DECISION RATHER THAN AN OMISSION. Section 3.5:
-# `kid` is the base64url SHA-256 of the DER SubjectPublicKeyInfo, so it is a
-# function of the key material itself. Rotating the material behind a single key
-# id changes what GetPublicKey returns and the derived `kid` follows it, and
-# every already-issued token then references a `kid` the JWKS no longer serves.
-# Rotation in this design is by adding a second key and serving both through an
-# overlap, never by mutating one, which is what local.identity_signing_key_arns
-# being a list is for. aws_kms_key defaults enable_key_rotation to false; it is
-# written out so the next reader does not have to know that.
+# Every one of those is a `moved` block below rather than a create, so adopting
+# the module changes no resource in AWS beyond the two metadata differences the
+# PR body lists.
 #
-# The deletion window is the 30 day default rather than the spike's 7. This is
-# the opposite trade to the spike's: dropping a key that an already-issued token
-# still references is the one mistake in this design with no recovery, and the
-# waiting period is the last chance to notice. Section 3.5's step 5 says to
-# schedule deletion no sooner than 30 days after a key leaves the list anyway.
+# The pin is 2.7, which also brings the M4 resources the module added in that
+# release: the symmetric TOTP envelope key, its alias, the identity-mfa role
+# policy granting kms:GenerateDataKey and kms:Decrypt on it, and the
+# IDENTITY_DATA_KEY_ARN environment variable. Those are plain creates. The
+# identity Lambda ignores the variable until the backend adopts webbpulse 0.12
+# and the M4 routes, which is the next PR.
+#
+# WHAT IS DELIBERATELY NOT PASSED.
+#
+# `http_api_id` stays unset, so no aws_apigatewayv2_authorizer is created here.
+# The M0 spike in identity_spike.tf still owns the only JWT authorizer on this
+# API and its behaviour is untouched by this change. An HTTP API route takes one
+# authorizer and in staging the access gate already occupies that slot on every
+# route, so which of section 2.5's three answers to take is still open and
+# nothing here forces it. Leaving http_api_id null also leaves
+# terraform_data.discovery_document_ready uncreated, which is what we want: the
+# spike has its own poll and a second one would wait on the same URL twice.
+#
+# The rotation inputs are left at their defaults, one key at index zero, which
+# is exactly the single key state this environment is in. Section 3.5's rotation
+# becomes two applies against signing_key_count and active_signing_key rather
+# than an edit to a list of ARNs.
+#
+# ON TAGS, WHICH IS THE ONE PLACE THE MODULE'S SHAPE COSTS SOMETHING.
+#
+# `tags` and `name_tag` are module wide: they reach the signing key and the four
+# tables alike, and there is no per-resource tag input. The hand-written key
+# carries Name, Component and Milestone; the four tables carry none, because
+# module.dynamodb was called with neither `tags` nor `name_tag`. No setting of
+# these two inputs keeps both. Reproducing the key's tags is the option taken,
+# because it keeps the key, the one resource whose tags exist today, byte
+# identical, and the cost is three tags added to four tables. A tag addition is
+# metadata: it is an in-place update, it replaces nothing, and it loses no data.
+# The PR body lists all four addresses.
 # ---------------------------------------------------------------------------
 
-resource "aws_kms_key" "identity_signing" {
-  description = "RSA_2048 signing key for the Portfolio identity function's RS256 access tokens. The private half never leaves KMS; the public half is published in the JWKS at ${local.identity_issuer}/.well-known/jwks.json via the origin."
+module "identity" {
+  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/identity"
+  version = "~> 2.7"
 
-  key_usage                = "SIGN_VERIFY"
-  customer_master_key_spec = "RSA_2048"
-  enable_key_rotation      = false
-  deletion_window_in_days  = 30
+  name_prefix        = local.prefix
+  issuer             = local.identity_issuer
+  audience           = local.identity_audience
+  registrable_domain = local.identity_registrable_domain
 
-  policy = data.aws_iam_policy_document.identity_signing_key.json
+  identity_role_name = module.lambda_domain["identity"].role_id
+  identity_role_arn  = module.lambda_domain["identity"].role_arn
 
+  # Reproduces the tags the hand-written key carries so the key itself is a pure
+  # move. See the tag note above for what this costs the four tables.
   tags = {
-    Name      = "${local.prefix}-identity-signing"
     Component = "identity"
     Milestone = "M1"
   }
-}
+  name_tag = true
 
-# The alias is what the application is given, never the key id or the ARN of the
-# key resource, and that avoids a dependency cycle rather than merely being
-# tidier. The key policy below names module.lambda_domain["identity"].role_arn
-# as a principal, so the key depends on the Lambda module; naming the key from
-# inside that module's environment variables would make the module depend on the
-# key, and Terraform refuses the graph. The alias name is a pure function of
-# local.prefix, so it closes the loop with a string.
-#
-# KMS accepts an alias anywhere it accepts a key id for Sign and GetPublicKey.
-#
-# IDENTITY_SIGNING_KEY_ARNS is the exception and deliberately holds the real
-# ARN: it is a list rendered as JSON, section 3.5's rotation works by adding a
-# second entry, and two aliases would have to be created and swapped in lockstep
-# to express the same thing. The ARN is set on the function through a separate
-# statement in lambda_domains.tf whose comment explains why that one direction
-# does not close a cycle.
-resource "aws_kms_alias" "identity_signing" {
-  name          = "alias/${local.prefix}-identity-signing"
-  target_key_id = aws_kms_key.identity_signing.key_id
-}
+  # The same pair module.dynamodb is called with, so the three tables that had
+  # continuous backups keep them and login-attempts, which the module's own
+  # default map already sets to false, keeps not having them. identity-tokens
+  # overrides it to false below for the reason dynamodb.tf gave: restoring a
+  # consumed single-use link to its unconsumed state is the one thing the
+  # single-use guarantee exists to prevent.
+  point_in_time_recovery = true
+  deletion_protection    = var.environment == "production"
 
-# The key policy.
-#
-# A KMS key policy is not optional the way most resource policies are: without a
-# statement granting the account root, IAM policies in the account have no
-# effect on the key at all and the key can become unmanageable. So the root
-# statement is first, and then the identity function's role gets exactly two
-# actions on exactly this key and nothing else.
-#
-# kms:Sign and kms:GetPublicKey, and no kms:Verify. Verification happens at the
-# API Gateway authorizer against the public JWKS, and locally against a public
-# key, never through KMS, so granting Verify would widen the grant for a call
-# nothing makes. kms:DescribeKey is not granted either: the token service reads
-# the key spec off the GetPublicKey response, which already carries it.
-#
-# The principal is the identity function's role and only that role. Section 5.8:
-# the signing key is reachable from one function, which is the whole reason
-# `identity` is a function of its own rather than a router in a larger one.
-data "aws_iam_policy_document" "identity_signing_key" {
-  statement {
-    sid    = "EnableIAMPoliciesInThisAccount"
-    effect = "Allow"
-    principals {
-      type        = "AWS"
-      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+  # The actions the identity role gets on the four tables, matched to what
+  # aws_iam_role_policy.lambda_domain["identity"] granted them before this
+  # change rather than left at the module's shorter default.
+  #
+  # The module's default drops Scan, DescribeTable and ConditionCheckItem, and
+  # dropping a permission is a behaviour change rather than a refactor. This is
+  # the one part of the adoption that is not a state move: the grant was one
+  # statement inside the `identity-runtime` policy and becomes its own
+  # `identity-tables` policy on the same role, so it is an add here and a
+  # narrowing of the existing policy there. Matching the action list keeps the
+  # role's effective permissions on these four tables identical across that
+  # split, which is what makes the split safe to make in one change. Narrowing
+  # to the module's default is a separate decision with its own review.
+  table_policy_actions = local.dynamodb_write_actions
+
+  # The module's default map already carries the package's key schemas for all
+  # four tables, and they are byte identical to what dynamodb.tf declared. Only
+  # identity-tokens is restated, and only to turn point in time recovery off:
+  # the module's default leaves it null, which takes the module wide `true`
+  # above, and the table that exists today has it off.
+  tables = {
+    credentials = {
+      attributes = [
+        { name = "user_id", type = "S" },
+        { name = "credential_type", type = "S" },
+      ]
+      hash_key  = "user_id"
+      range_key = "credential_type"
     }
-    actions   = ["kms:*"]
-    resources = ["*"]
-  }
 
-  statement {
-    sid    = "AllowTheIdentityFunctionToSignAndPublish"
-    effect = "Allow"
-    principals {
-      type        = "AWS"
-      identifiers = [module.lambda_domain["identity"].role_arn]
+    "refresh-tokens" = {
+      attributes = [
+        { name = "token_hash", type = "S" },
+        { name = "family_id", type = "S" },
+        { name = "generation", type = "N" },
+      ]
+      hash_key = "token_hash"
+      global_secondary_indexes = [
+        {
+          name            = "family_id-generation-index"
+          hash_key        = "family_id"
+          range_key       = "generation"
+          projection_type = "ALL"
+        },
+      ]
+      ttl_attribute = "expires_at"
     }
-    actions = [
-      "kms:Sign",
-      "kms:GetPublicKey",
-    ]
-    # A key policy statement's resource is the key the policy is attached to, so
-    # "*" here is that key and not every key in the account. This is the one
-    # place in this file where "*" is the correct value; the IAM policy below,
-    # which is attached to a principal rather than to a key, names the ARN.
-    resources = ["*"]
+
+    "login-attempts" = {
+      attributes = [
+        { name = "identity_key", type = "S" },
+        { name = "attempted_at", type = "S" },
+      ]
+      hash_key               = "identity_key"
+      range_key              = "attempted_at"
+      ttl_attribute          = "expires_at"
+      point_in_time_recovery = false
+    }
+
+    "identity-tokens" = {
+      attributes             = [{ name = "token_hash", type = "S" }]
+      hash_key               = "token_hash"
+      ttl_attribute          = "expires_at"
+      point_in_time_recovery = false
+    }
   }
-}
-
-# The matching identity-side grant.
-#
-# A KMS key policy allows; an IAM policy on the principal is the other half.
-# Both are needed for a call in the same account unless the key policy delegates
-# to IAM, which the root statement above does. Attaching it explicitly rather
-# than relying on that delegation keeps the function's own policy an honest
-# description of what it can reach, which is what a reader of lambda_domains.tf
-# checks first.
-#
-# Scoped to this key's ARN. The two actions are the same two the key policy
-# grants, so neither half of the pair is wider than the other, and a future key
-# added for a rotation has to be added here as well, which is the intended
-# friction: a second key is a deliberate step in a written procedure.
-resource "aws_iam_role_policy" "identity_signing" {
-  name = "identity-signing"
-  role = module.lambda_domain["identity"].role_id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "SignAccessTokensAndPublishTheJwks"
-        Effect = "Allow"
-        Action = [
-          "kms:Sign",
-          "kms:GetPublicKey",
-        ]
-        Resource = [aws_kms_key.identity_signing.arn]
-      },
-    ]
-  })
 }
 
 # ---------------------------------------------------------------------------
@@ -308,18 +306,39 @@ output "identity_signing_key_arns" {
 
 output "identity_signing_key_alias" {
   description = "Alias of the active identity signing key. Points at the same key as the first entry of identity_signing_key_arns."
-  value       = aws_kms_alias.identity_signing.name
+  value       = module.identity.signing_key_alias
 }
 
-# The M0 spike declared these three under `count = local.identity_spike_count`
-# and M1 made them unconditional. In an environment where the spike was on
-# (staging) the key already exists at the indexed address; without these blocks
-# Terraform would destroy the signing key and create a new one under the same
-# alias. Where the spike was off (production) nothing is at the old address and
-# these are no-ops.
+output "identity_table_names" {
+  description = "Logical name to physical name for the four identity tables the module creates. The application derives the same strings from DYNAMODB_TABLE_PREFIX rather than reading this, so it is here for a reviewer checking an apply rather than for a consumer."
+  value       = module.identity.table_names
+}
+
+# ---------------------------------------------------------------------------
+# Adoption of the platform identity module. Every block below is a state move
+# and none of them changes a resource in AWS.
+#
+# THE FIRST THREE ARE CHAINS, and the chaining is the point. The M0 spike
+# declared the key, the alias and the signing policy under
+# `count = local.identity_spike_count`, M1 made them unconditional, and the
+# three `moved` blocks that expressed that are still needed: a workspace that
+# has never applied since M1 still has state at the indexed spike address.
+# Terraform follows a chain of moves in one plan, so `[0]` to the bare address
+# to the module address resolves in a single step, and dropping the first hop
+# would destroy the signing key and create a new one under the same alias. That
+# is the one mistake in this design with no recovery.
+#
+# The module's own resources use `count`, so each destination carries `[0]`.
+# ---------------------------------------------------------------------------
+
 moved {
   from = aws_kms_key.identity_signing[0]
   to   = aws_kms_key.identity_signing
+}
+
+moved {
+  from = aws_kms_key.identity_signing
+  to   = module.identity.aws_kms_key.identity_signing[0]
 }
 
 moved {
@@ -328,6 +347,49 @@ moved {
 }
 
 moved {
+  from = aws_kms_alias.identity_signing
+  to   = module.identity.aws_kms_alias.identity_signing[0]
+}
+
+moved {
   from = aws_iam_role_policy.identity_spike_signing[0]
   to   = aws_iam_role_policy.identity_signing
+}
+
+moved {
+  from = aws_iam_role_policy.identity_signing
+  to   = module.identity.aws_iam_role_policy.identity_signing[0]
+}
+
+# The four tables, out of module.dynamodb and into module.identity. Both calls
+# build the physical name as "<name_prefix>-<key>" from the same local.prefix
+# and both key their resource on the same logical name, so the name does not
+# change and neither does anything DynamoDB stores.
+#
+# The two modules' table resources take the same arguments in the same shape,
+# which is what makes this a move rather than a replace: `aws_dynamodb_table`
+# forces a new resource only on `name`, `hash_key`, `range_key` and the
+# attribute set, and all four are identical on both sides. The dynamodb-tables
+# module also renders `stream_enabled`, `read_capacity` and `write_capacity`
+# where the identity module does not, and every one of those is false or null on
+# these four tables today, so none of them appears in the diff.
+
+moved {
+  from = module.dynamodb.aws_dynamodb_table.this["credentials"]
+  to   = module.identity.aws_dynamodb_table.this["credentials"]
+}
+
+moved {
+  from = module.dynamodb.aws_dynamodb_table.this["refresh-tokens"]
+  to   = module.identity.aws_dynamodb_table.this["refresh-tokens"]
+}
+
+moved {
+  from = module.dynamodb.aws_dynamodb_table.this["login-attempts"]
+  to   = module.identity.aws_dynamodb_table.this["login-attempts"]
+}
+
+moved {
+  from = module.dynamodb.aws_dynamodb_table.this["identity-tokens"]
+  to   = module.identity.aws_dynamodb_table.this["identity-tokens"]
 }
