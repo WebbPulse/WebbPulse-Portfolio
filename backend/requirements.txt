@@ -50,7 +50,25 @@
 # not adopted: this backend has no local logging wrapper overriding either of
 # those and emits no metrics at all, so there is nothing here for them to
 # replace.
-webbpulse[fastapi,dynamodb,otel,aws-otel,security,identity]==0.8.0
+#
+# 0.9.0 is identity milestone M1, and it is additive in the strict sense: the
+# only entry in its Changed section is that `src/webbpulse/identity.py` became
+# `src/webbpulse/identity/tokens.py` with `webbpulse.identity` re-exporting the
+# entire M0 surface, so `identity_router` and `public_jwk_from_kms`, the two
+# names the M0 spike wiring imports, are importable from exactly where they
+# were. Nothing in this repository changed to take the bump: the full suite
+# passes against 0.9.0 with no source edit, which is the check that the
+# re-export claim holds rather than a claim about it.
+#
+# What the bump makes available, and what PR B mounts, is the rest of M1:
+# `IdentitySettings` as a validated `BaseSettings` on the `IDENTITY_` prefix,
+# `IdentityHooks`, the storage interfaces, `TokenService` with rotation across
+# several keys, `authorizer_claims()` for reading what the gateway authorizer
+# leaves on the request, and `build_identity_router`, which serves the two
+# `.well-known` documents and `/health` with the Cache-Control headers the
+# standard's section 3.4 specifies. The `identity` extra is unchanged at
+# `PyJWT[crypto]` and `fastapi`, so this line gains no dependency.
+webbpulse[fastapi,dynamodb,otel,aws-otel,security,identity]==0.9.0
 
 fastapi==0.115.12
 boto3==1.38.46
