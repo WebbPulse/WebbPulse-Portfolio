@@ -292,6 +292,58 @@ def build_domain_app(
             router, prefix=domain.router_prefix, tags=list(domain.router_tags)
         )
 
+    # The identity standard's M1, on the `identity` domain only and in every
+    # environment. `webbpulse.identity.build_identity_router` serves the two
+    # `.well-known` documents and its own `/health`, and nothing else: the flows
+    # are M2 and later. `app/composition/identity.py` builds the settings and
+    # the KMS client.
+    #
+    # Mounted at the issuer's path, which is load-bearing rather than tidy, and
+    # is not the same thing as mounting at the origin.
+    #
+    # API Gateway builds the discovery URL by appending
+    # `/.well-known/openid-configuration` to the configured issuer *including its
+    # path*. M0 proved that directly: an issuer of
+    # `https://api.staging.webbpulse.com` with no path produced a create-time
+    # error quoting `https://api.staging.webbpulse.com/.well-known/openid-
+    # configuration`. The standard's issuer is `https://<api host>/api/auth`, so
+    # the documents have to answer under `/api/auth`, and `IdentitySettings`
+    # agrees: its `discovery_url` and `jwks_url` are `f"{issuer}{PATH}"`, and
+    # `jwks_uri` in the served document is built the same way. API Gateway
+    # follows that `jwks_uri` literally, so a document advertising a path the
+    # router does not serve fails `CreateAuthorizer` at M2.
+    #
+    # The prefix is therefore derived from the issuer rather than written out, so
+    # the mount point and the advertised URLs cannot drift apart. Mounting at the
+    # origin instead would serve both documents at paths nothing fetches.
+    #
+    # This is why it does not go through `domain.load_routers`, which mounts
+    # everything it loads at this domain's own `/api/v1/admin`.
+    #
+    # It is deliberately unconditional. The two documents are what this product
+    # publishes about itself from M1 on, `terraform/apigateway.tf` carries their
+    # route keys unconditionally, and `terraform/identity.tf` creates the signing
+    # key they publish in both environments.
+    #
+    # The existing `POST /api/v1/admin/login` is untouched. It is a different
+    # router at a different prefix signing a different kind of token, and the two
+    # coexist until M2 replaces the second with the first.
+    #
+    # Wrapped in a guard on the issuer being configured, for the same reason the
+    # spike below guards on its own two values: `IdentitySettings` requires
+    # `IDENTITY_ISSUER` and `IDENTITY_AUDIENCE` and raises without them, and a
+    # local checkout or a test that builds the identity application with no
+    # identity environment at all must not fail to construct. In a deployed
+    # function Terraform always sets both, so the guard is never the reason a
+    # document is missing there; a function whose environment is half configured
+    # still fails loudly at startup, inside `IdentitySettings`, naming the field.
+    if domain.name == "identity" and resolved.IDENTITY_ISSUER:
+        from .identity import build_router, identity_mount_prefix
+
+        app.include_router(
+            build_router(resolved), prefix=identity_mount_prefix(resolved)
+        )
+
     # The identity standard's M0 spike, on the `identity` domain only and only
     # when `IDENTITY_SPIKE_ENABLED` is set. Terraform writes that variable onto
     # the staging identity function alone, behind `var.identity_spike_enabled`,
@@ -302,43 +354,32 @@ def build_domain_app(
     # This does not go through `domain.load_routers` and `domain.router_prefix`,
     # and the reason is the whole reason it is here rather than on the
     # descriptor. The descriptor mounts every router it loads at one prefix, and
-    # `identity`'s is `/api/v1/admin`. These two routers need two different
-    # mount points, and neither of them is that one:
+    # `identity`'s is `/api/v1/admin`. The spike router needs a different one:
+    # it mounts at `/api/identity/spike`, matching the route key in
+    # terraform/apigateway.tf, deliberately outside `/api/v1`, because
+    # `/api/v1` is the published contract that
+    # `backend/tests/fixtures/route_contract.json` pins and a throwaway
+    # experiment does not belong in it.
     #
-    #  - The `.well-known` router mounts at the origin with no prefix at all.
-    #    RFC 8615 puts `.well-known` at the root of an origin, and API Gateway's
-    #    JWT authorizer derives the URLs it fetches from the issuer, which is
-    #    the origin. Under `/api/v1/admin` the authorizer would fetch nothing
-    #    and every request to a protected route would fail closed.
-    #  - The spike router mounts at `/api/identity/spike`, matching the route
-    #    key in terraform/apigateway.tf. It is deliberately outside `/api/v1`,
-    #    because `/api/v1` is the published contract that
-    #    `backend/tests/fixtures/route_contract.json` pins, and a throwaway
-    #    experiment does not belong in it.
+    # THE SPIKE NO LONGER SERVES THE `.well-known` DOCUMENTS. It used to mount
+    # `webbpulse.identity.identity_router` here for exactly that, and M1 above
+    # now mounts `build_identity_router`, which declares the same two paths.
+    # Mounting both would declare each path twice on one application: FastAPI
+    # keeps the first match and silently ignores the second, so the surviving
+    # document would depend on the order of two blocks in this file, which is
+    # the kind of thing that is correct until somebody reorders them.
+    #
+    # M1's is the one that survives, and it is strictly better: it renders the
+    # JWKS over every configured key rather than one, it carries the
+    # Cache-Control headers section 3.4 asks for, and it omits a key whose
+    # GetPublicKey fails rather than failing the whole document. The spike keeps
+    # only its mint route, which is the part that was ever really throwaway.
     if domain.name == "identity" and resolved.IDENTITY_SPIKE_ENABLED:
-        from webbpulse.identity import identity_router, public_jwk_from_kms
-
         from ..domains.identity.spike import router as spike_router
 
         app.include_router(
             spike_router, prefix="/api/identity/spike", tags=["identity-spike"]
         )
-
-        issuer = resolved.IDENTITY_TOKEN_ISSUER
-        key_id = resolved.IDENTITY_SIGNING_KEY_ID
-        if issuer and key_id:
-            # `jwks` is a callable rather than a list, so the JWKS is built on
-            # the request that asks for it rather than at import. That is what
-            # keeps a cold start from making a `kms:GetPublicKey` call before
-            # any route is reached, and it is what a two-key rotation will need
-            # later: the callable can return both keys through the overlap
-            # without this wiring changing shape.
-            def _jwks() -> list[dict[str, str]]:
-                import boto3
-
-                return [public_jwk_from_kms(boto3.client("kms"), key_id)]
-
-            app.include_router(identity_router(issuer=issuer, jwks=_jwks))
 
     if domain.seeds:
         from ..core.middleware import SeedMiddleware

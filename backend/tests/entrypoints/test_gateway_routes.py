@@ -81,8 +81,9 @@ ROUTE_ENTRY = re.compile(
 # The same entry, but only when it goes on to set `authorization_type = "NONE"`.
 # Every other entry in the map omits the argument and takes the module's CUSTOM
 # default, which is the staging access gate, so this reads the map's whole
-# anonymous surface. `test_the_mint_route_is_behind_the_gate_and_the_well_known_
-# pair_is_not` is what it exists for.
+# anonymous surface.
+# `test_the_anonymous_surface_is_exactly_the_two_discovery_documents` is what it
+# exists for.
 ANONYMOUS_ROUTE_ENTRY = re.compile(
     r'"((?:ANY|GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) /[^"]*)"\s*='
     r'\s*\{\s*integration\s*=\s*"[^"]+"\s*'
@@ -556,7 +557,7 @@ def test_no_content_route_key_points_at_a_path_the_app_does_not_serve():
 #: naming the authorizer would make every route on the API wait on an authorizer
 #: that needs two of those routes to already answer. So `whoami` is a standalone
 #: `aws_apigatewayv2_route` in `identity_spike.tf`. `spike_route_keys()` below
-#: reads both files, and `test_the_spike_keys_are_the_four_expected_ones` pins
+#: reads both files, and `test_the_spike_keys_are_the_two_expected_ones` pins
 #: which file each key has to come from.
 #:
 #: The mint route is in the map rather than beside `whoami` because it names no
@@ -572,31 +573,56 @@ def test_no_content_route_key_points_at_a_path_the_app_does_not_serve():
 #: two keys, both `ANY`, both under `/api/v1/admin`. The spike is deliberately
 #: none of those things, and widening those assertions to accommodate it would
 #: retire exactly the invariants they exist to hold. `test_the_spike_keys_are_
-#: the_four_expected_ones` below pins the spike's own shape instead, so the
+#: the_two_expected_ones` below pins the spike's own shape instead, so the
 #: exclusion cannot quietly grow.
 #:
 #: This set goes when the spike does.
 IDENTITY_SPIKE_ROUTE_KEYS = {
-    "GET /.well-known/jwks.json",
-    "GET /.well-known/openid-configuration",
     "POST /api/identity/spike/token",
     "GET /api/identity/spike/whoami",
 }
 
-#: The spike's routes-map keys: the two `.well-known` documents and the mint
-#: route. The rest of `IDENTITY_SPIKE_ROUTE_KEYS` is the standalone `whoami`.
+#: The spike's routes-map keys: just the mint route now. The rest of
+#: `IDENTITY_SPIKE_ROUTE_KEYS` is the standalone `whoami`.
 IDENTITY_SPIKE_ROUTES_MAP_KEYS = {
-    "GET /.well-known/jwks.json",
-    "GET /.well-known/openid-configuration",
     "POST /api/identity/spike/token",
 }
 
-#: The subset of the routes-map keys that carry `authorization_type = "NONE"`,
-#: which is a deliberate hole in the staging access gate and should stay exactly
-#: two documents wide. The mint route is pointedly not in here.
-IDENTITY_SPIKE_ANONYMOUS_KEYS = {
-    "GET /.well-known/jwks.json",
-    "GET /.well-known/openid-configuration",
+#: M1's permanent identity keys, which are excluded from `identity_route_keys()`
+#: for the same reason the spike's are: every assertion that helper feeds is
+#: about cut 4's shape, which is two `ANY` keys under `/api/v1/admin`, and M1 is
+#: deliberately none of those things.
+#:
+#: Unlike the spike's, these are unconditional. They are created whether or not
+#: `identity_spike_enabled` is set, because M2 creates a JWT authorizer whose
+#: CreateAuthorizer call fetches the discovery document before the authorizer
+#: exists, so the two documents have to already be live on their own apply. The
+#: spike used to own the `.well-known` pair and gated it behind its own flag,
+#: which would have made M2's first apply depend on a spike nobody wants to keep
+#: switched on. `terraform/identity.tf` and `build_identity_router` own them now.
+#:
+#: All three sit under `/api/auth`, which is the issuer's path. API Gateway
+#: appends the discovery path to the issuer with its path included, and follows
+#: the `jwks_uri` the returned document advertises, which `IdentitySettings`
+#: builds from the issuer too. So the documents answer under the issuer or they
+#: answer nowhere the authorizer looks.
+#:
+#: `GET /api/auth/health` is the identity function's own health route, which is
+#: the router's `/health` seen through that same mount. It is not `GET /health`,
+#: which already belongs to the `public` domain.
+IDENTITY_M1_ROUTE_KEYS = {
+    "GET /api/auth/.well-known/jwks.json",
+    "GET /api/auth/.well-known/openid-configuration",
+    "GET /api/auth/health",
+}
+
+#: The M1 keys that carry `authorization_type = "NONE"`, which is a deliberate
+#: hole in the staging access gate and should stay exactly two documents wide.
+#: The health route is pointedly not in here: nothing outside the gate needs it,
+#: so it takes the module's CUSTOM default like every other gated route.
+IDENTITY_M1_ANONYMOUS_KEYS = {
+    "GET /api/auth/.well-known/jwks.json",
+    "GET /api/auth/.well-known/openid-configuration",
 }
 
 IDENTITY_SPIKE_TF = REPO / "terraform" / "identity_spike.tf"
@@ -643,40 +669,41 @@ def identity_route_keys() -> set[str]:
     `expand_for_expression_keys`. Cut 4 covers one prefix and writes both keys
     out, so `gateway_route_keys` reads them straight from the file.
 
-    The M0 spike's keys are subtracted. See `IDENTITY_SPIKE_ROUTE_KEYS`.
+    The M0 spike's keys and M1's permanent identity keys are both subtracted.
+    See `IDENTITY_SPIKE_ROUTE_KEYS` and `IDENTITY_M1_ROUTE_KEYS`.
     """
-    keys = gateway_route_keys()["identity"] - IDENTITY_SPIKE_ROUTE_KEYS
+    keys = (
+        gateway_route_keys()["identity"]
+        - IDENTITY_SPIKE_ROUTE_KEYS
+        - IDENTITY_M1_ROUTE_KEYS
+    )
     assert keys, "no identity route keys were parsed out of apigateway.tf"
     return keys
 
 
-def test_the_spike_keys_are_the_four_expected_ones():
+def test_the_spike_keys_are_the_two_expected_ones():
     """The M0 spike's route keys, pinned so the exclusion above cannot grow.
 
-    Either all four are present, because the spike is switched on in the
-    configuration, or none are, because it has been removed with the rest of the
-    spike. A partial set means somebody edited one and not the others, which is
-    exactly what happened when the spike first went live: `spike.py` declared
+    Either both are present, because the spike is switched on in the
+    configuration, or neither is, because it has been removed with the rest of
+    the spike. A partial set means somebody edited one and not the other, which
+    is exactly what happened when the spike first went live: `spike.py` declared
     the mint handler and no route key was ever created for it, so the endpoint
     was a gateway 404 and no token could be obtained to exercise `whoami`.
+
+    This was four keys through M0. The two `.well-known` documents moved to
+    `IDENTITY_M1_ROUTE_KEYS` when M1 made them permanent, so what is left here
+    is the spike's own two application routes.
 
     The shape of each one matters, and it is the reason these are pinned rather
     than merely excluded:
 
-    - The two `.well-known` keys sit at the origin, not under `/api/v1`,
-      because RFC 8615 puts `.well-known` at the root of an origin and API
-      Gateway derives their URLs from the issuer. Under a prefix the authorizer
-      would fetch nothing.
-    - All four are literal, with no `{proxy+}`. That is narrower than every
-      permanent key in this file on purpose: the two `.well-known` routes carry
-      `authorization_type = "NONE"`, which is a hole in the staging access gate,
-      and it should be exactly two documents wide. A greedy key would widen it
-      to anything under `/.well-known/`, and a greedy key under
+    - Both are literal, with no `{proxy+}`. A greedy key under
       `/api/identity/spike/` would claim `whoami`, whose authorization is
-      supposed to come from the JWT authorizer instead.
+      supposed to come from the JWT authorizer rather than from the gate.
     - The methods are the served methods rather than `ANY`, because the spike's
-      two application routes split their authorization across two different
-      authorizers and neither one owns the prefix.
+      two routes split their authorization across two different authorizers and
+      neither one owns the prefix.
     - Both spike paths are outside `/api/v1` so a throwaway experiment stays out
       of the published contract in `tests/fixtures/route_contract.json`.
     """
@@ -684,8 +711,56 @@ def test_the_spike_keys_are_the_four_expected_ones():
     assert present in (set(), IDENTITY_SPIKE_ROUTE_KEYS), sorted(present)
 
 
-def test_the_mint_route_is_behind_the_gate_and_the_well_known_pair_is_not():
-    """Which spike keys are anonymous, which is the spike's entire safety story.
+def test_the_m1_keys_are_present_unconditionally():
+    """M1's three keys exist whether or not the spike does.
+
+    This is the load-bearing difference between M1 and the M0 spike it grew out
+    of, and it is what `IDENTITY_M1_ROUTE_KEYS` exists to hold. The spike gated
+    the `.well-known` pair behind `identity_spike_enabled`; M1 does not gate it
+    behind anything, because M2's `CreateAuthorizer` fetches the discovery
+    document during the apply that creates the authorizer, and a document that
+    only exists when a throwaway flag is on is a document M2 cannot rely on.
+    """
+    assert IDENTITY_M1_ROUTE_KEYS <= gateway_route_keys()["identity"]
+
+
+def test_the_m1_keys_are_literal_and_do_not_end_in_a_slash():
+    """No `{proxy+}` and no trailing slash on any permanent identity key.
+
+    Literal, because two of the three carry `authorization_type = "NONE"` and a
+    greedy key would widen that hole in the staging access gate from two
+    documents to anything under `/.well-known/`.
+
+    No trailing slash, because a route key that ends in one is rejected at apply
+    time with a BadRequestException saying part of the path is empty, while the
+    plan stays green. That is an apply-time failure this file exists to catch at
+    test time.
+    """
+    for key in IDENTITY_M1_ROUTE_KEYS:
+        path = key.split(" ", 1)[1]
+        assert "{" not in key, key
+        assert not path.endswith("/"), key
+
+
+def test_the_well_known_pair_is_anonymous_and_the_health_route_is_gated():
+    """M1's hole in the staging access gate, held to exactly two documents.
+
+    The two `.well-known` routes must be `NONE`: API Gateway fetches them from
+    its own infrastructure with no gate cookie when M2 creates the JWT
+    authorizer, so gating them fails verification closed and the authorizer
+    cannot be created at all.
+
+    `GET /api/auth/health` must not be `NONE`. Nothing outside the gate
+    needs it, and the anonymous surface should be as small as the thing that
+    forces it to exist, which is the discovery pair and nothing else.
+    """
+    anonymous = set(ANONYMOUS_ROUTE_ENTRY.findall(_terraform_source()))
+    assert IDENTITY_M1_ANONYMOUS_KEYS <= anonymous, sorted(anonymous)
+    assert "GET /api/auth/health" not in anonymous
+
+
+def test_the_mint_route_is_behind_the_gate():
+    """The spike's entire safety story, in one assertion.
 
     `POST /api/identity/spike/token` signs a token for whatever subject the
     caller names and authenticates nobody. `spike.py` says in as many words that
@@ -694,19 +769,26 @@ def test_the_mint_route_is_behind_the_gate_and_the_well_known_pair_is_not():
     reason the route is allowed to exist. It is gated by setting no
     `authorization_type` at all and taking the module's CUSTOM default, so the
     way this can regress is by somebody adding `authorization_type = "NONE"` to
-    it the way the two `.well-known` entries beside it have, which would leave
-    an unauthenticated token mint open to the internet.
-
-    The two `.well-known` keys must stay `NONE` for the opposite reason: the JWT
-    authorizer fetches them from API Gateway's own infrastructure with no gate
-    cookie, so gating them fails every verification closed.
+    it the way M1's two `.well-known` entries have, which would leave an
+    unauthenticated token mint open to the internet.
     """
     if not spike_route_keys():
         pytest.skip("the M0 spike has been removed")
 
     anonymous = set(ANONYMOUS_ROUTE_ENTRY.findall(_terraform_source()))
-    assert anonymous == IDENTITY_SPIKE_ANONYMOUS_KEYS, sorted(anonymous)
     assert "POST /api/identity/spike/token" not in anonymous
+
+
+def test_the_anonymous_surface_is_exactly_the_two_discovery_documents():
+    """The whole gate hole, across every file, in one place.
+
+    The two tests above each check one side. This one checks the total: whatever
+    else is added to any routes map, the set of keys that opt out of the staging
+    access gate stays the two documents API Gateway has to be able to read
+    anonymously, and nothing else ever joins them without this failing.
+    """
+    anonymous = set(ANONYMOUS_ROUTE_ENTRY.findall(_terraform_source()))
+    assert anonymous == IDENTITY_M1_ANONYMOUS_KEYS, sorted(anonymous)
 
 
 def test_the_spike_splits_its_keys_across_the_two_files_for_ordering():

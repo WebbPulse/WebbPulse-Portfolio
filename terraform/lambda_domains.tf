@@ -238,6 +238,76 @@ module "lambda_domain" {
       IDENTITY_TOKEN_ISSUER   = local.identity_spike_issuer
       IDENTITY_TOKEN_AUDIENCE = local.identity_spike_audience
     } : {},
+
+    # The identity standard's M1, on the identity function only and in every
+    # environment. Unlike the spike block above there is no flag: from M1 the
+    # discovery document and the JWKS are what this product publishes about
+    # itself rather than an experiment's exhaust, so they are unconditional.
+    # identity.tf has the full rationale.
+    #
+    # Every name here is a field of `webbpulse.identity.IdentitySettings`, whose
+    # env_prefix is `IDENTITY_`, so the composition root builds the settings
+    # object straight from the environment with no per-field plumbing. Adding a
+    # setting is one line here and none in Python, which is the point of the
+    # prefix.
+    #
+    # IDENTITY_SIGNING_KEY_ARNS is a JSON array rather than the alias the spike
+    # passes, and rather than a bare comma separated string. Three reasons, in
+    # order of how much they cost to get wrong:
+    #
+    #  1. It is a list because section 3.5's rotation is "add a key, deploy,
+    #     wait, promote, deploy, drop", and every one of those steps is an edit
+    #     to this list. A scalar would have to be widened by the change that
+    #     first needs two keys, which is the change least able to afford a
+    #     refactor.
+    #  2. JSON rather than CSV because IdentitySettings deliberately refuses
+    #     bare CSV for list fields: these are ARNs, and a stray comma should be
+    #     an error rather than a silently split entry.
+    #  3. The real ARN rather than the alias, because two aliases would have to
+    #     be created and swapped in lockstep to express a two key overlap.
+    #
+    # Naming the key ARN here does not close the dependency cycle the spike's
+    # comment above avoids, and the difference is worth stating because the two
+    # blocks look contradictory. The cycle exists when the *key* is built from
+    # something this module produces and this module is built from the key.
+    # aws_kms_key.identity_signing takes module.lambda_domain["identity"].role_arn
+    # in its key policy, so the key depends on the role. The role is created by
+    # this module, but the environment variables are an attribute of the
+    # function, not of the role, and Terraform's graph is per resource rather
+    # than per module: role, then key, then function. The alias indirection is
+    # what the spike needed because it wrote the variable at a point where it
+    # would have referenced the key resource from the same module call that the
+    # key's policy references back.
+    #
+    # IDENTITY_ISSUER and IDENTITY_AUDIENCE are passed rather than derived in
+    # the application, for the reason identity.tf gives at length: the gateway
+    # and the signer have to agree on both strings byte for byte, and the only
+    # way to guarantee that is for both to read the same Terraform local.
+    #
+    # IDENTITY_ENVIRONMENT is separate from ENVIRONMENT above even though both
+    # carry the same value. IdentitySettings has its own `environment` field
+    # under the same `IDENTITY_` prefix, and it gates exactly two things: the
+    # refusal of a plaintext http issuer, and the local development fallbacks.
+    # Letting it default to `local` in a deployed function would silently switch
+    # both of those to their permissive setting, so it is set explicitly.
+    #
+    # IDENTITY_COOKIE_DOMAIN and IDENTITY_RP_ID are the registrable domain
+    # rather than the API host. Neither is read by a route in 0.9.0, since the
+    # refresh cookie is M2 and passkeys are M5, but rp_id is hashed into every
+    # credential and immutable for that credential's life (section 6.1), so it
+    # is set now while it is still free to change.
+    each.key == "identity" ? {
+      IDENTITY_ENVIRONMENT       = var.environment
+      IDENTITY_ISSUER            = local.identity_issuer
+      IDENTITY_AUDIENCE          = local.identity_audience
+      IDENTITY_SIGNING_KEY_ARNS  = jsonencode(local.identity_signing_key_arns)
+      IDENTITY_COOKIE_DOMAIN     = local.identity_registrable_domain
+      IDENTITY_RP_ID             = local.identity_registrable_domain
+      IDENTITY_RP_NAME           = "WebbPulse Portfolio"
+      IDENTITY_PRODUCT_NAME      = "WebbPulse Portfolio"
+      IDENTITY_SUPPORT_EMAIL     = "support@${local.domain}"
+      IDENTITY_FRONTEND_BASE_URL = "https://${local.domain}"
+    } : {},
   )
 
   # 7 days, the retention the platform migration decision settled on, and
