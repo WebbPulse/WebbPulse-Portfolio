@@ -289,3 +289,24 @@ output "identity_signing_key_alias" {
   description = "Alias of the active identity signing key. Points at the same key as the first entry of identity_signing_key_arns."
   value       = aws_kms_alias.identity_signing.name
 }
+
+# The M0 spike declared these three under `count = local.identity_spike_count`
+# and M1 made them unconditional. In an environment where the spike was on
+# (staging) the key already exists at the indexed address; without these blocks
+# Terraform would destroy the signing key and create a new one under the same
+# alias. Where the spike was off (production) nothing is at the old address and
+# these are no-ops.
+moved {
+  from = aws_kms_key.identity_signing[0]
+  to   = aws_kms_key.identity_signing
+}
+
+moved {
+  from = aws_kms_alias.identity_signing[0]
+  to   = aws_kms_alias.identity_signing
+}
+
+moved {
+  from = aws_iam_role_policy.identity_spike_signing[0]
+  to   = aws_iam_role_policy.identity_signing
+}
