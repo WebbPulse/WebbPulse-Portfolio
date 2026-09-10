@@ -110,7 +110,38 @@
 # than building one and types it structurally, so the extra still does not
 # depend on boto3, and the templates use `string.Template` from the standard
 # library rather than adding a templating dependency. This line gains nothing.
-webbpulse[fastapi,dynamodb,otel,aws-otel,security,identity]==0.11.0
+#
+# 0.12.1 is identity milestone M4: TOTP, recovery codes, the MFA ticket, step
+# up, and `amr` on the access token. Additive on the same rule every milestone
+# before it followed. The six MFA routes mount only when `totp_enabled` is on
+# and the product supplies a TOTP factor store, a recovery code store and an
+# identity-tokens store, so a service supplying none of them mounts exactly
+# what it mounted in 0.11.0. This one supplies all three, so all six mount.
+#
+# The one behaviour change is confined to a user who has actually enrolled: for
+# a user with an **active** factor, `login` answers 200 with a challenge,
+# `{"mfa_required": true, "mfa_ticket": "...", "factors": ["totp"]}`, instead of
+# tokens, and the caller finishes at `POST /api/auth/login/totp` with
+# `{"mfa_ticket", "code"}`. Nobody is enrolled today, so nothing about the
+# current login changes until somebody enrols.
+#
+# What the bump makes available: `webbpulse.identity.totp`, RFC 6238 TOTP with
+# no new dependency; `webbpulse.identity.crypto` with `EnvelopeCipher`, which
+# seals a seed under a data key from KMS so the stored seed is unreadable to a
+# principal holding only `dynamodb:Query`; `webbpulse.identity.mfa` with
+# `MfaService`; and the two M4 stores in both their Dynamo and in-memory forms.
+#
+# THE `identity` EXTRA GAINS NOTHING, and that is worth stating because envelope
+# encryption and TOTP both sound like they would want a library. TOTP is `hmac`
+# and `struct` from the standard library, and the envelope is `cryptography`
+# through `PyJWT[crypto]`, which the extra already carries for the JWK. So the
+# line below is unchanged apart from its version, and no new extra is added.
+#
+# 0.12.1 over 0.12.0 is one fix with no behaviour change for a caller that does
+# nothing: `webbpulse.security.hash_password` reads `DEFAULT_ROUNDS` at call
+# time rather than freezing it into a default argument at import. The cost is
+# still 12 and every hash this repository has written still verifies.
+webbpulse[fastapi,dynamodb,otel,aws-otel,security,identity]==0.12.1
 
 fastapi==0.115.12
 boto3==1.38.46

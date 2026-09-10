@@ -142,8 +142,9 @@ locals {
 #
 #  - The RSA_2048 SIGN_VERIFY signing key, its alias, and the key policy that
 #    grants the identity Lambda role kms:Sign and kms:GetPublicKey.
-#  - The four identity tables, credentials, refresh-tokens, login-attempts and
-#    identity-tokens, which moved out of module.dynamodb.
+#  - The identity tables. Four of them, credentials, refresh-tokens,
+#    login-attempts and identity-tokens, moved out of module.dynamodb; two more,
+#    totp-factors and recovery-codes, are created by this change for M4.
 #  - The two IAM role policies, identity-signing and identity-tables, on the
 #    identity function's role.
 #
@@ -151,12 +152,22 @@ locals {
 # the module changes no resource in AWS beyond the two metadata differences the
 # PR body lists.
 #
-# The pin is 2.7, which also brings the M4 resources the module added in that
+# The pin is 2.7, which brought the M4 resources the module added in that
 # release: the symmetric TOTP envelope key, its alias, the identity-mfa role
 # policy granting kms:GenerateDataKey and kms:Decrypt on it, and the
-# IDENTITY_DATA_KEY_ARN environment variable. Those are plain creates. The
-# identity Lambda ignores the variable until the backend adopts webbpulse 0.12
-# and the M4 routes, which is the next PR.
+# IDENTITY_DATA_KEY_ARN environment variable. All four already exist, applied
+# with PR 164, and the identity Lambda ignored the variable until now.
+#
+# THIS CHANGE IS THE OTHER HALF: the backend adopts webbpulse 0.12.1 and mounts
+# the six MFA routes, so the two M4 tables are added to the `tables` map below
+# and IDENTITY_DATA_KEY_ARN is finally read. Nothing about the key, the alias or
+# the policy changes here; they were created for exactly this.
+#
+# The tables have to be listed rather than inherited. `tables` is passed
+# explicitly, which replaces the module's default map wholesale rather than
+# merging with it, so the two entries the module gained in 2.7.0 are absent from
+# this workspace until they are written out below. That is why a plan against
+# 2.7 showed no new tables when PR 164 applied.
 #
 # WHAT IS DELIBERATELY NOT PASSED.
 #
@@ -231,11 +242,16 @@ module "identity" {
   # to the module's default is a separate decision with its own review.
   table_policy_actions = local.dynamodb_write_actions
 
-  # The module's default map already carries the package's key schemas for all
-  # four tables, and they are byte identical to what dynamodb.tf declared. Only
-  # identity-tokens is restated, and only to turn point in time recovery off:
-  # the module's default leaves it null, which takes the module wide `true`
-  # above, and the table that exists today has it off.
+  # THE WHOLE MAP, BECAUSE PASSING `tables` REPLACES THE DEFAULT RATHER THAN
+  # MERGING WITH IT. Every entry below is byte identical to the module's own
+  # default for that key, which is itself copied from `webbpulse.identity.storage`
+  # and `webbpulse.identity.lockout`, with two deliberate exceptions:
+  # identity-tokens turns point in time recovery off, and login-attempts restates
+  # the false the default map already carries.
+  #
+  # A key omitted here is a table that does not exist, not a table that takes a
+  # default, and for the four M2 and M3 tables that would be a destroy. That is
+  # the reason the two M4 entries at the bottom have to be written out at all.
   tables = {
     credentials = {
       attributes = [
@@ -281,6 +297,49 @@ module "identity" {
       ttl_attribute          = "expires_at"
       point_in_time_recovery = false
     }
+
+    # M4's two tables, which are creates rather than moves: nothing in this
+    # workspace has ever had them, because identity.tf passed `tables`
+    # explicitly and the module's default map is therefore not what is in
+    # effect. Both are restated here byte for byte from that default map, which
+    # is itself copied from `webbpulse.identity.storage`, so the key schemas the
+    # store writes and the key schemas DynamoDB enforces are the same strings.
+    #
+    # NEITHER HAS A TTL, AND NEITHER EVER WILL. Section 4.1's rule is at its
+    # sharpest here. An expiring refresh token costs a user one extra sign in; a
+    # TOTP factor or a recovery code deleted on DynamoDB's own reclaim schedule
+    # costs them the account, silently and with the paper codes in their hand
+    # still looking valid. The rows are deleted explicitly, by a user disabling
+    # TOTP or by a regeneration replacing a set, and never on a clock.
+    #
+    # Both take the module wide `point_in_time_recovery = true` above rather
+    # than overriding it, and that is the right default rather than an omission:
+    # these hold user state that cannot be reconstructed. A restored TOTP seed
+    # is the authenticator the user still has in their pocket, and a restored
+    # recovery code set is the sheet they printed. `login-attempts` overrides to
+    # false because a failure counter has nothing worth restoring, and
+    # `identity-tokens` because restoring a consumed single-use link to its
+    # unconsumed state is the one thing single use exists to prevent. Neither
+    # argument applies to either table below.
+    #
+    # The seed is not stored in the clear, and none of that reaches this
+    # schema. `webbpulse.identity.crypto` seals it under a data key minted from
+    # the envelope key this same module creates, and the three envelope fields
+    # are ordinary non-key attributes that DynamoDB neither indexes nor knows
+    # about.
+    "totp-factors" = {
+      attributes = [{ name = "user_id", type = "S" }]
+      hash_key   = "user_id"
+    }
+
+    "recovery-codes" = {
+      attributes = [
+        { name = "user_id", type = "S" },
+        { name = "code_hash", type = "S" },
+      ]
+      hash_key  = "user_id"
+      range_key = "code_hash"
+    }
   }
 }
 
@@ -310,7 +369,7 @@ output "identity_signing_key_alias" {
 }
 
 output "identity_table_names" {
-  description = "Logical name to physical name for the four identity tables the module creates. The application derives the same strings from DYNAMODB_TABLE_PREFIX rather than reading this, so it is here for a reviewer checking an apply rather than for a consumer."
+  description = "Logical name to physical name for the six identity tables the module creates. The application derives the same strings from DYNAMODB_TABLE_PREFIX rather than reading this, so it is here for a reviewer checking an apply rather than for a consumer."
   value       = module.identity.table_names
 }
 

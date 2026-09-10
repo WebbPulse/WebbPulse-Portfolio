@@ -476,6 +476,71 @@ module "api" {
       "POST /api/auth/reset/confirm"        = { integration = "identity" }
     },
 
+    # The identity standard's M4 MFA flows: the six POST routes
+    # `build_identity_router` mounts once the product supplies a TOTP factor
+    # store and a recovery code store alongside the identity-tokens store M3
+    # already needed, with `totp_enabled` left at the package's default.
+    # `terraform/identity.tf` creates the two tables and
+    # `app/composition/identity.py` supplies the stores.
+    #
+    # **The same authorizer treatment as M2's six and M3's four**, which means
+    # `authorization_type` omitted on every one of them and the module's CUSTOM
+    # default taken: the staging access gate in staging, and NONE in production
+    # where no gate authorizer exists. The anonymous surface stays exactly the
+    # two discovery documents, and a test asserts it does.
+    #
+    # `POST /api/auth/login/totp` IS THE ONE WORTH READING TWICE, because it is
+    # the route with two different authorization stories and it is easy to
+    # conflate them.
+    #
+    # It must stay outside the **identity JWT authorizer**, and that is not a
+    # preference. It is the second leg of a login, so its caller holds no access
+    # token: what it carries is an MFA ticket whose `aud` is `<issuer>/mfa`
+    # rather than local.identity_audience. A JWT authorizer configured with the
+    # API audience rejects that ticket before the function ever sees it, which
+    # would make every MFA login unfinishable, and the package's own router
+    # docstring says so in as many words. It is the same reason `login`,
+    # `register` and `refresh` cannot sit behind that authorizer: they are how a
+    # caller obtains a token rather than a place to spend one.
+    #
+    # It stays **inside the staging access gate**, which is a different control
+    # answering a different question. The gate is the fence around a non
+    # production environment, not authentication, and somebody completing a
+    # login in staging is somebody who already got through the fence. So this
+    # key omits `authorization_type` exactly as `POST /api/auth/login` does, and
+    # is pointedly not `authorization_type = "NONE"`.
+    #
+    # Nothing here attaches the identity JWT authorizer to anything. No route in
+    # this map names one, module.identity is still called with http_api_id null,
+    # and section 2.5's question about the gate occupying the single authorizer
+    # slot is as open after this change as before it. The five routes that do
+    # need an authenticated caller get one inside the application: each reads
+    # the subject from the verified claims the gateway forwards and refuses with
+    # NOT_AUTHENTICATED when there is none, rather than trusting a user id in a
+    # body. That is what `change_password` and `logout-all` already do, and it
+    # matters more here, because a user id in the body of `totp/enrol` would let
+    # anybody enrol a factor on anybody's account.
+    #
+    # `POST /api/auth/login/totp` is a literal key and a sibling of
+    # `POST /api/auth/login` rather than a child route of it. API Gateway
+    # matches a literal key exactly, so the two coexist with neither shadowing
+    # the other, and writing the parent as `POST /api/auth/login/` to
+    # distinguish them is the mistake that plans green and fails at apply with
+    # "Part of the given route key path is empty". The `totp/` trio is three
+    # separate literal keys rather than one greedy `totp/{proxy+}`, for the same
+    # reason `verify-email/confirm` is its own key: a greedy key routes any
+    # future path under it to this function without anybody declaring it.
+    #
+    # Literal, POST, and no trailing slash on any of the six.
+    {
+      "POST /api/auth/login/totp"     = { integration = "identity" }
+      "POST /api/auth/totp/enrol"     = { integration = "identity" }
+      "POST /api/auth/totp/activate"  = { integration = "identity" }
+      "POST /api/auth/totp/disable"   = { integration = "identity" }
+      "POST /api/auth/recovery-codes" = { integration = "identity" }
+      "POST /api/auth/step-up"        = { integration = "identity" }
+    },
+
     # The identity standard's M0 spike, which is now only its mint route.
     #
     # The two `.well-known` keys used to be part of this block and are now

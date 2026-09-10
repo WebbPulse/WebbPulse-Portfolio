@@ -668,6 +668,35 @@ IDENTITY_M3_ROUTE_KEYS = {
     "POST /api/auth/reset/confirm",
 }
 
+#: M4's six MFA keys, excluded from `identity_route_keys()` for the same reason
+#: M1's three, M2's six and M3's four are.
+#:
+#: `build_identity_router` mounts them when `totp_enabled` is on and the product
+#: supplies a TOTP factor store, a recovery code store and an identity-tokens
+#: store, which `composition/identity.py` does unconditionally. The keys are
+#: unconditional too, on the same asymmetry M3's carry: a key with no path
+#: behind it is a 404 from a function that answered, while a path with no key is
+#: API Gateway's own 404 with `default_integration = null` and no request ever
+#: reaches the function.
+#:
+#: None of them is anonymous, and `POST /api/auth/login/totp` is the one where
+#: that needs saying out loud. It is outside the identity **JWT authorizer**,
+#: because the MFA ticket it carries has `aud` of `<issuer>/mfa` rather than the
+#: API audience, and a JWT authorizer configured with the API audience would
+#: reject the second leg of every MFA login. It is still inside the **staging
+#: access gate**, which is a different control: the gate is the fence around a
+#: non production environment, and somebody finishing a login in staging already
+#: got through it. The two are not the same question and this key answers them
+#: differently.
+IDENTITY_M4_ROUTE_KEYS = {
+    "POST /api/auth/login/totp",
+    "POST /api/auth/totp/enrol",
+    "POST /api/auth/totp/activate",
+    "POST /api/auth/totp/disable",
+    "POST /api/auth/recovery-codes",
+    "POST /api/auth/step-up",
+}
+
 IDENTITY_SPIKE_TF = REPO / "terraform" / "identity_spike.tf"
 
 # `route_key = "<METHOD> <path>"` on a standalone aws_apigatewayv2_route. The
@@ -712,10 +741,11 @@ def identity_route_keys() -> set[str]:
     `expand_for_expression_keys`. Cut 4 covers one prefix and writes both keys
     out, so `gateway_route_keys` reads them straight from the file.
 
-    The M0 spike's keys, M1's permanent identity keys, M2's six flow keys and
-    M3's four email keys are all subtracted. See `IDENTITY_SPIKE_ROUTE_KEYS`,
-    `IDENTITY_M1_ROUTE_KEYS`, `IDENTITY_M2_ROUTE_KEYS` and
-    `IDENTITY_M3_ROUTE_KEYS`.
+    The M0 spike's keys, M1's permanent identity keys, M2's six flow keys,
+    M3's four email keys and M4's six MFA keys are all subtracted. See
+    `IDENTITY_SPIKE_ROUTE_KEYS`, `IDENTITY_M1_ROUTE_KEYS`,
+    `IDENTITY_M2_ROUTE_KEYS`, `IDENTITY_M3_ROUTE_KEYS` and
+    `IDENTITY_M4_ROUTE_KEYS`.
     """
     keys = (
         gateway_route_keys()["identity"]
@@ -723,6 +753,7 @@ def identity_route_keys() -> set[str]:
         - IDENTITY_M1_ROUTE_KEYS
         - IDENTITY_M2_ROUTE_KEYS
         - IDENTITY_M3_ROUTE_KEYS
+        - IDENTITY_M4_ROUTE_KEYS
     )
     assert keys, "no identity route keys were parsed out of apigateway.tf"
     return keys
@@ -939,6 +970,126 @@ def test_the_reset_pair_does_not_collide_with_the_verify_pair():
     """
     assert len(IDENTITY_M3_ROUTE_KEYS) == 4
     assert len(IDENTITY_M2_ROUTE_KEYS & IDENTITY_M3_ROUTE_KEYS) == 0
+
+
+def test_the_m4_mfa_keys_are_present_unconditionally():
+    """M4's six keys exist whether or not anybody has enrolled a factor.
+
+    The routes themselves are conditional inside the package, on `totp_enabled`
+    and on all three of the factor store, the recovery code store and the
+    identity-tokens store. `composition/identity.py` supplies all three with no
+    switch in front of them, so the routes mount in every environment, and the
+    keys are unconditional for the reason M3's are: a path with no key is a
+    gateway 404 that reaches no function, which is the worse of the two
+    failures.
+    """
+    assert IDENTITY_M4_ROUTE_KEYS <= gateway_route_keys()["identity"]
+
+
+def test_the_m4_keys_are_literal_and_do_not_end_in_a_slash():
+    """No `{proxy+}` and no trailing slash, exactly as M1, M2 and M3 are checked.
+
+    `POST /api/auth/login/totp` is the key this matters most for. It is a
+    sibling of `POST /api/auth/login` rather than a child of it, and writing the
+    parent as `POST /api/auth/login/` to tell them apart is the mistake that
+    plans green and fails at apply with a BadRequestException saying part of the
+    given route key path is empty.
+    """
+    for key in IDENTITY_M4_ROUTE_KEYS:
+        path = key.split(" ", 1)[1]
+        assert "{" not in key, key
+        assert not path.endswith("/"), key
+
+
+def test_every_m4_key_is_a_post():
+    """All six are POSTs, including `step-up` and `recovery-codes`.
+
+    Every one of them changes state: minting a seed, activating a factor,
+    spending a code, or issuing a stepped up token. A GET on any of them would
+    be a state change a browser is free to prefetch.
+    """
+    for key in IDENTITY_M4_ROUTE_KEYS:
+        assert key.startswith("POST "), key
+
+
+def test_no_m4_mfa_route_is_anonymous():
+    """The staging access gate stays exactly two documents wide, a third time.
+
+    `POST /api/auth/login/totp` is where the temptation to write
+    `authorization_type = "NONE"` is strongest, because the route genuinely is
+    outside the identity JWT authorizer: its caller holds an MFA ticket rather
+    than an access token, and the ticket's audience is `<issuer>/mfa`.
+
+    Those are two different controls answering two different questions, and
+    conflating them is what this test exists to catch. Being outside the JWT
+    authorizer is a fact about the identity standard; being inside the staging
+    access gate is a fact about staging being a non production environment. The
+    gate is not authentication, and somebody completing a login inside it is
+    somebody who already got through the fence.
+    """
+    anonymous = set(ANONYMOUS_ROUTE_ENTRY.findall(_terraform_source()))
+
+    assert IDENTITY_M4_ROUTE_KEYS & anonymous == set(), sorted(
+        IDENTITY_M4_ROUTE_KEYS & anonymous
+    )
+
+
+def test_the_m4_keys_route_to_the_identity_function():
+    """Not to `public`, and not to `content`.
+
+    All six read or write the two M4 tables and five of them call KMS to seal or
+    open a seed. Only the identity function has the table grants and the
+    envelope key grant, both attached to its role by `module.identity`.
+    """
+    for key in IDENTITY_M4_ROUTE_KEYS:
+        assert key in gateway_route_keys()["identity"], key
+
+
+def test_the_totp_login_key_does_not_collide_with_the_login_key():
+    """`login` and `login/totp` are two distinct literal keys, not one plus a typo.
+
+    API Gateway matches a literal key by exact match, so a key that is a string
+    prefix of another shadows nothing. This pins that both really are in the map
+    and that the six M4 keys are disjoint from every earlier milestone's.
+    """
+    assert "POST /api/auth/login" in gateway_route_keys()["identity"]
+    assert "POST /api/auth/login/totp" in gateway_route_keys()["identity"]
+    assert len(IDENTITY_M4_ROUTE_KEYS) == 6
+    assert IDENTITY_M4_ROUTE_KEYS & IDENTITY_M2_ROUTE_KEYS == set()
+    assert IDENTITY_M4_ROUTE_KEYS & IDENTITY_M3_ROUTE_KEYS == set()
+    assert IDENTITY_M4_ROUTE_KEYS & IDENTITY_M1_ROUTE_KEYS == set()
+
+
+def test_the_m4_keys_match_the_paths_the_package_declares():
+    """The six keys are the package's own suffixes under the issuer's path.
+
+    Read from `webbpulse.identity.router` rather than retyped, so a suffix the
+    package renames is a failing test here rather than a gateway 404 in staging.
+    The prefix is `/api/auth`, which is the issuer's path, and
+    `build_identity_router` mounts every route it declares under it.
+    """
+    from webbpulse.identity.router import (
+        LOGIN_TOTP_PATH,
+        RECOVERY_CODES_PATH,
+        STEP_UP_PATH,
+        TOTP_ACTIVATE_PATH,
+        TOTP_DISABLE_PATH,
+        TOTP_ENROL_PATH,
+    )
+
+    expected = {
+        f"POST /api/auth{suffix}"
+        for suffix in (
+            LOGIN_TOTP_PATH,
+            TOTP_ENROL_PATH,
+            TOTP_ACTIVATE_PATH,
+            TOTP_DISABLE_PATH,
+            RECOVERY_CODES_PATH,
+            STEP_UP_PATH,
+        )
+    }
+
+    assert IDENTITY_M4_ROUTE_KEYS == expected
 
 
 def test_the_well_known_pair_is_anonymous_and_the_health_route_is_gated():
