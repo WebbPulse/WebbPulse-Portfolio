@@ -340,21 +340,51 @@ def test_the_token_table_is_created_by_the_suite() -> None:
     assert f"{settings.DYNAMODB_TABLE_PREFIX}-identity-tokens" in live
 
 
-def test_the_stores_bundle_carries_the_token_store() -> None:
-    """The composition root's `IdentityStores` has all four M2/M3 stores.
+def test_the_composition_root_supplies_a_token_store(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`IdentityStores.identity_tokens` is populated, not left at its default.
 
-    `email_enabled` on the package's flow description is true only when both a
-    sender and this store are present, so a bundle missing it silently unmounts
-    the four routes while every other identity route keeps working.
+    It defaults to `None`, and `email_enabled` on the package's flow description
+    is true only when a sender *and* this store are both present. A bundle
+    missing it would silently unmount the four routes while every other identity
+    route kept working, which is the quietest possible way for M3 to be off.
+
+    Asserted by intercepting the bundle the composition root actually builds,
+    rather than by rebuilding one here, so it is this product's wiring under
+    test and not a copy of it.
     """
+    import boto3
+    import webbpulse.identity as package
     from webbpulse.identity.storage import DynamoIdentityTokenStore
 
     from app.composition.identity import build_router
     from app.composition.settings import Settings
 
-    del build_router, Settings  # Imported to prove the module imports cleanly.
+    _identity_environment(monkeypatch)
+    monkeypatch.setenv("IDENTITY_EMAIL_FROM", FROM_ADDRESS)
 
-    assert hasattr(DynamoIdentityTokenStore, "consume")
+    captured: dict[str, Any] = {}
+
+    def capture(settings: Any, *args: Any, **kwargs: Any) -> Any:
+        # `build_router` passes hooks and stores positionally, so the bundle is
+        # the second of them. `build_identity_router` is imported inside
+        # `build_router`, which is why the patch lands on the package module
+        # rather than on the composition module.
+        captured["stores"] = args[1] if len(args) > 1 else kwargs.get("stores")
+        raise _Captured
+
+    monkeypatch.setattr(boto3, "client", lambda service, *a, **kw: object())
+    monkeypatch.setattr(package, "build_identity_router", capture)
+
+    with pytest.raises(_Captured):
+        build_router(Settings())
+
+    assert isinstance(captured["stores"].identity_tokens, DynamoIdentityTokenStore)
+
+
+class _Captured(Exception):
+    """Unwinds `build_router` once the bundle it built has been captured."""
 
 
 # ---------------------------------------------------------------------------
