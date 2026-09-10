@@ -416,7 +416,71 @@ password" is read from the `credentials` table. Before turning
 `passkeys_passwordless` on for an account that has no password set, make sure
 there is a second way in.
 
-### 5. Rolling passkeys back
+### 5. What the admin panel shows
+
+The frontend part of passkeys ships ahead of the backend adoption, in the same
+shape the OAuth work shipped: the UI is written and tested, and it shows nothing
+at all until a deployment answers the routes. There is no discovery document to
+read, so the login page asks the same question the OAuth buttons ask, by making
+one request and reading the answer. `POST /api/auth/login/passkey/options`
+returning a 404 means the routes are not mounted, and the sign-in button is not
+rendered. A `PASSKEYS_DISABLED` or `PASSKEY_LOGIN_DISABLED` refusal is read the
+same way. The probe runs once per page load.
+
+#### What a signed-in admin sees
+
+A **Passkeys** panel in the Security section of the admin panel, above Connected
+accounts. It lists each passkey with the name it was given, when it was added
+and when it was last used, and it offers three things:
+
+- **Add a passkey.** The form prefills a name from the platform the browser
+  reports, so a Mac offers "Mac" and an iPhone offers "iPhone", and the name is
+  editable before the browser prompt opens. Dismissing that prompt closes the
+  form and says nothing: changing your mind is not an error.
+- **Rename.** The row is patched from the response rather than the whole list
+  being reloaded.
+- **Remove**, behind an inline confirmation, because a removed passkey cannot be
+  recovered.
+
+Removal is the one operation the server can refuse for a reason the panel has to
+explain. An account whose only way in is a single passkey cannot delete it, and
+that refusal disables the Remove control on that row and prints the reason
+underneath it, naming the remedy: set a password first, or add a second passkey.
+The block is held per passkey, so enrolling a second one re-enables the first
+one's Remove without a reload.
+
+A deployment where the routes are not mounted renders one sentence saying so,
+rather than an empty panel that looks like an account with nothing enrolled.
+
+#### What a signed-out visitor sees
+
+A **Sign in with a passkey** button under the password form, next to the OAuth
+buttons, when all three of these are true: the build is in `identity` mode, the
+browser supports WebAuthn, and the probe above came back. It is a button rather
+than a link because the ceremony is a script call that needs a user gesture.
+
+Where the browser also supports conditional mediation, the page starts a second,
+invisible ceremony on load and marks the username field `username webauthn`, so
+a saved passkey is offered in the field's own autofill list. That ceremony is
+aborted when the password form is submitted, so a password sign-in and a passkey
+sign-in can never race for the same session.
+
+A passkey sign-in that verified the user carries that fact in the token's `amr`,
+so an account with TOTP enrolled is not asked for a code as well. An
+authenticator that did not verify the user is one factor, and the code step still
+runs.
+
+#### Browser support
+
+WebAuthn is a secure context API, so it exists on HTTPS and on `localhost` and
+nowhere else. Safari 16 and later, Chrome and Edge 108 and later, and Firefox
+119 and later all have what this UI uses. Conditional mediation is the newer
+half and is absent in some of those versions; where it is missing the button
+still works and only the autofill offer is skipped. Everything is feature
+detected rather than sniffed, so a browser that cannot do it is shown nothing
+rather than a control that throws when pressed.
+
+### 6. Rolling passkeys back
 
 Set the variable back and apply:
 

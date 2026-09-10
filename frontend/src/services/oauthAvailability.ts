@@ -47,6 +47,10 @@
  */
 import { GITHUB_PROVIDER, GOOGLE_PROVIDER } from '@webbpulse/auth';
 
+import { type Availability, cachedAvailability } from './availabilityCache';
+
+export { resetAvailabilityCache } from './availabilityCache';
+
 /**
  * The providers this application offers, in the order the buttons render.
  *
@@ -77,11 +81,13 @@ export function providerLabel(provider: string): string {
 /**
  * What one probe concluded.
  *
- * `unknown` is not "unavailable": it is what a network failure or a CORS
- * surprise leaves behind, and the caller renders nothing rather than telling a
- * user a provider is off when the probe simply could not be made.
+ * An alias of the shared {@link Availability}, kept under its old name so the
+ * existing callers and tests read the same. `unknown` is not "unavailable": it
+ * is what a network failure or a CORS surprise leaves behind, and the caller
+ * renders nothing rather than telling a user a provider is off when the probe
+ * simply could not be made.
  */
-export type ProviderAvailability = 'available' | 'unavailable' | 'unknown';
+export type ProviderAvailability = Availability;
 
 /**
  * Error codes that mean "the routes are mounted, this provider is not".
@@ -170,44 +176,16 @@ export async function probeProvider(
 }
 
 /**
- * The per-session cache of probe results.
- *
- * Module scope rather than component state, so mounting the login page twice
- * in one page load costs one probe per provider rather than two. Keyed by the
- * full start URL, which folds the API origin into the key: two bundles pointed
- * at different backends cannot share an answer.
- *
- * Promises are cached rather than results, which is what makes two components
- * mounting in the same tick share one in-flight request instead of racing.
- */
-const cache = new Map<string, Promise<ProviderAvailability>>();
-
-/** Empties the cache. For tests only. */
-export function resetAvailabilityCache(): void {
-  cache.clear();
-}
-
-/**
  * Whether a provider is configured, probing at most once per page load.
  *
- * A result of `unknown` is not cached, so a probe that failed on a flaky
- * network is retried the next time something asks rather than hiding the
- * buttons for the life of the page.
+ * The cache is `services/availabilityCache.ts`, shared with the passkey probe
+ * so both capability gates spend one request per page load rather than one per
+ * render. See that file for why promises rather than results are stored and
+ * why an `unknown` answer is not kept.
  */
 export function providerAvailability(
   startUrl: string,
   fetchImpl: typeof fetch = fetch
 ): Promise<ProviderAvailability> {
-  const cached = cache.get(startUrl);
-  if (cached !== undefined) {
-    return cached;
-  }
-  const probe = probeProvider(startUrl, fetchImpl).then(result => {
-    if (result === 'unknown') {
-      cache.delete(startUrl);
-    }
-    return result;
-  });
-  cache.set(startUrl, probe);
-  return probe;
+  return cachedAvailability(startUrl, () => probeProvider(startUrl, fetchImpl));
 }

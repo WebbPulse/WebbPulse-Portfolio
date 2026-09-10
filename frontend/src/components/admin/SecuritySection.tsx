@@ -9,6 +9,7 @@ import type {
 import { Button } from '../common';
 import { qrCodeSvgPath } from '../../utils/qrCode';
 import { ConnectedAccounts, type OAuthLinksClient } from './ConnectedAccounts';
+import { PasskeysPanel, type PasskeysClient } from './PasskeysPanel';
 
 /**
  * The admin panel's second factor management, in identity mode.
@@ -83,6 +84,17 @@ interface SecuritySectionProps {
   oauthClient?: OAuthLinksClient | null;
   /** The providers that deployment has configured. See `oauthClient`. */
   availableProviders?: readonly string[];
+  /**
+   * The four passkey management routes, or null where they are not offered.
+   *
+   * Separate from `client` for the reason `oauthClient` is: the MFA routes
+   * exist wherever identity mode does, and the passkey ones exist only when the
+   * deployment configured the capability. Unlike the OAuth block this needs no
+   * availability list passed alongside it, because every passkey route reports
+   * the capability being off as an `unavailable` outcome and the panel renders
+   * that as a sentence of its own.
+   */
+  passkeysClient?: PasskeysClient | null;
   className?: string;
 }
 
@@ -333,6 +345,7 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
   client,
   oauthClient = null,
   availableProviders = [],
+  passkeysClient = null,
   className = '',
 }) => {
   const [factor, setFactor] = useState<FactorState>('unknown');
@@ -554,6 +567,13 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
             Turn off the authenticator app
           </Button>
         </div>
+      )}
+
+      {passkeysClient !== null && (
+        <PasskeysPanel
+          client={passkeysClient}
+          className="mt-10 pt-8 border-t border-gray-200 dark:border-gray-700"
+        />
       )}
 
       {oauthClient !== null && (
