@@ -85,10 +85,23 @@ locals {
   # and read from this local everywhere else rather than written out three
   # times.
   #
-  # local.api_url is the custom domain URL when custom domains are on, which the
-  # guard above requires, so this is https://api.staging.webbpulse.com with no
-  # path and no trailing slash.
-  identity_spike_issuer = local.api_url
+  # It is local.identity_issuer, M1's, rather than a value of the spike's own.
+  #
+  # Through M0 this was local.api_url, the bare origin, because the spike served
+  # the discovery document at the origin and nothing else published one. M1
+  # changed where the documents live: the standard's issuer carries an
+  # `/api/auth` path, API Gateway appends the discovery path to the issuer with
+  # its path included, and the document advertises a jwks_uri built the same
+  # way, so both documents now answer under `/api/auth` and the origin serves
+  # neither. A spike still configured with the origin would fail its own
+  # CreateAuthorizer call with the BadRequestException section 3.4 quotes.
+  #
+  # Sharing M1's issuer is also the only correct answer rather than merely the
+  # convenient one. The authorizer validates that the `iss` claim equals its
+  # configured issuer, and the token the mint route signs is signed by the
+  # identity function from IDENTITY_ISSUER, which is M1's. Two issuers would
+  # mean the spike verifying a claim nothing stamps.
+  identity_spike_issuer = local.identity_issuer
 
   # The audience. `aud` on the token has to match one entry in the authorizer's
   # audience list. The standard's section 3.2 uses `<product>-api`; this spike
@@ -98,121 +111,40 @@ locals {
 }
 
 # ---------------------------------------------------------------------------
-# The signing key.
+# The signing key, which the spike no longer owns.
 #
-# RSA_2048 and SIGN_VERIFY, because the HTTP API JWT authorizer's own token
-# validation workflow says "Currently, only RSA-based algorithms are supported".
-# That single sentence is what rules out the standard's preferred ES256 and
-# forces RS256, and it is why this is an RSA key rather than an ECC one.
+# M0 created its own RSA_2048 key, its own alias, its own key policy and its own
+# IAM grant, all count-gated on identity_spike_count. M1 needs the same four
+# things permanently, and identity.tf now declares them: the same key spec, the
+# same two actions, the same alias name. Two declarations of that alias name
+# cannot both exist, because an alias is unique per account and region, so this
+# is not a style question about duplication. It is one alias, and identity.tf
+# owns it.
 #
-# 2048 rather than 4096: a larger key produces a larger signature and a slower,
-# more expensive kms:Sign on the hot path of every login and every refresh, for
-# no benefit the authorizer can see. 2048 is what every OIDC provider in wide
-# use serves.
+# So the spike reads M1's key rather than making a second one. That is also the
+# honest arrangement rather than merely the one that applies: the spike's whole
+# claim is that the authorizer verifies a token signed by a real KMS key against
+# a JWKS this product serves, and it is a stronger claim when the key is the
+# real one M1 ships than when it is a throwaway beside it.
 #
-# Automatic rotation is left off, and that is a decision rather than an
-# omission. Section 3.5 of the standard: `kid` is derived from the key material,
-# so rotating the material behind a single key id changes what GetPublicKey
-# returns while the derived `kid` follows it, and every already-issued token
-# then references a `kid` the JWKS no longer serves. Rotation in this design is
-# by adding a second key and serving both through an overlap, never by mutating
-# one. aws_kms_key defaults enable_key_rotation to false; it is written out
-# explicitly so the next reader does not have to know that.
+# The grants the spike needs are exactly the grants identity.tf already makes to
+# the same role: aws_iam_role_policy.identity_signing and the key policy
+# statement beside it give module.lambda_domain["identity"] kms:Sign and
+# kms:GetPublicKey on this key. The spike runs in that same function, so it
+# needs nothing added here.
+#
+# What M0's version of this block recorded and is worth keeping: the key is
+# RSA_2048 because the HTTP API JWT authorizer's token validation workflow says
+# "Currently, only RSA-based algorithms are supported", which is what rules out
+# the standard's preferred ES256 and forces RS256. identity.tf carries that
+# reasoning in full now, along with why automatic rotation is off.
+#
+# The one value that changed in the move is the deletion window: 7 days here
+# because the key was throwaway, 30 in identity.tf because it is not. Dropping a
+# key an already-issued token still references is the one mistake in this design
+# with no recovery, so the permanent key takes the longer window.
 # ---------------------------------------------------------------------------
 
-resource "aws_kms_key" "identity_signing" {
-  count = local.identity_spike_count
-
-  description = "Identity standard M0 spike: RSA_2048 signing key for RS256 access tokens verified by the HTTP API JWT authorizer. Throwaway."
-
-  key_usage                = "SIGN_VERIFY"
-  customer_master_key_spec = "RSA_2048"
-  enable_key_rotation      = false
-
-  # Seven days rather than the 30 day default. This is a throwaway spike key,
-  # and 7 is the shortest AWS allows, so tearing the spike down does not leave a
-  # month of key charges behind. A real identity signing key would take the
-  # default, because dropping a key an old token still references is the one
-  # mistake with no recovery.
-  deletion_window_in_days = 7
-
-  policy = data.aws_iam_policy_document.identity_signing_key[0].json
-}
-
-resource "aws_kms_alias" "identity_signing" {
-  count = local.identity_spike_count
-
-  name          = "alias/${local.prefix}-identity-signing"
-  target_key_id = aws_kms_key.identity_signing[0].key_id
-}
-
-# The key policy. A KMS key policy is not optional the way most resource
-# policies are: without a statement granting the account root, IAM policies in
-# the account have no effect on the key at all and the key can become
-# unmanageable. So the root statement is first, and then the identity function's
-# role gets exactly two actions and nothing else.
-#
-# kms:Sign and kms:GetPublicKey, and no kms:Verify. Verification happens at the
-# API Gateway authorizer against the public JWKS, never through KMS, so granting
-# Verify would widen the grant for a call nothing makes. kms:DescribeKey is not
-# granted either: the application reads the key spec off the GetPublicKey
-# response, which already carries it.
-data "aws_iam_policy_document" "identity_signing_key" {
-  count = local.identity_spike_count
-
-  statement {
-    sid    = "EnableIAMPoliciesInThisAccount"
-    effect = "Allow"
-    principals {
-      type        = "AWS"
-      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
-    }
-    actions   = ["kms:*"]
-    resources = ["*"]
-  }
-
-  statement {
-    sid    = "AllowTheIdentityFunctionToSign"
-    effect = "Allow"
-    principals {
-      type        = "AWS"
-      identifiers = [module.lambda_domain["identity"].role_arn]
-    }
-    actions = [
-      "kms:Sign",
-      "kms:GetPublicKey",
-    ]
-    resources = ["*"]
-  }
-}
-
-# The matching identity-side grant. A KMS key policy allows; an IAM policy on
-# the principal is the other half, and both are needed for a cross-service call
-# in the same account unless the key policy delegates to IAM, which the root
-# statement above does. Attaching it explicitly rather than relying on that
-# delegation keeps the function's own policy an honest description of what it
-# can reach, which is what a reader of lambda_domains.tf will check first.
-resource "aws_iam_role_policy" "identity_spike_signing" {
-  count = local.identity_spike_count
-
-  name = "identity-spike-signing"
-  role = module.lambda_domain["identity"].role_id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "SignAccessTokensWithTheIdentityKey"
-        Effect = "Allow"
-        Action = [
-          "kms:Sign",
-          "kms:GetPublicKey",
-        ]
-        Resource = aws_kms_key.identity_signing[0].arn
-      },
-    ]
-  })
-}
 
 # ---------------------------------------------------------------------------
 # The authorizer.
@@ -411,11 +343,6 @@ resource "aws_apigatewayv2_route" "identity_spike_whoami" {
 
   authorization_type = "JWT"
   authorizer_id      = aws_apigatewayv2_authorizer.identity_spike_jwt[0].id
-}
-
-output "identity_spike_signing_key_id" {
-  description = "Key id of the M0 spike's KMS signing key, null when the spike is off. The identity function reads the same value from IDENTITY_SIGNING_KEY_ID."
-  value       = one(aws_kms_key.identity_signing[*].key_id)
 }
 
 output "identity_spike_issuer" {

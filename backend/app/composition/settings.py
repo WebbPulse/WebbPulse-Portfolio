@@ -113,6 +113,32 @@ class Settings(BaseServiceSettings):
     IDENTITY_TOKEN_ISSUER: Optional[str] = None
     IDENTITY_TOKEN_AUDIENCE: Optional[str] = None
 
+    # M1's issuer, and the only `IDENTITY_*` variable this class reads for it.
+    #
+    # The rest of M1's configuration is not here on purpose. `IdentitySettings`
+    # in `webbpulse.identity` is a `BaseSettings` with `env_prefix="IDENTITY_"`,
+    # so it reads `IDENTITY_AUDIENCE`, `IDENTITY_SIGNING_KEY_ARNS` and the other
+    # dozen fields out of the environment itself. Restating them here would be a
+    # second copy of the same list, kept in step by hand, with this one's types
+    # and validation necessarily weaker than the package's.
+    #
+    # This one field is the exception because the composition root needs a cheap
+    # way to answer "is the identity application configured at all" before it
+    # constructs `IdentitySettings`, which raises when it is not. `IDENTITY_ISSUER`
+    # is required by that class and set by Terraform on every deployed identity
+    # function, so its presence is exactly that question. Naming it here rather
+    # than reading `os.environ` in the composition root keeps every environment
+    # variable this application reads visible in one class.
+    #
+    # It is deliberately not compared against IDENTITY_TOKEN_ISSUER above, even
+    # though Terraform now renders both from local.identity_issuer and they hold
+    # the same string. That equality is a fact about the current configuration
+    # rather than a rule: this one is what M1's router publishes as `issuer`,
+    # that one is what the spike's own authorizer is configured with, and
+    # asserting they match here would turn retiring the spike into a change to
+    # this class.
+    IDENTITY_ISSUER: Optional[str] = None
+
     APP_NAME: str = "Portfolio Blog API"
     SITE_URL: str = "https://www.webbpulse.com"
     DEBUG: bool = False
