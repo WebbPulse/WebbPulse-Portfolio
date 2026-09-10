@@ -151,6 +151,13 @@ locals {
 # the module changes no resource in AWS beyond the two metadata differences the
 # PR body lists.
 #
+# The pin is 2.7, which also brings the M4 resources the module added in that
+# release: the symmetric TOTP envelope key, its alias, the identity-mfa role
+# policy granting kms:GenerateDataKey and kms:Decrypt on it, and the
+# IDENTITY_DATA_KEY_ARN environment variable. Those are plain creates. The
+# identity Lambda ignores the variable until the backend adopts webbpulse 0.12
+# and the M4 routes, which is the next PR.
+#
 # WHAT IS DELIBERATELY NOT PASSED.
 #
 # `http_api_id` stays unset, so no aws_apigatewayv2_authorizer is created here.
@@ -182,7 +189,7 @@ locals {
 
 module "identity" {
   source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/identity"
-  version = "~> 2.6"
+  version = "~> 2.7"
 
   name_prefix        = local.prefix
   issuer             = local.identity_issuer
