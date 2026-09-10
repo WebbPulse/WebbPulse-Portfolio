@@ -71,6 +71,9 @@ jobs:
         working-directory: frontend
         env:
           VITE_API_BASE_URL: ${{ vars.API_BASE_URL != '' && format('{0}/api/v1', vars.API_BASE_URL) || '' }}
+          # Empty when the environment variable is unset, which the frontend reads as
+          # bearer mode. Set AUTH_MODE=identity on the environment to cut over.
+          VITE_AUTH_MODE: ${{ vars.AUTH_MODE }}
         run: npm run build
 
       - name: Wait for Terraform run to complete
