@@ -156,8 +156,10 @@ frontend will call rather than something a person can click.
 
 From then on that account's `POST /api/auth/login` answers with an MFA challenge
 instead of a session, and the second step is `POST /api/auth/login/totp` carrying
-the ticket from the challenge plus a code. `POST /api/auth/totp/disable`, also a
-step up operation, removes the factor and returns the account to single factor.
+the ticket from the challenge plus a code. `POST /api/auth/totp/disable` removes
+the factor and returns the account to single factor. As of package 0.13.0 it
+requires `{"code": "..."}` in the body as well as the bearer token: a current
+TOTP code or an unused recovery code, verified before anything is deleted.
 
 ### Where recovery codes are shown
 
@@ -165,8 +167,14 @@ step up operation, removes the factor and returns the account to single factor.
 Only a hash of each code is stored, in the `recovery-codes` table keyed on the
 user and the code hash, so the server cannot redisplay them and neither can
 anybody with database access. An admin who loses them has one option, which is
-`POST /api/auth/recovery-codes` on a stepped up session: it issues a fresh set
-and invalidates every previous code in the same write.
+`POST /api/auth/recovery-codes` carrying `{"code": "..."}`: it issues a fresh set
+and invalidates every previous code in the same write. As of package 0.13.0 that
+body is required and is a current TOTP code or an unused recovery code, not a
+stepped up session. There is deliberately no step-up alternative on either
+route, because accepting a recently stepped up access token would reintroduce
+the bearer-token-only path the code requirement exists to close. Verification
+happens before the old set is deleted, so a refused attempt leaves every
+existing code working.
 
 Each code is single use. Spending one at the second login step deletes its row,
 and codes do not expire, which is deliberate: a recovery code is the thing an

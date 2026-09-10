@@ -141,7 +141,42 @@
 # nothing: `webbpulse.security.hash_password` reads `DEFAULT_ROUNDS` at call
 # time rather than freezing it into a default argument at import. The cost is
 # still 12 and every hash this repository has written still verifies.
-webbpulse[fastapi,dynamodb,otel,aws-otel,security,identity]==0.12.1
+# 0.13.0 is an identity M4 security fix, and it is the first breaking change in
+# this line since 0.10.0 moved the routes under the issuer path. `POST
+# /api/auth/totp/disable` and `POST /api/auth/recovery-codes` now require
+# `{"code": "..."}` in the body: a current TOTP code or an unused recovery code,
+# on top of the bearer access token both already required. Both routes are
+# destructive to the second factor and both were reachable with a stolen access
+# token alone, which is a token that could switch off the control bounding what
+# stealing it is worth, or burn the recovery codes the real user would need to
+# get back in.
+#
+# The code goes through `MfaService.verify_challenge`, the same call the second
+# leg of login already makes, so there is no second verification path: a TOTP
+# code and a recovery code are both accepted, the replay watermark is the one
+# already in place, and a recovery code spent on either route is consumed
+# exactly as it is on login. Verification happens before anything is deleted, so
+# a refused disable leaves the factor active and a refused regenerate leaves
+# every existing code working. There is deliberately no step-up alternative:
+# accepting a recently stepped up token would reopen the same door.
+#
+# A missing, non-string or blank `code` is a 422 `VALIDATION_ERROR` rather than
+# an `INVALID_MFA_CODE`, so a client that forgot the field is told that instead
+# of showing the user "that code is not valid" for a request that never asked
+# for one. A wrong code is the 401 `INVALID_MFA_CODE` envelope `login/totp`
+# answers, and both routes now carry that route's `mfa-verify` rate limit,
+# because they accept the same codes.
+#
+# WHAT CHANGES IN THIS REPOSITORY IS NOTHING AT RUNTIME, and that is worth
+# stating for a breaking change. Nobody is enrolled, so neither route has a
+# caller yet; no stored data changes shape, so there is no migration; and the
+# body is the package's contract with whoever calls it, which is the frontend
+# rather than this backend. `app/composition/identity.py` supplies the same
+# three stores it supplied under 0.12.1 and passes no new argument. The `identity`
+# extra is unchanged, so this line gains no dependency. What this bump costs here
+# is the two docs describing those routes, and `tests/test_identity_m4.py` gains
+# the route-contract checks for the new body.
+webbpulse[fastapi,dynamodb,otel,aws-otel,security,identity]==0.13.0
 
 fastapi==0.115.12
 boto3==1.38.46
