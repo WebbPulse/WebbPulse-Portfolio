@@ -1,32 +1,5 @@
-"""The envelope's `error_code` and `details`, and what turning them on did not change.
-
-Portfolio builds every application through `webbpulse.http.create_app`, whose
-error handlers already rendered one body for every failure:
-`{"success", "status", "message", "request_id"}`. Both options were off, so
-`error_code` and `details` were absent keys rather than null ones, and
-`frontend/src/services/api.ts` logged an `errorCode` that was always
-`undefined`.
-
-`ERROR_ENVELOPE_OPTIONS` in `app.composition.wiring` turns both on for both
-composition roots at once. This module holds that to two claims.
-
-**The codes are there, on every status a caller actually sees.** 401 for a
-rejected credential, 404 for a route and for an item, 422 for a rejected body,
-500 for an unhandled exception. A frontend that branches on `NOT_FOUND` rather
-than on the text of a message needs the code on the failure it is branching on,
-so the statuses are named individually rather than asserted in the abstract.
-
-**Nothing else moved.** The option is additive by construction in the shared
-package, but "additive" is exactly the kind of claim that is worth an assertion
-rather than a comment: the messages here are the strings the existing suite and
-the frontend already read, so a change to any of them would be a change to the
-API whether or not a test named it. `test_messages_are_unchanged` pins them.
-
-The 500 case registers a route that raises. There is no endpoint in the
-application that fails on demand, and mocking one deep in a repository would
-test the mock's placement rather than the handler, so the exception is raised
-where an unhandled one would escape from: inside a route, below every
-middleware `create_app` installed.
+"""The envelope's `error_code` and `details`, and what turning them on did not
+change.
 """
 
 import pytest
@@ -35,12 +8,6 @@ from starlette.testclient import TestClient
 from app.composition.app import build_app
 from app.composition.wiring import DOMAINS, ERROR_ENVELOPE_OPTIONS, build_domain_app
 
-# The messages the envelope carried before the options were turned on. Every one
-# of them is read somewhere else: the first four by `tests/test_auth_api.py` and
-# `tests/test_posts_api.py` through `error_message`, the routing pair by the
-# shared package's own rewrite of Starlette's wording. They are repeated here as
-# literals on purpose, so this module fails if a message changes even when the
-# test that reads it changes with it.
 UNAUTHORIZED_MESSAGE = "Invalid authentication credentials"
 LOGIN_FAILED_MESSAGE = "Incorrect username or password"
 NOT_FOUND_MESSAGE = "The requested resource was not found."
@@ -49,11 +16,7 @@ INTERNAL_MESSAGE = "Internal server error."
 
 
 def envelope(response):
-    """The body, with the four fields that were always there checked.
-
-    `tests/envelope.py` does this for the message alone. This returns the whole
-    body, because the assertions below are about the keys beside the message.
-    """
+    """The body, with the four fields that were always there checked."""
     body = response.json()
     assert body["success"] is False, body
     assert body["status"] == response.status_code, body
@@ -61,11 +24,9 @@ def envelope(response):
     return body
 
 
-# --- error_code, per status ---------------------------------------------------
-
-
 @pytest.mark.api
 def test_a_rejected_token_carries_unauthorized(client: TestClient):
+    """A rejected bearer token answers 401 with the UNAUTHORIZED code."""
     response = client.get(
         "/api/v1/posts/admin", headers={"Authorization": "Bearer invalid_token"}
     )
@@ -78,12 +39,7 @@ def test_a_rejected_token_carries_unauthorized(client: TestClient):
 
 @pytest.mark.api
 def test_a_failed_login_carries_unauthorized(client: TestClient, test_admin_user):
-    """The other 401, and the one a form actually shows a user.
-
-    A wrong password and a rejected token are the same status and the same code,
-    which is the point: the code says what happened to the request, and the
-    message is what distinguishes them for a person reading it.
-    """
+    """The other 401, and the one a form actually shows a user."""
     response = client.post(
         "/api/v1/admin/login", json={"username": "adminuser", "password": "wrong"}
     )
@@ -96,6 +52,7 @@ def test_a_failed_login_carries_unauthorized(client: TestClient, test_admin_user
 
 @pytest.mark.api
 def test_an_unmatched_route_carries_not_found(client: TestClient):
+    """An unrouted path answers 404 with the NOT_FOUND code."""
     response = client.get("/api/v1/no-such-route")
 
     assert response.status_code == 404
@@ -106,24 +63,19 @@ def test_an_unmatched_route_carries_not_found(client: TestClient):
 
 @pytest.mark.api
 def test_a_missing_item_carries_not_found(client: TestClient):
-    """A 404 a route raised, not one Starlette produced.
-
-    Both arrive through the same handler but by different paths: this one is an
-    `HTTPException` a route raised with its own message, and the message has to
-    survive the code being added beside it.
-    """
+    """A 404 a route raised, not one Starlette produced."""
     response = client.get("/api/v1/projects/999999")
 
     assert response.status_code == 404
     body = envelope(response)
     assert body["error_code"] == "NOT_FOUND"
-    # The route's own wording, not the shared package's routing message.
     assert body["message"] != NOT_FOUND_MESSAGE
     assert body["message"]
 
 
 @pytest.mark.api
 def test_a_rejected_body_carries_validation_error(client: TestClient):
+    """A body that fails validation answers 422 with the VALIDATION_ERROR code."""
     response = client.post("/api/v1/admin/login", json={"username": 5})
 
     assert response.status_code == 422
@@ -134,17 +86,12 @@ def test_a_rejected_body_carries_validation_error(client: TestClient):
 
 @pytest.mark.api
 def test_an_unhandled_exception_carries_internal_error():
-    """The 500 handler, reached by an exception escaping a route.
-
-    `raise_server_exceptions=False` makes the test client return the response
-    the handler produced rather than re-raising, which is what a real client
-    receives. Without it the exception propagates into the test and the envelope
-    is never seen.
-    """
+    """The 500 handler, reached by an exception escaping a route."""
     app = build_app()
 
     @app.get("/api/v1/_raises_for_the_test")
     def _raises():
+        """Route that raises, to reach the unhandled exception handler."""
         raise RuntimeError("deliberate, to reach the unhandled exception handler")
 
     with TestClient(app, raise_server_exceptions=False) as test_client:
@@ -153,13 +100,8 @@ def test_an_unhandled_exception_carries_internal_error():
     assert response.status_code == 500
     body = envelope(response)
     assert body["error_code"] == "INTERNAL_ERROR"
-    # Deliberately generic: the detail belongs in CloudWatch, joined to this
-    # response by its request id, rather than in a body a caller can read.
     assert body["message"] == INTERNAL_MESSAGE
     assert "deliberate" not in response.text
-
-
-# --- The messages are unchanged -----------------------------------------------
 
 
 @pytest.mark.api
@@ -174,13 +116,7 @@ def test_an_unhandled_exception_carries_internal_error():
 def test_messages_are_unchanged(
     client: TestClient, status, expected_message, expected_code
 ):
-    """Every message is the string it was before the codes were turned on.
-
-    The whole argument for enabling `error_codes` is that it is additive. This
-    is that argument as an assertion: the four base fields keep their values, so
-    a caller rendering `message` sees exactly what it saw yesterday, and the
-    code is a new key beside it rather than a replacement for it.
-    """
+    """Every message is the string it was before the codes were turned on."""
     responses = {
         401: lambda: client.get(
             "/api/v1/posts/admin", headers={"Authorization": "Bearer invalid_token"}
@@ -198,29 +134,15 @@ def test_messages_are_unchanged(
 
 @pytest.mark.api
 def test_the_base_fields_keep_their_order(client: TestClient):
-    """`success`, `status`, `message`, `request_id`, then the additions.
-
-    The shared package documents the order as part of the envelope, and the
-    additions go after them. Asserting it here is cheap and catches a handler
-    that rebuilt the body rather than adding to it.
-    """
+    """`success`, `status`, `message`, `request_id`, then the additions."""
     response = client.get("/api/v1/no-such-route")
 
     assert list(response.json())[:4] == ["success", "status", "message", "request_id"]
 
 
-# --- validation_details -------------------------------------------------------
-
-
 @pytest.mark.api
 def test_a_422_carries_one_details_entry_per_offending_field(client: TestClient):
-    """The shape `@webbpulse/api-client` surfaces as `getWebbPulseError().details`.
-
-    A list of `{"field", "message", "type"}`, with the leading `body` segment
-    dropped so `field` is the name the form control already uses. That is what
-    lets a form put a message beside the input that caused it instead of one
-    banner for the whole request.
-    """
+    """The shape `@webbpulse/api-client` surfaces as `getWebbPulseError().details`."""
     response = client.post("/api/v1/admin/login", json={"username": 5})
 
     assert response.status_code == 422
@@ -236,12 +158,7 @@ def test_a_422_carries_one_details_entry_per_offending_field(client: TestClient)
 
 @pytest.mark.api
 def test_the_older_errors_key_is_untouched(client: TestClient):
-    """`details` is added beside `errors`, not instead of it.
-
-    `errors` carries the raw `loc` list FastAPI produces and predates the
-    option. Dropping it would break anything already reading it, so the shared
-    package keeps it unconditionally and this pins that.
-    """
+    """`details` is added beside `errors`, not instead of it."""
     response = client.post("/api/v1/admin/login", json={"username": 5})
 
     body = envelope(response)
@@ -253,18 +170,10 @@ def test_the_older_errors_key_is_untouched(client: TestClient):
 
 @pytest.mark.api
 def test_a_non_validation_error_carries_no_details(client: TestClient):
-    """`details` is omitted, not null, when there is nothing to put in it.
-
-    The client types it as optional rather than nullable for exactly this
-    reason: an absent key and an explicit null are different answers, and the
-    backend only ever produces the first.
-    """
+    """`details` is omitted, not null, when there is nothing to put in it."""
     body = envelope(client.get("/api/v1/no-such-route"))
 
     assert "details" not in body
-
-
-# --- One switch, both composition roots ---------------------------------------
 
 
 @pytest.mark.unit
@@ -279,13 +188,7 @@ def test_the_options_are_on():
 @pytest.mark.unit
 @pytest.mark.parametrize("domain", sorted(DOMAINS))
 def test_every_deployed_domain_renders_the_code(domain):
-    """Root B, per domain, not just root A.
-
-    The four domain functions are what serve production; root A is what the
-    suite and a local run use. They read the same dict, and this is what proves
-    a domain application built on its own has the codes rather than only the
-    mounted one the other tests exercise.
-    """
+    """Root B, per domain, not just root A."""
     with TestClient(build_domain_app(DOMAINS[domain])) as test_client:
         response = test_client.get("/no-such-route-in-any-domain")
 

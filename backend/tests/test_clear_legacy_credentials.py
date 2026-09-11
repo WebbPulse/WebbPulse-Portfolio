@@ -1,15 +1,4 @@
-"""`scripts/clear_legacy_credentials.py` against moto and the real store.
-
-Same shape as `test_credential_migration.py`, and for the same reason: the store
-is the package's `DynamoCredentialStore` over the moto-backed tables
-`conftest.py` creates, so what these tests assert about is the rows the identity
-login flow actually reads.
-
-The load bearing ones are the two refusals. A script that removed the only copy
-of a password because it could not find the replacement would be the single
-worst outcome of this cutover, so `mismatch` and `missing_credential` both stop
-the run before anything is written and both exit non-zero.
-"""
+"""`scripts/clear_legacy_credentials.py` against moto and the real store."""
 
 import importlib.util
 import sys
@@ -24,6 +13,7 @@ from app.db import entities
 
 
 def load_script():
+    """Import the clear script by path, since scripts is not a package."""
     path = (
         Path(__file__).resolve().parents[1] / "scripts" / "clear_legacy_credentials.py"
     )
@@ -36,15 +26,18 @@ def load_script():
 
 @pytest.fixture(scope="module")
 def script():
+    """The imported clear script, once per module."""
     return load_script()
 
 
 @pytest.fixture
 def store(script):
+    """The credential store over the moto table conftest created."""
     return script.build_store(settings.DYNAMODB_TABLE_PREFIX)
 
 
 def make_user(password="legacy-password", username="admin", **overrides):
+    """A users row carrying a legacy bcrypt hash."""
     record = {
         "username": username,
         "email": f"{username}@example.com",
@@ -57,6 +50,7 @@ def make_user(password="legacy-password", username="admin", **overrides):
 
 
 def give_credential(store, user, secret=None):
+    """Write the matching identity credential for a user."""
     store.put(
         CredentialRecord(
             user_id=str(user["id"]),
@@ -67,11 +61,15 @@ def give_credential(store, user, secret=None):
 
 
 def reload(user):
+    """Re-read a user row, inactive ones included."""
     return entities.users.get(user["id"], include_inactive=True)
 
 
 class TestTheHappyPath:
+    """Clearing the legacy column when the credential matches."""
+
     def test_a_dry_run_writes_nothing(self, script, store):
+        """A dry run reports what it would clear and leaves the row alone."""
         user = make_user()
         give_credential(store, user)
 
@@ -82,6 +80,7 @@ class TestTheHappyPath:
         assert reload(user)["hashed_password"] == user["hashed_password"]
 
     def test_apply_removes_the_attribute_rather_than_emptying_it(self, script, store):
+        """Applying removes the attribute and leaves the other fields intact."""
         user = make_user()
         give_credential(store, user)
 
@@ -89,16 +88,14 @@ class TestTheHappyPath:
 
         assert summary["cleared"] == 1
         refreshed = reload(user)
-        # REMOVE, not `""`. A row cleared this way is shaped exactly like one
-        # created by the identity registration flow, which never sets it.
         assert "hashed_password" not in refreshed
-        # And nothing else on the row moved.
         assert refreshed["username"] == user["username"]
         assert refreshed["email"] == user["email"]
         assert refreshed["is_admin"] is True
         assert refreshed["is_active"] is True
 
     def test_the_credential_is_not_touched(self, script, store):
+        """Clearing the column leaves the identity credential unchanged."""
         user = make_user()
         give_credential(store, user)
         before = store.get(str(user["id"]), PASSWORD_CREDENTIAL_TYPE)
@@ -110,6 +107,7 @@ class TestTheHappyPath:
         assert after.created_at == before.created_at
 
     def test_a_rerun_reports_already_clear_and_exits_zero(self, script, store):
+        """A second run reports the row as already clear."""
         user = make_user()
         give_credential(store, user)
         script.clear(entities.users, store, apply=True)
@@ -122,6 +120,7 @@ class TestTheHappyPath:
         assert "hashed_password" not in reload(user)
 
     def test_several_users_are_cleared_in_one_run(self, script, store):
+        """One run clears every eligible user."""
         first = make_user(username="admin")
         second = make_user(username="second", password="another-password")
         give_credential(store, first)
@@ -135,7 +134,10 @@ class TestTheHappyPath:
 
 
 class TestTheRefusals:
+    """The cases the script refuses to clear."""
+
     def test_a_mismatch_refuses_and_writes_nothing(self, script, store):
+        """A credential that does not match the column is refused."""
         user = make_user()
         give_credential(store, user, secret=hash_password("a-different-password"))
 
@@ -146,6 +148,7 @@ class TestTheRefusals:
         assert reload(user)["hashed_password"] == user["hashed_password"]
 
     def test_a_missing_credential_refuses_and_writes_nothing(self, script, store):
+        """A user with no identity credential is refused."""
         user = make_user()
 
         summary, decisions = script.clear(entities.users, store, apply=True)
@@ -155,11 +158,7 @@ class TestTheRefusals:
         assert reload(user)["hashed_password"] == user["hashed_password"]
 
     def test_one_bad_user_blocks_the_whole_run(self, script, store):
-        """Refuse before writing anything, rather than half applying.
-
-        A run that cleared the good users and then refused would leave an
-        environment in a state neither script describes.
-        """
+        """Refuse before writing anything, rather than half applying."""
         good = make_user(username="admin")
         bad = make_user(username="second", password="another-password")
         give_credential(store, good)
@@ -185,7 +184,10 @@ class TestTheRefusals:
 
 
 class TestTheExitCodeAndTheOutput:
+    """What main returns and what it prints."""
+
     def test_main_exits_zero_on_a_clean_apply(self, script, store, capsys):
+        """A clean apply exits zero."""
         user = make_user()
         give_credential(store, user)
 
@@ -195,6 +197,7 @@ class TestTheExitCodeAndTheOutput:
         assert "hashed_password" not in reload(user)
 
     def test_main_exits_non_zero_on_a_mismatch(self, script, store, capsys):
+        """A mismatch exits non-zero and writes nothing."""
         user = make_user()
         give_credential(store, user, secret=hash_password("a-different-password"))
 
@@ -204,6 +207,7 @@ class TestTheExitCodeAndTheOutput:
         assert reload(user)["hashed_password"] == user["hashed_password"]
 
     def test_main_exits_non_zero_on_a_missing_credential(self, script, store):
+        """A missing credential exits non-zero."""
         make_user()
 
         code = script.main(["--prefix", settings.DYNAMODB_TABLE_PREFIX])
@@ -227,17 +231,10 @@ class TestTheExitCodeAndTheOutput:
             store.get(str(bad["id"]), PASSWORD_CREDENTIAL_TYPE).secret,
         ):
             assert secret not in output
-        # Not even a fragment: the salt alone identifies the hash.
         assert "$2b$" not in output
 
     def test_the_prefix_flag_reaches_the_users_repository(self, script, monkeypatch):
-        """The bug this pair of scripts shared.
-
-        `--prefix` used to reach only the credential store, because the users
-        repository reads `settings.DYNAMODB_TABLE_PREFIX` from the environment.
-        `parse_args` now writes it back, which is what makes the documented
-        command work without a second export.
-        """
+        """The bug this pair of scripts shared."""
         monkeypatch.delenv("DYNAMODB_TABLE_PREFIX", raising=False)
 
         script.parse_args(["--prefix", "webbpulse-somewhere-else"])

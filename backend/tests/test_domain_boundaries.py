@@ -1,9 +1,4 @@
-"""The rules the domain packages exist to enforce.
-
-These are structural tests, not behavioural ones. They read the source with
-``ast`` rather than importing it, so a violation is reported as the file and
-the import that broke the rule instead of as an import cycle.
-"""
+"""The rules the domain packages exist to enforce."""
 
 import ast
 from pathlib import Path
@@ -18,14 +13,6 @@ DOMAINS = sorted(
     if path.is_dir() and not path.name.startswith("__")
 )
 
-# The composition roots: the only places allowed to assemble routers from more
-# than one domain.
-#
-# `app/composition/` is the only one left. `app/main.py` and `app/api/v1/api.py`
-# were the monolith's and are deleted: the function that served them was
-# destroyed in PR #118 and the source went with it. `wiring.py` names all four
-# domains and `app.py` walks them, which is what makes root A and the four root
-# B entrypoints two views of one list rather than two lists that can drift.
 COMPOSITION_ROOT = {
     APP / "composition" / "wiring.py",
     APP / "composition" / "app.py",
@@ -33,6 +20,7 @@ COMPOSITION_ROOT = {
 
 
 def _domain_files(domain):
+    """Every Python file under one domain package."""
     return sorted((DOMAINS_DIR / domain).rglob("*.py"))
 
 
@@ -58,6 +46,7 @@ def _imported_modules(path):
 
 
 def test_domains_are_the_four_the_plan_names():
+    """The domain packages are exactly content, identity, public and resume."""
     assert DOMAINS == ["content", "identity", "public", "resume"]
 
 
@@ -76,13 +65,7 @@ def test_no_cross_domain_imports(domain):
 
 @pytest.mark.parametrize("domain", DOMAINS)
 def test_domains_do_not_import_the_composition_root(domain):
-    """A domain never reaches back up into the thing that assembles it.
-
-    `app.composition` is the live root. The other three named here are the
-    monolith's deleted modules, kept in the list so an import of one is caught
-    as a boundary violation rather than as a bare `ModuleNotFoundError` if
-    somebody restores them.
-    """
+    """A domain never reaches back up into the thing that assembles it."""
     forbidden = ("app.composition", "app.main", "app.api", "app.lambda_handler")
     offences = [
         (str(path.relative_to(APP.parent)), module)
@@ -94,6 +77,7 @@ def test_domains_do_not_import_the_composition_root(domain):
 
 
 def test_only_the_composition_root_assembles_more_than_one_domain():
+    """Only the composition root, and the recorded exception, touches two domains."""
     offenders = []
     for path in APP.rglob("*.py"):
         if path in COMPOSITION_ROOT or DOMAINS_DIR in path.parents:
@@ -108,26 +92,12 @@ def test_only_the_composition_root_assembles_more_than_one_domain():
         }
         if len(touched) > 1:
             offenders.append((str(path.relative_to(APP.parent)), sorted(touched)))
-    # `app.core.middleware` is the one shared module that reaches into two
-    # domains, and it is listed here deliberately rather than exempted: when
-    # the seeding moves out of the middleware stack in a later PR, this
-    # assertion is what notices.
-    #
-    # Its two imports sit inside `SeedMiddleware.__call__`, not at module
-    # scope, and that placement is what keeps the rule honest at runtime as
-    # well as in the source. `TrailingSlashMiddleware` lives in the same module
-    # and every domain application adds it, so a module-level import would put
-    # `content` and `identity` in all four images.
-    # `tests/entrypoints/test_entrypoint_isolation.py` asserts the consequence
-    # directly, by reading `sys.modules` after each entrypoint builds.
     assert offenders == [("app/core/middleware.py", ["content", "identity"])]
 
 
 @pytest.mark.parametrize("domain", DOMAINS)
 def test_only_router_modules_import_fastapi(domain):
     """FastAPI stays at the domain's edge, so the rest of it stays testable."""
-    # Every module here declares routes: they are the domain's HTTP edge. The
-    # point of the assertion is that nothing else in a domain grows one.
     allowed = {
         "certifications.py",
         "crud_router.py",

@@ -43,7 +43,6 @@ class TestExperienceAPI:
         assert data["company"] == test_experience["company"]
         assert data["location"] == test_experience["location"]
         assert data["technologies"] == test_experience["technologies"]
-        # Check that end_date matches (it will be a string in the response)
         assert data["end_date"] == "2023-12-31"
 
     @pytest.mark.api
@@ -56,7 +55,6 @@ class TestExperienceAPI:
     @pytest.mark.api
     def test_get_inactive_experience_fails(self, client: TestClient):
         """Inactive experience entries are not accessible via public endpoint"""
-        # Create an inactive experience entry
         from app.db.entities import experience
 
         inactive_experience = experience.create(
@@ -207,7 +205,6 @@ class TestExperienceAdminAPI:
         assert response.status_code == 200
         assert "deleted successfully" in response.json()["message"]
 
-        # Verify experience entry is no longer accessible via public endpoint
         get_response = client.get(f"/api/v1/experience/{test_experience['id']}")
         assert get_response.status_code == 404
 
@@ -255,13 +252,11 @@ class TestExperienceAPIValidation:
         self, client: TestClient, admin_auth_headers
     ):
         """Test creating an experience entry with invalid data"""
-        # Missing required fields
         response = client.post(
             "/api/v1/experience/", json={}, headers=admin_auth_headers
         )
         assert response.status_code == 422
 
-        # Invalid date format
         experience_data = {
             "title": "Test Position",
             "company": "Test Company",
@@ -272,7 +267,6 @@ class TestExperienceAPIValidation:
         )
         assert response.status_code == 422
 
-        # End date before start date
         experience_data = {
             "title": "Test Position",
             "company": "Test Company",
@@ -305,8 +299,8 @@ class TestExperienceAPIValidation:
         data = response.json()
         assert data["title"] == experience_data["title"]
         assert data["company"] == experience_data["company"]
-        assert data["technologies"] == []  # Should default to empty list
-        assert data["end_date"] is None  # Should default to None for current positions
+        assert data["technologies"] == []
+        assert data["end_date"] is None
 
     @pytest.mark.api
     @pytest.mark.auth
@@ -314,7 +308,6 @@ class TestExperienceAPIValidation:
         self, client: TestClient, admin_auth_headers, test_experience
     ):
         """Test updating experience entry with date validation"""
-        # Test setting end date
         update_data = {"end_date": "2024-12-31"}
         response = client.put(
             f"/api/v1/experience/{test_experience['id']}",
@@ -325,7 +318,6 @@ class TestExperienceAPIValidation:
         data = response.json()
         assert data["end_date"] == "2024-12-31"
 
-        # Test clearing end date (making it current)
         update_data = {"end_date": None}
         response = client.put(
             f"/api/v1/experience/{test_experience['id']}",
@@ -344,7 +336,6 @@ class TestExperienceAPIPerformance:
     @pytest.mark.slow
     def test_get_experience_large_dataset(self, client: TestClient):
         """Test getting experience entries with a large dataset"""
-        # Create multiple test experience entries
         from app.db.entities import experience
 
         for i in range(25):
@@ -362,18 +353,15 @@ class TestExperienceAPIPerformance:
                 }
             )
 
-        # Test pagination with large dataset
         response = client.get("/api/v1/experience/?skip=0&limit=10")
         assert response.status_code == 200
         data = response.json()
         assert len(data) == 10
 
-        # Test ordering by start_date (should be descending)
         response = client.get("/api/v1/experience/?skip=0&limit=5")
         assert response.status_code == 200
         data = response.json()
         if len(data) > 1:
-            # Check that dates are in descending order
             dates = [
                 datetime.fromisoformat(exp["start_date"].replace("Z", "+00:00"))
                 for exp in data

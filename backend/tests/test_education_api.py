@@ -9,8 +9,11 @@ from fastapi.testclient import TestClient
 
 
 class TestEducationAPI:
+    """The public education endpoints."""
+
     @pytest.mark.api
     def test_get_education_public(self, client: TestClient, test_education):
+        """The public list returns the active education entries."""
         response = client.get("/api/v1/education/")
         assert response.status_code == 200
         data = response.json()
@@ -20,6 +23,7 @@ class TestEducationAPI:
 
     @pytest.mark.api
     def test_get_single_education(self, client: TestClient, test_education):
+        """An education entry can be fetched by id."""
         response = client.get(f"/api/v1/education/{test_education['id']}")
         assert response.status_code == 200
         data = response.json()
@@ -27,11 +31,13 @@ class TestEducationAPI:
 
     @pytest.mark.api
     def test_get_nonexistent_education(self, client: TestClient):
+        """An unknown education id answers 404."""
         response = client.get("/api/v1/education/999")
         assert response.status_code == 404
 
     @pytest.mark.api
     def test_inactive_education_hidden(self, client: TestClient):
+        """An inactive education entry is 404 on the public endpoint."""
         from app.db.entities import education
 
         inactive = education.create(
@@ -50,11 +56,14 @@ class TestEducationAPI:
 
 
 class TestEducationAdminAPI:
+    """The admin-only education endpoints."""
+
     @pytest.mark.api
     @pytest.mark.auth
     def test_create_education_admin(
         self, client: TestClient, admin_auth_headers, sample_education_data
     ):
+        """An admin can create an education entry."""
         response = client.post(
             "/api/v1/education/",
             json=sample_education_data,
@@ -70,6 +79,7 @@ class TestEducationAdminAPI:
     def test_create_education_unauthorized(
         self, client: TestClient, auth_headers, sample_education_data
     ):
+        """A non-admin user cannot create an education entry."""
         response = client.post(
             "/api/v1/education/", json=sample_education_data, headers=auth_headers
         )
@@ -78,6 +88,7 @@ class TestEducationAdminAPI:
     @pytest.mark.api
     @pytest.mark.auth
     def test_create_education_no_auth(self, client: TestClient, sample_education_data):
+        """Creating an education entry without credentials is refused."""
         response = client.post("/api/v1/education/", json=sample_education_data)
         assert response.status_code == 403
 
@@ -86,6 +97,7 @@ class TestEducationAdminAPI:
     def test_update_education_admin(
         self, client: TestClient, admin_auth_headers, test_education
     ):
+        """An admin can update an education entry."""
         response = client.put(
             f"/api/v1/education/{test_education['id']}",
             json={"degree": "Updated Degree"},
@@ -100,6 +112,7 @@ class TestEducationAdminAPI:
     def test_delete_education_admin(
         self, client: TestClient, admin_auth_headers, test_education
     ):
+        """An admin can delete an education entry, after which it reads as gone."""
         response = client.delete(
             f"/api/v1/education/{test_education['id']}", headers=admin_auth_headers
         )
@@ -109,9 +122,12 @@ class TestEducationAdminAPI:
 
 
 class TestEducationAPIValidation:
+    """Validation and default handling for education entries."""
+
     @pytest.mark.api
     @pytest.mark.auth
     def test_create_education_minimal(self, client: TestClient, admin_auth_headers):
+        """An education entry made with only required fields takes the defaults."""
         response = client.post(
             "/api/v1/education/",
             json={

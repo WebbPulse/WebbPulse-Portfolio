@@ -104,7 +104,7 @@ class TestPostsAdminAPI:
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
-        assert len(data) == 2  # Both published and draft posts
+        assert len(data) == 2
         post_slugs = [post["slug"] for post in data]
         assert test_post["slug"] in post_slugs
         assert test_draft_post["slug"] in post_slugs
@@ -169,7 +169,7 @@ class TestPostsAdminAPI:
         """Test creating a post with a duplicate slug"""
         post_data = {
             "title": "Different Title",
-            "slug": test_post["slug"],  # Use existing slug
+            "slug": test_post["slug"],
             "content": "# Different Content",
             "excerpt": "Different excerpt",
             "read_time": "3 min read",
@@ -235,7 +235,6 @@ class TestPostsAdminAPI:
         assert response.status_code == 200
         assert "deleted successfully" in response.json()["message"]
 
-        # Verify post is deleted
         get_response = client.get(f"/api/v1/posts/{test_post['slug']}")
         assert get_response.status_code == 404
 
@@ -260,7 +259,6 @@ class TestPostsAdminAPI:
         assert response.status_code == 200
         assert "published successfully" in response.json()["message"]
 
-        # Verify post is now published
         get_response = client.get(f"/api/v1/posts/{test_draft_post['slug']}")
         assert get_response.status_code == 200
 
@@ -321,7 +319,7 @@ class TestCategoriesAdminAPI:
         """Test creating a category with a duplicate slug"""
         category_data = {
             "name": "Different Name",
-            "slug": test_category["slug"],  # Use existing slug
+            "slug": test_category["slug"],
             "description": "Different description",
         }
         response = client.post(
@@ -396,13 +394,11 @@ class TestPostsAPIValidation:
     @pytest.mark.auth
     def test_create_post_invalid_data(self, client: TestClient, admin_auth_headers):
         """Test creating a post with invalid data"""
-        # Missing required fields
         response = client.post(
             "/api/v1/posts/admin", json={}, headers=admin_auth_headers
         )
         assert response.status_code == 422
 
-        # Invalid read_time
         post_data = {"title": "Test Post", "content": "Test content", "read_time": -1}
         response = client.post(
             "/api/v1/posts/admin", json=post_data, headers=admin_auth_headers
@@ -416,9 +412,9 @@ class TestPostsAPIValidation:
         post_data = {
             "title": "Test Post",
             "content": "Test content",
-            "category_id": 999,  # Non-existent category
+            "category_id": 999,
         }
         response = client.post(
             "/api/v1/posts/admin", json=post_data, headers=admin_auth_headers
         )
-        assert response.status_code == 422  # Should fail validation
+        assert response.status_code == 422

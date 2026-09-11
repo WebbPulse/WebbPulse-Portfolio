@@ -9,8 +9,11 @@ from fastapi.testclient import TestClient
 
 
 class TestCertificationsAPI:
+    """The public certifications endpoints."""
+
     @pytest.mark.api
     def test_get_certifications_public(self, client: TestClient, test_certification):
+        """The public list returns the active certifications."""
         response = client.get("/api/v1/certifications/")
         assert response.status_code == 200
         data = response.json()
@@ -20,6 +23,7 @@ class TestCertificationsAPI:
 
     @pytest.mark.api
     def test_certifications_ordering(self, client: TestClient):
+        """Certifications order by order ascending, then issued date descending."""
         from app.db.entities import certifications
 
         for name, year, order in (("A", 2020, 20), ("B", 2023, 10), ("C", 2022, 10)):
@@ -34,27 +38,31 @@ class TestCertificationsAPI:
         response = client.get("/api/v1/certifications/")
         assert response.status_code == 200
         data = response.json()
-        # order asc, then issued_date desc
         assert [c["name"] for c in data] == ["B", "C", "A"]
 
     @pytest.mark.api
     def test_get_single_certification(self, client: TestClient, test_certification):
+        """A certification can be fetched by id."""
         response = client.get(f"/api/v1/certifications/{test_certification['id']}")
         assert response.status_code == 200
         assert response.json()["name"] == test_certification["name"]
 
     @pytest.mark.api
     def test_get_nonexistent_certification(self, client: TestClient):
+        """An unknown certification id answers 404."""
         response = client.get("/api/v1/certifications/999")
         assert response.status_code == 404
 
 
 class TestCertificationsAdminAPI:
+    """The admin-only certifications endpoints."""
+
     @pytest.mark.api
     @pytest.mark.auth
     def test_create_certification_admin(
         self, client: TestClient, admin_auth_headers, sample_certification_data
     ):
+        """An admin can create a certification."""
         response = client.post(
             "/api/v1/certifications/",
             json=sample_certification_data,
@@ -70,6 +78,7 @@ class TestCertificationsAdminAPI:
     def test_create_certification_unauthorized(
         self, client: TestClient, auth_headers, sample_certification_data
     ):
+        """A non-admin user cannot create a certification."""
         response = client.post(
             "/api/v1/certifications/",
             json=sample_certification_data,
@@ -82,6 +91,7 @@ class TestCertificationsAdminAPI:
     def test_update_certification_admin(
         self, client: TestClient, admin_auth_headers, test_certification
     ):
+        """An admin can rename a certification."""
         response = client.put(
             f"/api/v1/certifications/{test_certification['id']}",
             json={"name": "Renamed Cert"},
@@ -95,6 +105,7 @@ class TestCertificationsAdminAPI:
     def test_delete_certification_admin(
         self, client: TestClient, admin_auth_headers, test_certification
     ):
+        """An admin can delete a certification, after which it reads as gone."""
         response = client.delete(
             f"/api/v1/certifications/{test_certification['id']}",
             headers=admin_auth_headers,
@@ -105,9 +116,12 @@ class TestCertificationsAdminAPI:
 
 
 class TestCertificationsAPIValidation:
+    """Validation and default handling for certifications."""
+
     @pytest.mark.api
     @pytest.mark.auth
     def test_create_certification_minimal(self, client: TestClient, admin_auth_headers):
+        """A certification created with only the required fields takes the defaults."""
         response = client.post(
             "/api/v1/certifications/",
             json={

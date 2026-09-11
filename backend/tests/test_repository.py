@@ -1,3 +1,5 @@
+"""The DynamoDB serializer, the generic repository and the ordering helpers."""
+
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
@@ -15,8 +17,11 @@ from app.db.serializer import (
 
 
 class TestSerializer:
+    """Encoding to and decoding from DynamoDB item shapes."""
+
     @pytest.mark.unit
     def test_to_item_drops_none_and_encodes_temporal_values(self):
+        """Writing drops None keys and encodes datetimes, dates and floats."""
         item = to_item(
             {
                 "a": None,
@@ -34,12 +39,14 @@ class TestSerializer:
 
     @pytest.mark.unit
     def test_naive_datetimes_are_treated_as_utc(self):
+        """A datetime with no tzinfo encodes as UTC."""
         assert (
             encode_datetime(datetime(2024, 1, 2)) == "2024-01-02T00:00:00.000000+00:00"
         )
 
     @pytest.mark.unit
     def test_from_item_decodes_decimals(self):
+        """Reading turns Decimals back into ints and floats."""
         item = from_item(
             {"id": Decimal("3"), "ratio": Decimal("1.5"), "xs": [Decimal("2")]}
         )
@@ -48,6 +55,7 @@ class TestSerializer:
 
     @pytest.mark.unit
     def test_parse_helpers(self):
+        """The datetime and date parsers round-trip, and pass None through."""
         assert parse_datetime("2024-01-02T03:04:05.000000+00:00") == datetime(
             2024, 1, 2, 3, 4, 5, tzinfo=timezone.utc
         )
@@ -57,8 +65,11 @@ class TestSerializer:
 
 
 class TestRepository:
+    """The generic repository: ids, defaults, unique fields, updates and deletes."""
+
     @pytest.mark.unit
     def test_ids_come_from_an_atomic_counter(self):
+        """Ids are handed out in sequence from a per-entity counter."""
         first = entities.skills.create({"name": "A", "category": "frontend"})
         second = entities.skills.create({"name": "B", "category": "frontend"})
         assert (first["id"], second["id"]) == (1, 2)
@@ -66,6 +77,7 @@ class TestRepository:
 
     @pytest.mark.unit
     def test_set_counter_overrides_sequence(self):
+        """Setting the counter moves where the next id comes from."""
         entities.skills.set_counter(10)
         assert entities.skills.current_counter() == 10
         assert entities.skills.create({"name": "A", "category": "frontend"})["id"] == 11
@@ -74,6 +86,7 @@ class TestRepository:
 
     @pytest.mark.unit
     def test_purge_removes_items_pointers_and_counter(self):
+        """Purging clears one entity's items, pointers and counter, sparing others."""
         entities.categories.create({"name": "A", "slug": "a"})
         entities.categories.create({"name": "B", "slug": "b"})
         entities.categories.soft_delete(2)
@@ -89,6 +102,7 @@ class TestRepository:
 
     @pytest.mark.unit
     def test_defaults_are_applied(self):
+        """Fields left out of a create take the entity's declared defaults."""
         skill = entities.skills.create({"name": "A", "category": "frontend"})
         assert skill["tier"] == "working"
         assert skill["order"] == 0
@@ -100,6 +114,7 @@ class TestRepository:
 
     @pytest.mark.unit
     def test_unique_fields_reject_duplicates(self):
+        """A duplicate unique value raises UniqueViolation naming the field."""
         entities.categories.create({"name": "One", "slug": "one"})
         with pytest.raises(UniqueViolation) as excinfo:
             entities.categories.create({"name": "Two", "slug": "one"})
@@ -109,6 +124,7 @@ class TestRepository:
 
     @pytest.mark.unit
     def test_find_by_unique(self):
+        """Lookup by unique field finds a match and answers None otherwise."""
         created = entities.categories.create({"name": "One", "slug": "one"})
         assert entities.categories.find_by_unique("slug", "one")["id"] == created["id"]
         assert entities.categories.find_by_unique("slug", "missing") is None
@@ -116,6 +132,7 @@ class TestRepository:
 
     @pytest.mark.unit
     def test_update_swaps_unique_lookup(self):
+        """Updating a unique field moves the pointer and still rejects a conflict."""
         created = entities.categories.create({"name": "One", "slug": "one"})
         entities.categories.create({"name": "Two", "slug": "two"})
         updated = entities.categories.update(created["id"], {"slug": "uno"})
@@ -129,6 +146,7 @@ class TestRepository:
 
     @pytest.mark.unit
     def test_update_with_no_changes_keeps_updated_at_unset(self):
+        """An update that changes nothing leaves updated_at unset."""
         created = entities.categories.create({"name": "One", "slug": "one"})
         same = entities.categories.update(created["id"], {"name": "One"})
         assert same.get("updated_at") is None
@@ -136,6 +154,7 @@ class TestRepository:
 
     @pytest.mark.unit
     def test_update_with_none_removes_attribute(self):
+        """Updating a field to None removes the attribute from the stored item."""
         created = entities.categories.create(
             {"name": "One", "slug": "one", "description": "desc"}
         )
@@ -146,6 +165,7 @@ class TestRepository:
 
     @pytest.mark.unit
     def test_soft_delete_hides_from_reads(self):
+        """A soft deleted item leaves reads unless inactive rows are asked for."""
         skill = entities.skills.create({"name": "A", "category": "frontend"})
         assert entities.skills.soft_delete(skill["id"]) is True
         assert entities.skills.get(skill["id"]) is None
@@ -160,6 +180,7 @@ class TestRepository:
 
     @pytest.mark.unit
     def test_hard_delete_removes_unique_lookups(self):
+        """A hard delete frees the unique value for reuse."""
         created = entities.categories.create({"name": "One", "slug": "one"})
         assert entities.categories.hard_delete(created["id"]) is True
         assert entities.categories.get(created["id"]) is None
@@ -169,6 +190,7 @@ class TestRepository:
 
     @pytest.mark.unit
     def test_get_many_batches(self):
+        """get_many spans more than one batch and skips ids that are not there."""
         ids = [
             entities.skills.create({"name": str(i), "category": "x"})["id"]
             for i in range(120)
@@ -178,6 +200,7 @@ class TestRepository:
 
     @pytest.mark.unit
     def test_create_with_explicit_id_and_conflict(self):
+        """An explicit id is honoured once and conflicts after that."""
         entities.site_content.create({"hero_title": "a"}, item_id=1)
         with pytest.raises(Exception):
             entities.site_content.create({"hero_title": "b"}, item_id=1)
@@ -185,6 +208,7 @@ class TestRepository:
 
     @pytest.mark.unit
     def test_import_item_is_idempotent_and_preserves_ids(self):
+        """Importing the same id twice updates in place and keeps the id."""
         repository = Repository("categories", unique_fields=("slug",))
         repository.import_item({"id": 42, "name": "Imported", "slug": "imported"})
         repository.import_item({"id": 42, "name": "Imported again", "slug": "imported"})
@@ -193,7 +217,10 @@ class TestRepository:
 
 
 class TestPostRepository:
+    """Post-specific reads that depend on the derived published flag."""
+
     def _post(self, slug, published_at=None, category_id=None):
+        """Create a post with the given slug, publish time and category."""
         return entities.posts.create(
             {
                 "title": slug,
@@ -206,6 +233,7 @@ class TestPostRepository:
 
     @pytest.mark.unit
     def test_published_flag_is_derived(self):
+        """The published flag tracks published_at rather than being written directly."""
         draft = self._post("draft")
         raw = entities.posts.table.get_item(Key={"id": draft["id"]})["Item"]
         assert "published_flag" not in raw
@@ -218,6 +246,7 @@ class TestPostRepository:
 
     @pytest.mark.unit
     def test_list_published_orders_newest_first_and_filters_category(self):
+        """Published posts come back newest first and can be filtered by category."""
         self._post("draft", None, 1)
         self._post("old", datetime(2020, 1, 1, tzinfo=timezone.utc), 1)
         self._post("new", datetime(2024, 1, 1, tzinfo=timezone.utc), 2)
@@ -232,6 +261,7 @@ class TestPostRepository:
 
     @pytest.mark.unit
     def test_has_posts_in_category(self):
+        """The category emptiness check counts drafts as posts."""
         assert entities.posts.has_posts_in_category(1) is False
         self._post("draft", None, 1)
         assert entities.posts.has_posts_in_category(1) is True
@@ -239,8 +269,11 @@ class TestPostRepository:
 
 
 class TestOrdering:
+    """The ordering helpers behind the list endpoints."""
+
     @pytest.mark.unit
     def test_order_by_handles_mixed_directions_and_missing_values(self):
+        """Ordering mixes directions and sorts rows missing the key last."""
         items = [
             {"id": 1, "order": 2, "name": "b"},
             {"id": 2, "order": 1, "name": "z"},
@@ -251,6 +284,7 @@ class TestOrdering:
 
     @pytest.mark.unit
     def test_project_sort_modes(self):
+        """Each project sort mode orders the same rows its own way."""
         items = [
             {
                 "id": 1,
@@ -282,6 +316,7 @@ class TestOrdering:
 
     @pytest.mark.unit
     def test_date_orderings(self):
+        """The date orderings put the most recent entry first."""
         items = [
             {
                 "id": 1,
