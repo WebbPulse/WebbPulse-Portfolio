@@ -589,11 +589,16 @@ def build_oauth_client_secrets(settings: Settings) -> dict[str, str]:
     mapping, and the package mounts the routes with only Google enabled.
 
     A client id set with no matching secret is the one bad combination this
-    cannot prevent, and it does not try to: the routes mount, the start route
-    works, and the token exchange answers 503 with a message that names no
-    configuration. That is the package's behaviour and it is the right one,
-    because the alternative is a service that will not start over a key that
-    only one route needs.
+    cannot prevent, and it does not try to. From 0.16.0 the package makes that
+    state quiet rather than broken: `GET /oauth/providers` lists a provider only
+    when it has both halves, so no button is ever rendered for it, and
+    `OAuthService.start` refuses at the top with a 503
+    `OAUTH_PROVIDER_UNAVAILABLE` whose message names no configuration, logging
+    the detail for the operator instead. Before 0.16.0 the failure came later,
+    at the token exchange, after the user had already been sent to the provider
+    and consented. Either way the service still starts, which is the right
+    trade: the alternative is refusing to boot over a key that only one route
+    needs.
 
     ## Why it does not go through `Settings.__getattribute__`
 
