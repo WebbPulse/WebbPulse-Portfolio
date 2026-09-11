@@ -199,6 +199,83 @@ resource "aws_iam_role_policy" "identity_ses" {
 }
 
 # ---------------------------------------------------------------------------
+# DMARC. The identity above is DKIM-verified, which means SES signs every
+# message, but a signature nobody is told to check is a signature receivers are
+# free to ignore. `_dmarc.<domain>` is that instruction: it tells a receiver
+# what to do with mail claiming to be from this domain that fails both DKIM and
+# SPF alignment, and it is what turns the DKIM records above into an actual
+# anti-spoofing control rather than a deliverability nicety.
+#
+# WHY THIS IS NOT `p=none`. Production's own `_dmarc.webbpulse.com` is
+# `p=none`, which is monitor-only: it asks for reports and tells receivers to
+# deliver failing mail anyway. That is the correct first step for a domain that
+# has carried real mail for years and whose every legitimate sender is not yet
+# known, because a premature `p=reject` there silently drops invoices. Staging
+# is the opposite case. It has exactly one sender, SES, created a day ago, and
+# it has never carried mail from anything else, so there is no unknown
+# legitimate sender for a policy to break. `quarantine` on a domain with one
+# known sender costs nothing and makes a spoof land in spam rather than an
+# inbox.
+#
+# STRICT ALIGNMENT, AND THIS IS SAFE ONLY BECAUSE OF WHAT IS ABOVE. `adkim=s`
+# requires the DKIM `d=` to equal the From domain exactly rather than merely
+# share an organisational domain. SES signs with `d=staging.webbpulse.com`
+# (the identity is the full staging domain, not the parent), and
+# `local.identity_email_from` is `no-reply@staging.webbpulse.com`, so the two
+# match exactly and strict alignment passes. Were the identity ever narrowed to
+# the parent domain, or the From moved to a subdomain, this would have to
+# relax to `adkim=r` in the same change.
+#
+# `aspf=s` IS STRICT ON A CHECK THAT ALREADY FAILS, WHICH IS THE POINT. There
+# is no custom MAIL FROM here (ses.tf says so above), so SES uses its own
+# `amazonses.com` envelope sender. SPF therefore authenticates a domain that is
+# not this one and SPF alignment fails no matter what `aspf` says. DMARC passes
+# on DKIM alone, which is why this record is useful today, and setting `aspf=s`
+# rather than `r` costs nothing now and prevents a lax SPF pass from being
+# inherited if a MAIL FROM is ever added without revisiting this.
+#
+# NO `rua`. Aggregate reports go to a mailbox somebody reads, and the two
+# addresses this repository knows are the CloudWatch alarm subscribers in
+# monitoring.tf, which are a person's inboxes rather than a report endpoint.
+# DMARC aggregate reports are daily XML from every receiver that handles the
+# domain's mail, and pointing them at a human's inbox is how a person learns to
+# filter DMARC reports to trash. Adding `rua` is worth doing behind a real
+# report consumer and is a separate change; the policy below enforces without
+# it, because enforcement is what `p=` does and `rua` only observes.
+#
+# Staging-only, and by construction rather than by a new condition: the whole
+# file is gated on local.custom_domain_count, and in production `local.domain`
+# is `webbpulse.com`, whose `_dmarc` is the `p=none` record the management
+# account owns. This resource reuses the same gate as the DKIM records above,
+# so production behaviour is untouched.
+resource "aws_route53_record" "ses_dmarc" {
+  count    = local.custom_domain_count
+  provider = aws.dns
+
+  zone_id = local.records_zone_id
+  name    = "_dmarc.${local.domain}"
+  type    = "TXT"
+  ttl     = 1800
+  records = ["v=DMARC1; p=quarantine; adkim=s; aspf=s"]
+}
+
+# SPF. SES needs `v=spf1 include:amazonses.com ~all` on whichever domain the
+# envelope sender uses, and with no custom MAIL FROM that domain is
+# `amazonses.com`, not this one: SES publishes the SPF record for it and the
+# check passes against Amazon's own domain. An SPF record on
+# `staging.webbpulse.com` would therefore authorise a sender that is never
+# used, so it is deliberately absent rather than missing.
+#
+# This is also why production's apex SPF is `include:_spf.google.com`: that
+# zone carries Google Workspace mail, an entirely different sender, and is not
+# a template for this one. Adding `include:amazonses.com` here would not make
+# SPF align (alignment needs the MAIL FROM domain to match the From domain,
+# which is what a custom MAIL FROM is for), and DMARC above passes on DKIM
+# alignment alone. The record to add, if SPF alignment is ever wanted, is a
+# custom MAIL FROM subdomain with its own MX and TXT, which is the change
+# ses.tf's header already scopes out.
+
+# ---------------------------------------------------------------------------
 # Outputs. What a reviewer checks after the apply, and the two strings
 # lambda_domains.tf sets on the function.
 # ---------------------------------------------------------------------------
