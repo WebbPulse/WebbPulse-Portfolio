@@ -1,24 +1,4 @@
-"""Where a missing secret fails, and which domains can miss one.
-
-`tests/test_settings.py` covers the resolution itself: env first, blob second,
-cached per execution environment. This module covers the two things around it
-that the split actually rests on.
-
-**Importing reads nothing.** A domain image's cold start imports `app` before it
-has credentials, and `public` never has `secretsmanager:GetSecretValue` at all,
-so an import that reached Secrets Manager would fail that function on every cold
-start before a single route was reached. The subprocess tests here assert it the
-only way it can be asserted, in a fresh interpreter with an empty environment,
-because an import already performed by the suite proves nothing about a cold
-one.
-
-**A misconfigured function fails at startup, not on the unlucky request.**
-Resolution being lazy is what makes the first property possible, but on its own
-it moves the failure to whichever request first verifies a token, which reads as
-an intermittent 500. `check_required_secrets` puts a single deliberate read at
-startup for exactly the secrets the domains being served declare, so a bad ARN
-is a cold start failure with a message naming the field.
-"""
+"""Where a missing secret fails, and which domains can miss one."""
 
 import json
 import os
@@ -51,26 +31,21 @@ def clear_secrets_cache():
 
 @pytest.fixture
 def clear_secret_env(monkeypatch):
+    """Remove the secret-backed settings and the ARN from the environment."""
     for name in ("SECRET_KEY", "ADMIN_USERNAME", "ADMIN_PASSWORD", "ADMIN_EMAIL"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.delenv("APP_SECRETS_ARN", raising=False)
 
 
 def create_app_secret(name, payload):
+    """Create the JSON app secret and return its ARN."""
     client = boto3.client("secretsmanager", region_name="us-west-2")
     body = payload if isinstance(payload, str) else json.dumps(payload)
     return client.create_secret(Name=name, SecretString=body)["ARN"]
 
 
 def run_probe(source, env=None):
-    """Run a snippet in a fresh interpreter with an empty environment.
-
-    `env -i` is the point: the only variables set are the ones the interpreter
-    itself needs. `PYTHONPATH` carries whatever makes `app` and the shared
-    package importable in this checkout, which in CI is the installed
-    distribution and locally is a path, so it is taken from the parent rather
-    than hardcoded.
-    """
+    """Run a snippet in a fresh interpreter with an empty environment."""
     environment = {
         "PATH": "/usr/bin:/bin",
         "PYTHONPATH": os.pathsep.join(
@@ -108,14 +83,7 @@ print(json.dumps({"routes": len(built.routes), "arn": config.settings.APP_SECRET
 @pytest.mark.unit
 @pytest.mark.parametrize("domain", sorted(DOMAINS))
 def test_building_a_domain_app_makes_no_secrets_manager_call(domain):
-    """The contract every domain image's cold start depends on.
-
-    The ARN is set and points at a secret that is not there, so any call at all
-    would raise. Building the application must still succeed: the failure moved
-    to the first deliberate read, which is `check_required_secrets` in `main`.
-    Run outside `mock_aws` on purpose, with no credentials, so a real call fails
-    rather than being quietly served.
-    """
+    """The contract every domain image's cold start depends on."""
     result = run_probe(
         IMPORT_PROBE % domain, env={"APP_SECRETS_ARN": MISSING_SECRET_ARN}
     )
@@ -128,11 +96,7 @@ def test_building_a_domain_app_makes_no_secrets_manager_call(domain):
 
 @pytest.mark.unit
 def test_importing_config_with_no_aws_environment_at_all():
-    """No credentials, no region, no ARN: importing settings still works.
-
-    This is what makes the route contract test able to import all four
-    entrypoints, and what lets `public` run with no Secrets Manager grant.
-    """
+    """No credentials, no region, no ARN: importing settings still works."""
     result = run_probe(
         "from app.config import settings\n"
         "assert settings.SECRET_KEY is None\n"
@@ -154,6 +118,7 @@ def test_reading_a_secret_is_what_triggers_the_fetch(clear_secret_env, monkeypat
     real_load = app_secrets.load_app_secrets
 
     def counting_load(secret_arn, client=None):
+        """Wrap the real loader and record each ARN it is called with."""
         calls.append(secret_arn)
         return real_load(secret_arn, client)
 
@@ -198,11 +163,7 @@ def test_four_unset_fields_cost_one_fetch(clear_secret_env, monkeypatch):
 
 @pytest.mark.unit
 def test_env_var_short_circuits_the_fetch(clear_secret_env, monkeypatch):
-    """An environment variable wins and no call is made at all.
-
-    This is what keeps a local checkout and the suite free of AWS: the ARN here
-    points at a secret that does not exist, so a fetch would raise.
-    """
+    """An environment variable wins and no call is made at all."""
     monkeypatch.setenv("APP_SECRETS_ARN", MISSING_SECRET_ARN)
     monkeypatch.setenv("SECRET_KEY", "from-env")
 
@@ -211,6 +172,7 @@ def test_env_var_short_circuits_the_fetch(clear_secret_env, monkeypatch):
 
 @pytest.mark.unit
 def test_require_secrets_names_every_missing_field(clear_secret_env, monkeypatch):
+    """The error names each missing field and the ARN, omitting ones that resolved."""
     arn = create_app_secret("webbpulse-msg/app", {"SECRET_KEY": "k"})
     monkeypatch.setenv("APP_SECRETS_ARN", arn)
 
@@ -227,6 +189,7 @@ def test_require_secrets_names_every_missing_field(clear_secret_env, monkeypatch
 
 @pytest.mark.unit
 def test_cache_reset_makes_a_rotated_secret_visible():
+    """A rotated secret is only picked up after the cache is reset."""
     arn = create_app_secret("webbpulse-rotate/app", {"SECRET_KEY": "first"})
     assert app_secrets.load_app_secrets(arn)["SECRET_KEY"] == "first"
 
@@ -266,13 +229,7 @@ def test_a_local_environment_warns_rather_than_raising(clear_secret_env, monkeyp
 @pytest.mark.unit
 @pytest.mark.parametrize("environment", ["staging", "production", "local"])
 def test_public_never_asks_for_a_secret(clear_secret_env, monkeypatch, environment):
-    """The least-privilege claim the whole split rests on.
-
-    `public` declares no secret, so this must neither raise nor warn nor read,
-    even in production with no secret available anywhere. If it ever did, the
-    function would need a `secretsmanager:GetSecretValue` grant it does not have
-    and would fail every cold start.
-    """
+    """The least-privilege claim the whole split rests on."""
     monkeypatch.setenv("ENVIRONMENT", environment)
     monkeypatch.setenv("APP_SECRETS_ARN", MISSING_SECRET_ARN)
     settings = Settings(_env_file=None)
@@ -286,6 +243,7 @@ def test_public_never_asks_for_a_secret(clear_secret_env, monkeypatch, environme
 def test_a_deployed_environment_passes_when_the_secret_resolves(
     clear_secret_env, monkeypatch
 ):
+    """A deployed domain whose secrets resolve warns about nothing."""
     arn = create_app_secret("webbpulse-ok/app", {"SECRET_KEY": "sm-secret"})
     monkeypatch.setenv("APP_SECRETS_ARN", arn)
     monkeypatch.setenv("ENVIRONMENT", "production")
@@ -329,12 +287,7 @@ def test_identity_requires_the_admin_credentials_the_seed_reads(
     ],
 )
 def test_the_declared_secrets_per_domain(domain, expected):
-    """Pins the map Terraform's IAM grants are derived from.
-
-    `content` and `resume` verify bearer tokens, so both need the signing key.
-    `identity` also mints them and seeds the admin user. `public` does neither,
-    which is why its function holds no `secretsmanager` action at all.
-    """
+    """Pins the map Terraform's IAM grants are derived from."""
     assert DOMAINS[domain].requires_secrets == expected
 
 
@@ -349,23 +302,13 @@ def test_the_declared_secrets_per_domain(domain, expected):
     ],
 )
 def test_a_domain_seeds_only_what_it_owns(domain, expected):
-    """`content` used to run the admin seeder too.
-
-    That made it write the `users` table `identity` owns and resolve the three
-    admin secrets its descriptor says it does not need, so the descriptor and
-    the runtime disagreed. Seeding is per-table now and the descriptor is the
-    honest one.
-    """
+    """`content` used to run the admin seeder too."""
     assert DOMAINS[domain].seeds == expected
 
 
 @pytest.mark.unit
 def test_the_content_app_does_not_seed_the_admin_user(monkeypatch):
-    """The behaviour, not just the descriptor.
-
-    Asserted through a request against the built application, because the seed
-    runs in middleware on the first request rather than at build time.
-    """
+    """The behaviour, not just the descriptor."""
     from starlette.testclient import TestClient
 
     from app.composition.wiring import build_domain_app
@@ -410,6 +353,7 @@ def test_the_identity_app_still_seeds_the_admin_user(monkeypatch):
 @pytest.mark.unit
 @pytest.mark.parametrize("domain", ["public", "resume"])
 def test_a_domain_that_owns_no_table_runs_no_seeder(monkeypatch, domain):
+    """A domain owning no table runs no seeder on a request."""
     from starlette.testclient import TestClient
 
     from app.composition.wiring import build_domain_app

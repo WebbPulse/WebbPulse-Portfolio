@@ -1,69 +1,4 @@
-"""M5: the two passkey tables, the two flags, the origins and the mount.
-
-Same principle as the M1 through M4 and M6 files. The package's own suite
-already proves the WebAuthn ceremonies: that a challenge is a single use row and
-is refused past its deadline whether or not DynamoDB has reclaimed it, that a
-signature counter regression is refused and logged, that the origin and the RP
-id are checked on every ceremony, that a user-verified passkey sets `amr` to
-`["swk", "pin", "mfa"]` and is not challenged for a TOTP code, and that the last
-passkey cannot be deleted by a user with no password. Re-asserting any of that
-here would pin the package's behaviour twice and say nothing about this product.
-
-What no test in the package can cover is the seams M5 adds here.
-
-**The two tables**, checked against the constants and key schemas the package
-exports, for the reason M2's three, M3's one, M4's two and M6's two are checked
-that way. A key name copied from `webbpulse.identity.storage` into
-`app/db/tables.py` and again into the `tables` map in `terraform/identity.tf` is
-a copy that drifts, and a drifted key is a `ValidationException` on the first
-registration rather than anything a type checker sees. `passkeys` carries a GSI,
-so its index name and projection are worth pinning on their own:
-`PASSKEY_CREDENTIAL_INDEX` is a literal in the package and DynamoDB resolves an
-index by name, so a rename on either side is a failed Query on the login path.
-
-**Their opposite TTLs**, which are two decisions rather than one omission.
-`webauthn-challenges` expires because a challenge nobody came back for is
-litter; `passkeys` must never expire because a passkey is a sign-in method and
-may be the only one, so a TTL there is a silent permanent lockout. This is the
-same pairing `oauth-states` and `oauth-links` make, and it is asserted here for
-the same reason: the two tables sit next to each other in three files and the
-difference between them is one line in each.
-
-**THE CONDITIONAL MOUNT, WHICH IS THE POINT OF THIS FILE.** M5's condition is
-three things at once and this product controls two of them from two different
-places. The stores are supplied unconditionally by the composition root; the
-flag comes from `IDENTITY_PASSKEYS_ENABLED`, which Terraform renders from a
-variable defaulting to false.
-
-**The package defaults `passkeys_enabled` to `True` and this product ships it
-`False`,** which makes this the one adoption in the series where an omitted
-environment variable is not a no-op: it mounts seven routes rather than none.
-That inversion is asserted directly below, because it is the whole reason the
-Terraform variable is set explicitly rather than left out, and a future edit
-that "tidies up" the explicit `false` would be a silent seven-route deploy.
-
-**`passkeys_passwordless` is a second, independent switch**, and the pair of
-tests on it exists because the two flags read like one. With `passkeys_enabled`
-true and `passkeys_passwordless` false, the five management routes mount and
-both `/login/passkey/*` routes still mount but refuse at the flow layer: a
-passkey is a credential and a second factor but not an entry point. That refusal
-is the package's and is not re-proved here; what is proved is that the setting
-reaches the package as false, which is the part this product owns.
-
-**The origins**, because `IDENTITY_WEBAUTHN_ORIGINS` is a JSON array of a list
-field, and the class refuses bare comma separated values for those. A string
-that Terraform rendered as CSV would be a `ValidationError` at cold start, and
-an empty list would make the origin check vacuous, which is the whole of what
-makes a passkey phishing resistant.
-
-**A registration options round trip** against the in-memory stores, which is the
-one end-to-end assertion here. It goes through the package's real
-`PasskeyService` with this product's real settings and proves the three things
-composition can get wrong that a route count cannot see: that the settings this
-product builds are ones the ceremony accepts at all, that the challenge is
-written to the store the composition root bound, and that the options carry this
-product's RP id and name rather than the package's empty defaults.
-"""
+"""M5: the two passkey tables, the two flags, the origins and the mount."""
 
 from __future__ import annotations
 
@@ -112,13 +47,7 @@ def test_the_passkey_table_names_are_the_packages_own_constants() -> None:
 
 
 def test_the_passkey_table_is_keyed_for_a_consistent_listing() -> None:
-    """Hash `user_id`, range `credential_id`, which is the direction that matters.
-
-    The management page reads its own writes, so listing a user's credentials
-    has to be a Query on the base table, where a consistent read is available.
-    Keyed the other way round it would have to be a GSI query, and DynamoDB
-    offers no consistent read on a GSI at all.
-    """
+    """Hash `user_id`, range `credential_id`, which is the direction that matters."""
     from app.db.tables import TABLES
 
     spec = TABLES["passkeys"]
@@ -129,13 +58,7 @@ def test_the_passkey_table_is_keyed_for_a_consistent_listing() -> None:
 
 
 def test_the_passkey_table_carries_the_credential_index_the_package_names() -> None:
-    """The login lookup's index, by the package's own literal, projecting ALL.
-
-    DynamoDB resolves an index by name, so a rename on either side is a failed
-    Query on the sign-in path rather than a plan diff. The projection is ALL
-    because the login path reads the stored public key and the sign count
-    straight off the index, and KEYS_ONLY would buy a second read per sign in.
-    """
+    """The login lookup's index, by the package's own literal, projecting ALL."""
     import webbpulse.identity as package
 
     from app.db.tables import TABLES
@@ -159,15 +82,7 @@ def test_the_challenge_table_is_keyed_on_the_challenge_and_nothing_else() -> Non
 
 
 def test_the_two_passkey_tables_expire_opposite_things() -> None:
-    """The challenge expires; the passkey must never.
-
-    A TTL on `passkeys` would remove a sign-in method on DynamoDB's reclaim
-    schedule rather than on any deadline a person chose, which for a user whose
-    passkey is their only credential is a permanent lockout. The assertion is
-    made against `ALL_TABLES`, which is what `conftest.py` and
-    `scripts/create_local_tables.py` both walk, so it pins the value that is
-    actually used rather than a restatement of it.
-    """
+    """The challenge expires; the passkey must never."""
     from app.db.tables import ALL_TABLES, IDENTITY_TTL_ATTRIBUTE
 
     ttls = dict(ALL_TABLES)
@@ -176,12 +91,9 @@ def test_the_two_passkey_tables_expire_opposite_things() -> None:
 
 
 def test_both_passkey_tables_are_created_by_the_suite(aws_tables: Any) -> None:
-    """A table the package writes to that the suite does not create is a suite
-    that cannot exercise a single M5 flow.
-
-    `aws_tables` is this repository's own fixture and it builds every table in
-    `ALL_TABLES`, which is why adding the pair there is the whole of what makes
-    them exist for the suite."""
+    """A table the package writes to that the suite does not create is a suite that
+    cannot exercise a single M5 flow.
+    """
     del aws_tables
 
     from app.db.tables import ALL_TABLES
@@ -193,18 +105,7 @@ def test_both_passkey_tables_are_created_by_the_suite(aws_tables: Any) -> None:
 def test_the_package_defaults_both_passkey_flags_on(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """THE PACKAGE SHIPS THESE ON AND THIS PRODUCT SHIPS THEM OFF.
-
-    This is the assertion the rest of the file rests on. Every other identity
-    flag this product sets explicitly happens to agree with the package's
-    default, so omitting the Terraform line would be harmless; these two do not.
-    An unset `IDENTITY_PASSKEYS_ENABLED` mounts seven routes.
-
-    Pinning the package's default here rather than trusting the comment means a
-    future release that flips it to false turns the now-redundant Terraform line
-    into a failing test that says so, instead of leaving a line nobody can
-    explain.
-    """
+    """THE PACKAGE SHIPS THESE ON AND THIS PRODUCT SHIPS THEM OFF."""
     from webbpulse.identity import IdentitySettings
 
     _identity_environment(monkeypatch)
@@ -220,11 +121,7 @@ def test_the_package_defaults_both_passkey_flags_on(
 def test_the_flags_are_read_from_the_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Terraform renders `tostring(var...)`, and pydantic reads that back.
-
-    The rendered strings are what `lambda_domains.tf` actually sets, so this is
-    the seam between a Terraform bool and a pydantic one.
-    """
+    """Terraform renders `tostring(var...)`, and pydantic reads that back."""
     from webbpulse.identity import IdentitySettings
 
     _identity_environment(monkeypatch)
@@ -254,14 +151,7 @@ def test_the_shipping_values_turn_both_flags_off(
 def test_the_webauthn_origins_are_read_as_a_json_array(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A list field, so the environment form is JSON and never bare CSV.
-
-    `IdentitySettings` refuses comma separated values for its list fields, so a
-    Terraform expression that rendered `"https://a,https://b"` would be a
-    `ValidationError` at cold start rather than a silently split pair. That is
-    the behaviour worth pinning: the origin check is what makes a passkey
-    phishing resistant, and a half-parsed origin list is not a check.
-    """
+    """A list field, so the environment form is JSON and never bare CSV."""
     from webbpulse.identity import IdentitySettings
 
     _identity_environment(monkeypatch)
@@ -274,11 +164,7 @@ def test_the_webauthn_origins_are_read_as_a_json_array(
 def test_the_origin_is_an_origin_and_not_a_url_with_a_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Scheme, host and optional port only, which is what a browser sends.
-
-    `clientDataJSON` carries the origin, never a path, so an entry with a path
-    can never match and would fail every ceremony with an origin mismatch.
-    """
+    """Scheme, host and optional port only, which is what a browser sends."""
     from urllib.parse import urlparse
 
     from webbpulse.identity import IdentitySettings
@@ -298,14 +184,7 @@ def test_the_origin_is_an_origin_and_not_a_url_with_a_path(
 def test_the_rp_id_is_the_registrable_domain_and_not_the_api_host(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`IDENTITY_RP_ID` comes from the module, and is what the origin sits under.
-
-    An rp_id has to be the origin's own domain or a registrable suffix of it, or
-    every ceremony is refused by the browser before the server sees it. Asserting
-    the relationship rather than the literal is what makes this survive a
-    rename: it is the pair that has to hold, and the pair is assembled in two
-    different Terraform files.
-    """
+    """`IDENTITY_RP_ID` comes from the module, and is what the origin sits under."""
     from webbpulse.identity import IdentitySettings
 
     _identity_environment(monkeypatch)
@@ -321,12 +200,7 @@ def test_the_rp_id_is_the_registrable_domain_and_not_the_api_host(
 def test_the_rp_name_is_the_product_name_a_browser_shows(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A display string, and the one M5 is the first milestone to actually read.
-
-    It was already set for M1's sake and had no reader; an empty value would
-    have shown the user a blank product name in the browser's own passkey
-    prompt, which is a trust decision made on that dialog.
-    """
+    """A display string, and the one M5 is the first milestone to actually read."""
     from webbpulse.identity import IdentitySettings
 
     _identity_environment(monkeypatch)
@@ -339,12 +213,7 @@ def test_the_rp_name_is_the_product_name_a_browser_shows(
 def test_the_composition_root_supplies_both_passkey_stores(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Both stores, unconditionally, whatever the flag says.
-
-    Supplying them behind a check on the flag would put the switch in two places
-    that could disagree, and disagreeing presents as a Terraform variable flipped
-    to true that changes nothing, with no error anywhere to say why.
-    """
+    """Both stores, unconditionally, whatever the flag says."""
     import boto3
     import webbpulse.identity as package
 
@@ -366,12 +235,7 @@ def test_the_composition_root_supplies_both_passkey_stores(
 def test_the_passkey_stores_are_bound_to_the_right_tables(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Each store repository carries its own table's name.
-
-    Two stores built in adjacent lines from a helper that takes a table name is
-    exactly the shape a copy-paste swaps, and swapped stores fail at runtime with
-    a `ValidationException` about a missing key rather than anything sooner.
-    """
+    """Each store repository carries its own table's name."""
     import boto3
     import webbpulse.identity as package
 
@@ -391,12 +255,7 @@ def test_the_passkey_stores_are_bound_to_the_right_tables(
 
 
 def test_the_hooks_still_satisfy_the_packages_protocol() -> None:
-    """M5 adds no hook, so this has to keep passing untouched.
-
-    The rule the package could have asked a hook for and did not is that the last
-    passkey cannot be deleted by a user with no password: it reads that from the
-    `credentials` store, which is where the package's own password lives.
-    """
+    """M5 adds no hook, so this has to keep passing untouched."""
     from webbpulse.identity import IdentityHooks
 
     from app.composition.identity_hooks import PortfolioIdentityHooks
@@ -407,31 +266,14 @@ def test_the_hooks_still_satisfy_the_packages_protocol() -> None:
 def test_no_passkey_route_mounts_with_the_flag_off(
     identity_app_passkeys_off: FastAPI,
 ) -> None:
-    """What staging and production serve today: none of the seven.
-
-    Asserted over every path rather than a sample, because the package mounts the
-    seven in one call and a partial mount is not a state it can be in.
-    """
+    """What staging and production serve today: none of the seven."""
     assert ALL_PASSKEY_PATHS & _all_paths(identity_app_passkeys_off) == set()
 
 
 def test_the_other_identity_routes_still_mount_with_the_flag_off(
     identity_app_passkeys_off: FastAPI,
 ) -> None:
-    """The M5 bump changes the served API not at all, which is the deploy claim.
-
-    A sample of one route from each earlier milestone that this fixture actually
-    mounts. If adopting 0.15.0 had disturbed the mounting of anything already
-    serving, this is where it shows, and it is the assertion that makes this PR
-    safe to deploy ahead of the frontend.
-
-    M3's four email routes are deliberately not in the list. They mount only when
-    an `email_sender` is supplied, and `build_email_sender` returns `None` on an
-    empty `IDENTITY_EMAIL_FROM`, which is what this fixture's environment has.
-    That is the same state a staging profile without custom domains deploys, so
-    asserting their absence here would pin the SES switch rather than anything
-    M5 touches.
-    """
+    """The M5 bump changes the served API not at all, which is the deploy claim."""
     paths = _all_paths(identity_app_passkeys_off)
 
     assert "/api/auth/.well-known/openid-configuration" in paths
@@ -445,11 +287,7 @@ def test_the_other_identity_routes_still_mount_with_the_flag_off(
 def test_the_seven_passkey_routes_mount_once_the_flag_is_on(
     identity_app_passkeys_on: FastAPI,
 ) -> None:
-    """Flipping one environment variable is the whole of the switch.
-
-    No code changes between this fixture and the one above, which is what makes
-    turning passkeys on a configuration change: one HCP variable and a redeploy.
-    """
+    """Flipping one environment variable is the whole of the switch."""
     app = identity_app_passkeys_on
 
     assert set(PASSKEY_MANAGEMENT_POST_PATHS) <= _paths_for_method(app, "POST")
@@ -462,13 +300,7 @@ def test_the_seven_passkey_routes_mount_once_the_flag_is_on(
 def test_the_mounted_paths_are_the_packages_own_constants(
     identity_app_passkeys_on: FastAPI,
 ) -> None:
-    """The literals at the top of this file are checked against the package.
-
-    Every path here is a string this file typed out and the frontend will type
-    again, so pinning them against the package's own constants is what stops the
-    two drifting silently. The prefix is the issuer's path, which
-    `build_identity_router` derives itself.
-    """
+    """The literals at the top of this file are checked against the package."""
     from webbpulse.identity.passkey_routes import (
         LOGIN_PASSKEY_OPTIONS_PATH,
         LOGIN_PASSKEY_VERIFY_PATH,
@@ -498,13 +330,7 @@ def test_the_mounted_paths_are_the_packages_own_constants(
 def test_passwordless_off_is_what_the_enabled_app_still_ships(
     monkeypatch: pytest.MonkeyPatch, private_key: Any
 ) -> None:
-    """Turning passkeys on does not turn passwordless on with it.
-
-    The two login routes mount either way and refuse at the flow layer when
-    passwordless is off, which is the package's own behaviour. What this asserts
-    is the part this product owns: enabling the capability leaves the policy
-    flag alone, so the rollout step and the policy decision stay separate.
-    """
+    """Turning passkeys on does not turn passwordless on with it."""
     from webbpulse.identity import IdentitySettings
 
     _identity_environment(monkeypatch)
@@ -519,31 +345,7 @@ def test_passwordless_off_is_what_the_enabled_app_still_ships(
 def test_registration_options_round_trip_against_the_in_memory_stores(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """One real ceremony leg, with this product's settings and fake stores.
-
-    The route-count tests above prove the seven routes exist; none of them proves
-    the settings this product assembles are ones a ceremony will accept. This
-    does, and it is the only test here that runs the package's real
-    `PasskeyService`.
-
-    Three things it pins that a mounted route cannot:
-
-    - **The settings are usable.** The package requires `rp_id` and
-      `webauthn_origins` rather than defaulting either, and raises naming the
-      variable when one is missing. A product that rendered an empty origins
-      array would pass every assertion above and fail on the first real
-      enrolment.
-    - **The challenge is written.** `begin_registration` puts a row in the
-      challenge store, and the store it puts it in is the one that was passed. A
-      challenge written nowhere is an enrolment that can never be finished.
-    - **The options carry this product's identity.** `rp.id` and `rp.name` are
-      what the browser shows the user and what gets hashed into the credential,
-      and the package's defaults for both are empty strings.
-
-    In-memory stores rather than DynamoDB because the seam under test is
-    settings-to-ceremony, not storage; `webbpulse.identity.storage` provides the
-    in-memory pair for exactly this.
-    """
+    """One real ceremony leg, with this product's settings and fake stores."""
     from webbpulse.identity import (
         IdentitySettings,
         IdentityStores,
@@ -579,22 +381,7 @@ def test_registration_options_round_trip_against_the_in_memory_stores(
 def test_an_empty_origin_list_is_refused_rather_than_treated_as_allow_all(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """An empty origin list raises naming the variable, and does not mean "any".
-
-    This is the failure mode `IDENTITY_WEBAUTHN_ORIGINS` exists to prevent, and
-    the reason the package requires the value instead of defaulting it. Pinned
-    here because the Terraform local that renders it is one `jsonencode` away
-    from producing `[]`, and a vacuous origin check is not a check.
-
-    **The refusal is at verification, not at `begin_registration`.** The package
-    reads the origins from a lazy property that only the two verify legs touch,
-    so generating options against an empty list succeeds and it is the assertion
-    that fails. That is worth pinning rather than glossing: it means a
-    misconfigured environment presents as a registration that gets halfway and
-    then fails, and the useful signal is the error naming the variable. The
-    property is exercised directly here because reaching it through a verify leg
-    would need a real authenticator response.
-    """
+    """An empty origin list raises naming the variable, and does not mean "any"."""
     from webbpulse.identity import (
         IdentitySettings,
         IdentityStores,
@@ -625,11 +412,7 @@ def test_an_empty_origin_list_is_refused_rather_than_treated_as_allow_all(
 def test_the_configured_origins_reach_the_ceremony(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The other half of the test above: the deployed value is accepted and used.
-
-    Asserting only the refusal would leave the ordinary path unproven, and the
-    ordinary path is the one every sign in takes.
-    """
+    """The other half of the test above: the deployed value is accepted and used."""
     from webbpulse.identity import (
         IdentitySettings,
         IdentityStores,
@@ -658,12 +441,7 @@ class _Captured(Exception):
 
 
 def _logical_name_of(store: Any) -> str:
-    """The unprefixed table a Dynamo store's repository is pointed at.
-
-    Reaches through the store's private `_repo` attribute deliberately, for the
-    reason the M4 and M6 files' copies give: there is no public accessor, and the
-    alternative is not asserting the binding at all.
-    """
+    """The unprefixed table a Dynamo store's repository is pointed at."""
     return str(store._repo.logical_name)
 
 
@@ -674,6 +452,7 @@ def _capture_build(
     captured: dict[str, Any] = {}
 
     def capture(settings: Any, *args: Any, **kwargs: Any) -> Any:
+        """Record the stores and keyword arguments, then abort the build."""
         captured["stores"] = args[1] if len(args) > 1 else kwargs.get("stores")
         captured["kwargs"] = kwargs
         raise _Captured
@@ -684,15 +463,7 @@ def _capture_build(
 
 
 def _identity_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The `IDENTITY_*` variables `terraform/lambda_domains.tf` sets, M5 included.
-
-    The two passkey flags are set to the shipping `"false"` rather than deleted,
-    because deleting them is not the deployed state: Terraform sets both
-    explicitly, and the package's own default is the opposite value. A test that
-    unset them would be asserting against an environment this product never
-    produces. `test_the_package_defaults_both_passkey_flags_on` is the one place
-    they are deliberately removed, and it removes them itself.
-    """
+    """The `IDENTITY_*` variables `terraform/lambda_domains.tf` sets, M5 included."""
     monkeypatch.setenv("IDENTITY_ENVIRONMENT", "staging")
     monkeypatch.setenv("IDENTITY_ISSUER", ISSUER)
     monkeypatch.setenv("IDENTITY_AUDIENCE", AUDIENCE)
@@ -719,12 +490,7 @@ def private_key() -> Any:
 def _build_identity_app(
     monkeypatch: pytest.MonkeyPatch, private_key: Any, *, enabled: bool
 ) -> FastAPI:
-    """The identity router as the composition root builds it, at this flag value.
-
-    No AWS call is made: the `boto3.client` monkeypatch covers KMS as well as the
-    other clients the root builds, and no passkey route is exercised, only
-    counted.
-    """
+    """The identity router as the composition root builds it, at this flag value."""
     import boto3
 
     from app.composition.identity import build_router
@@ -758,10 +524,12 @@ def identity_app_passkeys_on(
 
 
 def _paths_for_method(app: FastAPI, method: str) -> set[str]:
+    """Every path the application serves for the given method."""
     return {
         route.path for route in app.routes if method in getattr(route, "methods", set())
     }
 
 
 def _all_paths(app: FastAPI) -> set[str]:
+    """Every path the application serves, whatever the method."""
     return {route.path for route in app.routes if hasattr(route, "path")}

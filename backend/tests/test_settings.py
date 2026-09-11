@@ -1,3 +1,5 @@
+"""Settings resolution: Secrets Manager, environment overrides and aliases."""
+
 import json
 
 import boto3
@@ -19,11 +21,7 @@ MISSING_SECRET_ARN = (
 
 
 def create_app_secret(name, payload):
-    """Create the single JSON secret and return its ARN.
-
-    payload is written as-is when it is already a string, so a test can store a
-    body that is not a JSON object.
-    """
+    """Create the single JSON secret and return its ARN."""
     client = boto3.client("secretsmanager", region_name="us-west-2")
     body = payload if isinstance(payload, str) else json.dumps(payload)
     return client.create_secret(Name=name, SecretString=body)["ARN"]
@@ -39,12 +37,14 @@ def clear_secrets_cache():
 
 @pytest.fixture
 def clear_secret_env(monkeypatch):
+    """Remove the secret-backed settings from the environment."""
     for name in ("SECRET_KEY", "ADMIN_USERNAME", "ADMIN_PASSWORD", "ADMIN_EMAIL"):
         monkeypatch.delenv(name, raising=False)
 
 
 @pytest.mark.unit
 def test_secrets_resolve_from_secrets_manager(clear_secret_env, monkeypatch):
+    """With an ARN set and no environment, the settings come from the secret."""
     arn = create_app_secret("webbpulse-test/app", FULL_PAYLOAD)
     monkeypatch.setenv("APP_SECRETS_ARN", arn)
     settings = Settings(_env_file=None)
@@ -56,6 +56,7 @@ def test_secrets_resolve_from_secrets_manager(clear_secret_env, monkeypatch):
 
 @pytest.mark.unit
 def test_environment_overrides_secrets_manager(clear_secret_env, monkeypatch):
+    """An environment variable wins over the same key in the secret."""
     arn = create_app_secret("webbpulse-override/app", FULL_PAYLOAD)
     monkeypatch.setenv("APP_SECRETS_ARN", arn)
     monkeypatch.setenv("SECRET_KEY", "env-secret")
@@ -86,15 +87,7 @@ def test_environment_fills_only_the_keys_the_secret_omits(
 def test_missing_keys_fail_when_required_not_when_constructed(
     clear_secret_env, monkeypatch
 ):
-    """PR 4 moved this failure from construction to the point of use.
-
-    The class this replaces raised here, at `Settings(...)`, which made
-    importing anything under `app/` fail without secrets. That is what the
-    `public` function must not do: it holds no Secrets Manager permission at
-    all, so an import-time read would fail every cold start before a single
-    route was reached. The message is unchanged and still names every unset
-    field, it is just raised by `require_secrets` instead.
-    """
+    """PR 4 moved this failure from construction to the point of use."""
     arn = create_app_secret("webbpulse-empty/app", {"SECRET_KEY": "sm-secret"})
     monkeypatch.setenv("APP_SECRETS_ARN", arn)
 
@@ -112,13 +105,7 @@ def test_missing_keys_fail_when_required_not_when_constructed(
 def test_require_secrets_passes_when_the_named_fields_resolve(
     clear_secret_env, monkeypatch
 ):
-    """A domain names only the secrets it needs, and a partial blob suffices.
-
-    `resume` and `content` need the signing key and nothing else, so a secret
-    carrying only `SECRET_KEY` has to satisfy them. Requiring all four would
-    put the admin credentials in the read path of two functions that never
-    authenticate anyone.
-    """
+    """A domain names only the secrets it needs, and a partial blob suffices."""
     arn = create_app_secret("webbpulse-partial-require/app", {"SECRET_KEY": "sm"})
     monkeypatch.setenv("APP_SECRETS_ARN", arn)
     settings = Settings(_env_file=None)
@@ -129,14 +116,8 @@ def test_require_secrets_passes_when_the_named_fields_resolve(
 def test_unreadable_secret_raises_rather_than_reporting_missing(
     clear_secret_env, monkeypatch
 ):
-    """An ARN pointing at a secret that is not there is a misconfiguration and
-    must surface as itself, not as a vague 'missing setting'.
-
-    It now surfaces on the first read of a secret field rather than at
-    construction, because that is where the blob is fetched. The distinction
-    that matters is unchanged: a bad ARN raises the boto3 error, so it reads as
-    the misconfiguration it is instead of as four fields that happen to be
-    unset.
+    """An ARN pointing at a secret that is not there is a misconfiguration and must
+    surface as itself, not as a vague 'missing setting'.
     """
     monkeypatch.setenv("APP_SECRETS_ARN", MISSING_SECRET_ARN)
     settings = Settings(_env_file=None)
@@ -150,13 +131,7 @@ def test_unreadable_secret_raises_rather_than_reporting_missing(
 def test_settings_construct_with_no_arn_and_no_environment(
     clear_secret_env, monkeypatch
 ):
-    """The property every domain image's cold start depends on.
-
-    With no `APP_SECRETS_ARN` and no secret in the environment, constructing
-    settings must succeed and reading a secret must return `None` rather than
-    calling AWS. `tests/entrypoints/test_entrypoint_isolation.py` asserts the
-    same thing end to end, by building each application under `env -i`.
-    """
+    """The property every domain image's cold start depends on."""
     monkeypatch.delenv("APP_SECRETS_ARN", raising=False)
     settings = Settings(_env_file=None)
     assert settings.SECRET_KEY is None
@@ -169,6 +144,7 @@ def test_settings_construct_with_no_arn_and_no_environment(
 
 @pytest.mark.unit
 def test_non_object_payload_is_rejected():
+    """A payload that is not a JSON object is rejected."""
     arn = create_app_secret("webbpulse-list/app", json.dumps(["not", "a", "dict"]))
     with pytest.raises(ValueError):
         app_secrets.load_app_secrets(arn)
@@ -176,6 +152,7 @@ def test_non_object_payload_is_rejected():
 
 @pytest.mark.unit
 def test_invalid_json_payload_is_rejected():
+    """A payload that is not JSON at all is rejected."""
     arn = create_app_secret("webbpulse-garbage/app", "not json at all")
     with pytest.raises(ValueError):
         app_secrets.load_app_secrets(arn)
@@ -183,6 +160,7 @@ def test_invalid_json_payload_is_rejected():
 
 @pytest.mark.unit
 def test_non_string_values_are_json_encoded_and_nulls_dropped():
+    """Non-string values are JSON encoded and null values are dropped."""
     arn = create_app_secret(
         "webbpulse-types/app",
         {"SECRET_KEY": "x", "ADMIN_EMAIL": None, "RETRIES": 3},
@@ -192,6 +170,7 @@ def test_non_string_values_are_json_encoded_and_nulls_dropped():
 
 @pytest.mark.unit
 def test_values_are_cached_per_execution_environment():
+    """A rotated secret is only seen after the cache is reset."""
     arn = create_app_secret("webbpulse-cached/app", {"SECRET_KEY": "first"})
     assert app_secrets.load_app_secrets(arn)["SECRET_KEY"] == "first"
 
@@ -206,6 +185,7 @@ def test_values_are_cached_per_execution_environment():
 
 @pytest.mark.unit
 def test_cors_origins_include_localhost(monkeypatch):
+    """The configured origins are kept and localhost is always added."""
     monkeypatch.setenv(
         "CORS_ORIGINS", "https://www.webbpulse.com, https://webbpulse.com"
     )
@@ -232,6 +212,7 @@ def test_cors_origins_include_localhost(monkeypatch):
     ],
 )
 def test_environment_aliases_map_to_the_base_literal(monkeypatch, raw, expected):
+    """Each environment alias maps to its base literal, leaving the raw value intact."""
     monkeypatch.setenv("ENVIRONMENT", raw)
     settings = Settings(_env_file=None)
     assert settings.ENVIRONMENT == raw
@@ -241,17 +222,14 @@ def test_environment_aliases_map_to_the_base_literal(monkeypatch, raw, expected)
 @pytest.mark.unit
 @pytest.mark.parametrize("raw", ["DEVELOPMENT", "Dev", "  development  "])
 def test_environment_aliases_ignore_case_and_surrounding_space(monkeypatch, raw):
+    """Alias matching ignores case and surrounding whitespace."""
     monkeypatch.setenv("ENVIRONMENT", raw)
     assert Settings(_env_file=None).environment == "local"
 
 
 @pytest.mark.unit
 def test_unrecognised_environment_falls_back_to_local(monkeypatch):
-    """An unknown value lands on "local" rather than failing validation.
-
-    "local" is the safe end of the Literal: it grants the least, and
-    `is_production` stays False for it.
-    """
+    """An unknown value lands on "local" rather than failing validation."""
     monkeypatch.setenv("ENVIRONMENT", "whatever")
     settings = Settings(_env_file=None)
     assert settings.ENVIRONMENT == "whatever"
@@ -261,6 +239,7 @@ def test_unrecognised_environment_falls_back_to_local(monkeypatch):
 
 @pytest.mark.unit
 def test_environment_defaults_to_development_when_unset(monkeypatch):
+    """With no environment set the default is development, which maps to local."""
     monkeypatch.delenv("ENVIRONMENT", raising=False)
     settings = Settings(_env_file=None)
     assert settings.ENVIRONMENT == "development"
@@ -273,5 +252,6 @@ def test_environment_defaults_to_development_when_unset(monkeypatch):
     [("production", True), ("prod", True), ("staging", False), ("development", False)],
 )
 def test_is_production_follows_the_mapped_environment(monkeypatch, raw, is_production):
+    """is_production follows the mapped environment rather than the raw value."""
     monkeypatch.setenv("ENVIRONMENT", raw)
     assert Settings(_env_file=None).is_production is is_production

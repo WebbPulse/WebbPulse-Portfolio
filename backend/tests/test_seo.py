@@ -6,6 +6,7 @@ pytestmark = pytest.mark.api
 
 
 def test_robots_txt(client):
+    """robots.txt is plain text, disallows /admin and points at the sitemap."""
     r = client.get("/robots.txt")
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/plain")
@@ -16,6 +17,7 @@ def test_robots_txt(client):
 
 
 def test_sitemap_has_static_routes(client):
+    """The sitemap is XML, lists the static routes and omits /admin."""
     r = client.get("/sitemap.xml")
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("application/xml")
@@ -27,6 +29,7 @@ def test_sitemap_has_static_routes(client):
 
 
 def test_sitemap_includes_published_excludes_draft(client, test_post, test_draft_post):
+    """Published posts appear in the sitemap; drafts do not."""
     r = client.get("/sitemap.xml")
     assert r.status_code == 200
     body = r.text

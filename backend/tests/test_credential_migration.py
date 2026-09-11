@@ -1,18 +1,4 @@
-"""`scripts/migrate_credentials_to_identity.py` against moto and the real store.
-
-The store under test is the package's `DynamoCredentialStore` over the same
-moto-backed tables `conftest.py` creates, not a fake. That is the point: the
-claim this migration rests on is that a hash written by the legacy seed
-verifies through the identity flow, and a test against a stub store would prove
-only that the script can call `put`.
-
-`test_the_migrated_hash_verifies_through_the_package` is the load bearing one.
-It hashes a password the way `app/core/security.py` does, migrates it, and then
-verifies the plaintext against the migrated credential with
-`webbpulse.security.verify_password`, which is the function the identity login
-flow calls. If the two ever stop being the same bcrypt, that test fails here
-rather than the administrator failing to sign in after a cutover.
-"""
+"""`scripts/migrate_credentials_to_identity.py` against moto and the real store."""
 
 import importlib.util
 import sys
@@ -27,6 +13,7 @@ from app.db import entities
 
 
 def load_script():
+    """Import the migration script by path, since scripts is not a package."""
     path = (
         Path(__file__).resolve().parents[1]
         / "scripts"
@@ -43,6 +30,7 @@ def load_script():
 
 @pytest.fixture(scope="module")
 def script():
+    """The imported migration script, once per module."""
     return load_script()
 
 
@@ -66,6 +54,7 @@ def make_user(password="legacy-password", **overrides):
 
 
 def test_a_dry_run_writes_nothing(script, store):
+    """A dry run reports what it would write and stores nothing."""
     user = make_user()
 
     summary, decisions = script.migrate(entities.users, store)
@@ -76,6 +65,7 @@ def test_a_dry_run_writes_nothing(script, store):
 
 
 def test_apply_writes_the_credential_in_the_packages_shape(script, store):
+    """Applying writes a credential carrying the legacy hash and both timestamps."""
     user = make_user()
 
     summary, _ = script.migrate(entities.users, store, apply=True)
@@ -91,13 +81,7 @@ def test_apply_writes_the_credential_in_the_packages_shape(script, store):
 
 
 def test_the_migrated_hash_verifies_through_the_package(script, store):
-    """The whole claim of the migration, end to end.
-
-    The legacy column is written by `webbpulse.security.hash_password` and the
-    identity login flow verifies with `webbpulse.security.verify_password`, so
-    the copied secret must accept the original plaintext and reject anything
-    else.
-    """
+    """The whole claim of the migration, end to end."""
     make_user(password="correct-horse-battery")
 
     script.migrate(entities.users, store, apply=True)
@@ -108,6 +92,7 @@ def test_the_migrated_hash_verifies_through_the_package(script, store):
 
 
 def test_a_rerun_is_idempotent_and_preserves_created_at(script, store):
+    """A second run changes nothing, timestamps included."""
     user = make_user()
 
     script.migrate(entities.users, store, apply=True)
@@ -143,6 +128,7 @@ def test_a_differing_credential_is_a_conflict_and_nothing_is_written(script, sto
 
 
 def test_replace_overwrites_a_conflict_but_keeps_created_at(script, store):
+    """With replace, a conflicting credential is overwritten but keeps created_at."""
     user = make_user()
     store.put(
         CredentialRecord(
@@ -192,12 +178,7 @@ def test_a_non_bcrypt_hash_is_skipped_rather_than_copied(script, store):
 
 
 def test_an_inactive_user_still_migrates(script, store):
-    """`may_authenticate` is the gate, not this script.
-
-    Deciding who may sign in belongs to `PortfolioIdentityHooks`, and a
-    migration that silently dropped a deactivated user's credential would make
-    reactivating them a password reset.
-    """
+    """`may_authenticate` is the gate, not this script."""
     user = make_user(is_active=False)
 
     summary, _ = script.migrate(entities.users, store, apply=True)
@@ -219,16 +200,19 @@ def test_an_inactive_user_still_migrates(script, store):
     ],
 )
 def test_is_supported_hash(script, value, supported):
+    """Only bcrypt hashes of the right length are treated as migratable."""
     assert script.is_supported_hash(value) is supported
 
 
 def test_parse_args_requires_a_prefix(script, monkeypatch):
+    """With no prefix given or in the environment, argument parsing exits."""
     monkeypatch.delenv("DYNAMODB_TABLE_PREFIX", raising=False)
     with pytest.raises(SystemExit):
         script.parse_args([])
 
 
 def test_parse_args_defaults_the_prefix_from_the_environment(script, monkeypatch):
+    """The prefix falls back to the environment, and both flags default off."""
     monkeypatch.setenv("DYNAMODB_TABLE_PREFIX", "webbpulse-staging")
     args = script.parse_args([])
     assert args.prefix == "webbpulse-staging"
@@ -237,6 +221,7 @@ def test_parse_args_defaults_the_prefix_from_the_environment(script, monkeypatch
 
 
 def test_main_dry_runs_by_default_and_reports(script, capsys):
+    """Without apply, main dry runs, says so and writes nothing."""
     user = make_user()
 
     exit_code = script.main(["--prefix", settings.DYNAMODB_TABLE_PREFIX])
@@ -248,6 +233,7 @@ def test_main_dry_runs_by_default_and_reports(script, capsys):
 
 
 def test_main_returns_one_on_a_conflict(script, store, capsys):
+    """A conflict exits one and points at the replace flag."""
     user = make_user()
     store.put(
         CredentialRecord(

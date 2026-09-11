@@ -1,27 +1,4 @@
-"""What `instrument_fastapi` leaves on a domain app, and where the ratio comes from.
-
-Two properties, and both fail silently in production if they regress, which is
-why they are asserted here rather than left to the deploy smoke test.
-
-**The flush wrapper is installed exactly once.** Sampling in `webbpulse` 0.2.0 is
-tail based: nothing is exported until a flush, and under the Web Adapter the only
-flush that runs before the execution environment freezes is the one this wrapper
-performs when the response completes. No wrapper means no traces at all, and two
-wrappers means two flushes and two thread hops per request. The wrapper is
-outermost by design, so it is not reachable through `app.user_middleware`; the
-sentinel attribute `webbpulse.otel` sets is what both this test and the package's
-own idempotency guard key on.
-
-**The ratio comes from `WEBBPULSE_OTEL_SAMPLE_RATIO`.** That is the whole
-environment variable contract 0.2.0 kept, and it is what `terraform/lambda_domains.tf`
-sets to 1.0 on staging and 0.1 on production. A typo there degrades to more traces
-rather than fewer, but a variable that is not read at all degrades to full price on
-production, which nothing else in the suite would notice.
-
-Neither test calls `configure_tracing`. It installs a global tracer provider that
-is set-once per process and would leak into every test after it; `instrument_fastapi`
-touches only the application it is handed.
-"""
+"""What `instrument_fastapi` leaves on a domain app, and where the ratio comes from."""
 
 import pytest
 from webbpulse.otel import SAMPLE_RATIO_ENV, instrument_fastapi, resolve_sample_ratio
@@ -78,11 +55,7 @@ def test_the_sample_ratio_defaults_to_keeping_everything(monkeypatch):
 
 
 def test_an_unusable_sample_ratio_falls_back_rather_than_raising(monkeypatch):
-    """A typo in a Terraform variable must cost money, not availability.
-
-    An exception here would be raised during `main`, before uvicorn binds, so the
-    function would fail its readiness check with no application logs at all.
-    """
+    """A typo in a Terraform variable must cost money, not availability."""
     monkeypatch.delenv("OTEL_TRACES_SAMPLER", raising=False)
     monkeypatch.delenv("OTEL_TRACES_SAMPLER_ARG", raising=False)
     for bad in ("", "  ", "not-a-number", "-0.5", "1.5"):

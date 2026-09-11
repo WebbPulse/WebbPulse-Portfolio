@@ -1,3 +1,5 @@
+"""Shared fixtures: a mocked AWS environment, seeded entities and auth headers."""
+
 import os
 from datetime import date, datetime, timezone
 
@@ -36,13 +38,7 @@ from app.domains.identity import service as admin  # noqa: E402
 
 
 def create_all_tables(prefix: str = settings.DYNAMODB_TABLE_PREFIX):
-    """Create every table this backend owns, TTL included where there is one.
-
-    Walks `ALL_TABLES` rather than keeping its own list, so a table registered
-    in `app.db.tables` is a table the suite creates. That is what stops an
-    identity flow from failing here with ResourceNotFoundException on a table
-    the deployed stack has.
-    """
+    """Create every table this backend owns, TTL included where there is one."""
     resource = boto3.resource("dynamodb", region_name="us-west-2")
     for entity, ttl_attribute in ALL_TABLES:
         definition = table_definition(prefix, entity)
@@ -59,12 +55,14 @@ def create_all_tables(prefix: str = settings.DYNAMODB_TABLE_PREFIX):
 
 
 def reset_seed_state():
+    """Clear the admin and site content seed guards between tests."""
     admin.reset_seed_state()
     site_content.reset_seed_state()
 
 
 @pytest.fixture(autouse=True)
 def aws_tables():
+    """Run each test against freshly created tables in a mocked AWS."""
     with mock_aws():
         db_client.reset()
         reset_seed_state()
@@ -76,19 +74,7 @@ def aws_tables():
 
 @pytest.fixture
 def client():
-    """The whole surface in one process, built from the domain routers.
-
-    This used to be `app.main`, the monolith the retired Lambda served. That
-    module is gone, and root A (`app.composition.app`) is what replaced it: the
-    same four domains' routers on one application, assembled from the single
-    list in `app.composition.wiring` that the four deployed entrypoints also
-    read. So a route this client can reach is a route some domain function
-    serves, which is the property the suite was relying on `app.main` for.
-
-    `build_app()` rather than the module-level `app`, so each test gets an
-    application built after `aws_tables` has installed the moto backend and
-    reset the seed state.
-    """
+    """The whole surface in one process, built from the domain routers."""
     from app.composition.app import build_app
 
     with TestClient(build_app()) as test_client:
@@ -97,6 +83,7 @@ def client():
 
 @pytest.fixture
 def test_user():
+    """A non-admin active user."""
     return entities.users.create(
         {
             "email": "test@example.com",
@@ -110,6 +97,7 @@ def test_user():
 
 @pytest.fixture
 def test_admin_user():
+    """An admin active user."""
     return entities.users.create(
         {
             "email": "admin@example.com",
@@ -123,6 +111,7 @@ def test_admin_user():
 
 @pytest.fixture
 def test_category():
+    """A category to hang posts off."""
     return entities.categories.create(
         {
             "name": "Test Category",
@@ -134,6 +123,7 @@ def test_category():
 
 @pytest.fixture
 def test_post(test_user, test_category):
+    """A published post by test_user in test_category."""
     return entities.posts.create(
         {
             "title": "Test Post",
@@ -150,6 +140,7 @@ def test_post(test_user, test_category):
 
 @pytest.fixture
 def test_draft_post(test_user, test_category):
+    """An unpublished post, for checking draft visibility rules."""
     return entities.posts.create(
         {
             "title": "Test Draft Post",
@@ -166,6 +157,7 @@ def test_draft_post(test_user, test_category):
 
 @pytest.fixture
 def test_project():
+    """A featured project."""
     return entities.projects.create(
         {
             "title": "Test Project",
@@ -181,6 +173,7 @@ def test_project():
 
 @pytest.fixture
 def test_experience():
+    """A completed experience entry."""
     return entities.experience.create(
         {
             "title": "Test Position",
@@ -198,6 +191,7 @@ def test_experience():
 
 @pytest.fixture
 def test_education():
+    """An education entry."""
     return entities.education.create(
         {
             "degree": "Test Degree",
@@ -214,6 +208,7 @@ def test_education():
 
 @pytest.fixture
 def test_certification():
+    """A certification entry."""
     return entities.certifications.create(
         {
             "name": "Test Cert",
@@ -227,6 +222,7 @@ def test_certification():
 
 @pytest.fixture
 def test_site_content():
+    """The singleton site content row."""
     return entities.site_content.create(
         {
             "hero_title": "Hi, I'm Test",
@@ -247,6 +243,7 @@ def test_site_content():
 
 @pytest.fixture
 def test_skill():
+    """A frontend skill."""
     return entities.skills.create(
         {
             "name": "Test Skill",
@@ -260,6 +257,7 @@ def test_skill():
 
 @pytest.fixture
 def auth_headers(test_user):
+    """Bearer header for test_user."""
     return {
         "Authorization": f"Bearer {create_access_token({'sub': test_user['username']})}"
     }
@@ -267,17 +265,20 @@ def auth_headers(test_user):
 
 @pytest.fixture
 def admin_auth_headers(test_admin_user):
+    """Bearer header for test_admin_user."""
     token = create_access_token({"sub": test_admin_user["username"]})
     return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.fixture
 def invalid_auth_headers():
+    """Bearer header carrying a token that will not verify."""
     return {"Authorization": "Bearer invalid_token"}
 
 
 @pytest.fixture
 def sample_post_data():
+    """Valid request body for creating a post."""
     return {
         "title": "Sample Post",
         "slug": "sample-post",
@@ -290,6 +291,7 @@ def sample_post_data():
 
 @pytest.fixture
 def sample_category_data():
+    """Valid request body for creating a category."""
     return {
         "name": "Sample Category",
         "slug": "sample-category",
@@ -299,6 +301,7 @@ def sample_category_data():
 
 @pytest.fixture
 def sample_project_data():
+    """Valid request body for creating a project."""
     return {
         "title": "Sample Project",
         "description": "A sample project description",
@@ -312,6 +315,7 @@ def sample_project_data():
 
 @pytest.fixture
 def sample_experience_data():
+    """Valid request body for creating an experience entry."""
     return {
         "title": "Sample Position",
         "company": "Sample Company",
@@ -327,6 +331,7 @@ def sample_experience_data():
 
 @pytest.fixture
 def sample_skill_data():
+    """Valid request body for creating a skill."""
     return {
         "name": "Sample Skill",
         "category": "backend",
@@ -338,6 +343,7 @@ def sample_skill_data():
 
 @pytest.fixture
 def sample_education_data():
+    """Valid request body for creating an education entry."""
     return {
         "degree": "Sample Degree",
         "school": "Sample University",
@@ -352,6 +358,7 @@ def sample_education_data():
 
 @pytest.fixture
 def sample_certification_data():
+    """Valid request body for creating a certification."""
     return {
         "name": "Sample Certification",
         "issuer": "Sample Issuer",

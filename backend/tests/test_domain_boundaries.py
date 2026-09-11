@@ -1,9 +1,4 @@
-"""The rules the domain packages exist to enforce.
-
-These are structural tests, not behavioural ones. They read the source with
-``ast`` rather than importing it, so a violation is reported as the file and
-the import that broke the rule instead of as an import cycle.
-"""
+"""The rules the domain packages exist to enforce."""
 
 import ast
 from pathlib import Path
@@ -25,6 +20,7 @@ COMPOSITION_ROOT = {
 
 
 def _domain_files(domain):
+    """Every Python file under one domain package."""
     return sorted((DOMAINS_DIR / domain).rglob("*.py"))
 
 
@@ -50,6 +46,7 @@ def _imported_modules(path):
 
 
 def test_domains_are_the_four_the_plan_names():
+    """The domain packages are exactly content, identity, public and resume."""
     assert DOMAINS == ["content", "identity", "public", "resume"]
 
 
@@ -68,13 +65,7 @@ def test_no_cross_domain_imports(domain):
 
 @pytest.mark.parametrize("domain", DOMAINS)
 def test_domains_do_not_import_the_composition_root(domain):
-    """A domain never reaches back up into the thing that assembles it.
-
-    `app.composition` is the live root. The other three named here are the
-    monolith's deleted modules, kept in the list so an import of one is caught
-    as a boundary violation rather than as a bare `ModuleNotFoundError` if
-    somebody restores them.
-    """
+    """A domain never reaches back up into the thing that assembles it."""
     forbidden = ("app.composition", "app.main", "app.api", "app.lambda_handler")
     offences = [
         (str(path.relative_to(APP.parent)), module)
@@ -86,6 +77,7 @@ def test_domains_do_not_import_the_composition_root(domain):
 
 
 def test_only_the_composition_root_assembles_more_than_one_domain():
+    """Only the composition root, and the recorded exception, touches two domains."""
     offenders = []
     for path in APP.rglob("*.py"):
         if path in COMPOSITION_ROOT or DOMAINS_DIR in path.parents:

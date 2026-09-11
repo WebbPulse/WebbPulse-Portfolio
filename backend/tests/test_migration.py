@@ -1,3 +1,5 @@
+"""The Postgres to DynamoDB migration script against moto."""
+
 import importlib.util
 import sys
 from datetime import date, datetime, timezone
@@ -10,6 +12,7 @@ from app.db import entities
 
 
 def load_script():
+    """Import the migration script by path, since scripts is not a package."""
     path = (
         Path(__file__).resolve().parents[1]
         / "scripts"
@@ -24,15 +27,18 @@ def load_script():
 
 @pytest.fixture(scope="module")
 def script():
+    """The imported migration script, once per module."""
     return load_script()
 
 
 def ts(year, month=1, day=1):
+    """A UTC timestamp at midday on the given date."""
     return datetime(year, month, day, 12, 0, 0, tzinfo=timezone.utc)
 
 
 @pytest.fixture
 def postgres_rows():
+    """One row per table, shaped as the Postgres export produced them."""
     return {
         "users": [
             {
@@ -191,6 +197,7 @@ def postgres_rows():
 
 @pytest.mark.unit
 def test_transform_row(script, postgres_rows):
+    """Transforming a row fills null flags and lists and drops empty timestamps."""
     row = script.transform_row("users", postgres_rows["users"][0])
     assert row["is_active"] is True
     assert "updated_at" not in row
@@ -201,6 +208,7 @@ def test_transform_row(script, postgres_rows):
 
 @pytest.mark.integration
 def test_migrate_then_verify(script, postgres_rows):
+    """A migration copies every table, keeps ids and counters, and verifies clean."""
     summary = script.migrate(postgres_rows)
     assert summary["posts"] == {"rows": 2, "max_id": 11, "existing": 0}
     assert script.verify(postgres_rows) == []
@@ -219,6 +227,7 @@ def test_migrate_then_verify(script, postgres_rows):
 
 @pytest.mark.integration
 def test_refuses_non_empty_target(script, postgres_rows):
+    """A non-empty target is refused, naming the replace flag, and writes nothing."""
     seeded = entities.users.create(
         {
             "username": "seeded-admin",
@@ -237,6 +246,7 @@ def test_refuses_non_empty_target(script, postgres_rows):
 
 @pytest.mark.integration
 def test_replace_purges_stale_pointers(script, postgres_rows):
+    """Replacing clears existing rows and their unique pointers before writing."""
     entities.users.create(
         {
             "username": "seeded-admin",
@@ -262,6 +272,7 @@ def test_replace_purges_stale_pointers(script, postgres_rows):
 
 @pytest.mark.integration
 def test_replace_twice_is_idempotent(script, postgres_rows):
+    """Migrating and then replacing leaves the same rows."""
     script.migrate(postgres_rows)
     script.migrate(postgres_rows, replace=True)
     assert script.verify(postgres_rows) == []
@@ -270,6 +281,7 @@ def test_replace_twice_is_idempotent(script, postgres_rows):
 
 @pytest.mark.integration
 def test_dry_run_writes_nothing(script, postgres_rows):
+    """A dry run reports the counts and writes nothing."""
     entities.skills.create({"name": "Existing", "category": "c", "tier": "t"})
     summary = script.migrate(postgres_rows, dry_run=True)
     assert summary["categories"]["rows"] == 2
@@ -282,6 +294,7 @@ def test_dry_run_writes_nothing(script, postgres_rows):
 
 @pytest.mark.integration
 def test_verify_reports_drift(script, postgres_rows):
+    """Verification names both changed fields and missing rows."""
     script.migrate(postgres_rows)
     entities.categories.update(3, {"name": "Changed"})
     entities.skills.hard_delete(9)
@@ -292,6 +305,7 @@ def test_verify_reports_drift(script, postgres_rows):
 
 @pytest.mark.integration
 def test_api_serves_migrated_data(script, postgres_rows, client: TestClient):
+    """The API serves migrated rows, drafts stay hidden, a bad password still fails."""
     script.migrate(postgres_rows)
     posts = client.get("/api/v1/posts/").json()
     assert [p["slug"] for p in posts] == ["published"]
