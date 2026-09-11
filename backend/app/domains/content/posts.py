@@ -1,3 +1,8 @@
+"""Blog post and category routes, public reads and admin writes.
+
+A slug is derived from the title or name when the client omits one, and a
+duplicate is refused as a 400 rather than as a transaction error."""
+
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -19,6 +24,7 @@ CATEGORY_SLUG_TAKEN = "Category with this slug already exists"
 
 
 def _with_categories(items):
+    """Attach each item's category object, fetched in one batched read."""
     lookup = categories.get_many(item.get("category_id") for item in items)
     for item in items:
         item["category"] = lookup.get(item.get("category_id"))
@@ -26,19 +32,23 @@ def _with_categories(items):
 
 
 def _with_category(item):
+    """Attach the category object to a single item."""
     return _with_categories([item])[0]
 
 
 def _published(post):
+    """Whether a post exists and carries a published timestamp."""
     return post is not None and post.get("published_at") is not None
 
 
 def _require_category(category_id):
+    """Refuse with a 422 when a referenced category does not exist."""
     if category_id is not None and categories.get(category_id) is None:
         raise HTTPException(status_code=422, detail="Category not found")
 
 
 def _get_post_or_404(post_id):
+    """One post by id, or a 404."""
     post = posts.get(post_id)
     if post is None:
         raise HTTPException(status_code=404, detail="Post not found")
@@ -46,6 +56,7 @@ def _get_post_or_404(post_id):
 
 
 def _get_category_or_404(category_id):
+    """One category by id, or a 404."""
     category = categories.get(category_id)
     if category is None:
         raise HTTPException(status_code=404, detail="Category not found")
@@ -58,6 +69,7 @@ async def get_posts(
     limit: int = Query(10, ge=1, le=100),
     category_slug: Optional[str] = None,
 ):
+    """A page of published posts, optionally filtered to one category slug."""
     category_id = None
     if category_slug:
         category = categories.find_by_unique("slug", category_slug)
@@ -70,17 +82,20 @@ async def get_posts(
 
 @router.get("/admin", response_model=List[PostSchema])
 async def get_all_posts(current_user: dict = Depends(CurrentUser)):
+    """Every post including drafts, newest first. Admin only."""
     require_admin(current_user, "Not authorized to view all posts")
     return _with_categories(ordering.admin_posts(posts.list_all()))
 
 
 @router.get("/categories", response_model=List[CategorySchema])
 async def get_categories():
+    """Every category, alphabetically."""
     return ordering.categories(categories.list_all())
 
 
 @router.get("/{slug}", response_model=PostSchema)
 async def get_post(slug: str):
+    """One published post by slug, with its category expanded."""
     post = posts.find_by_unique("slug", slug)
     if not _published(post):
         raise HTTPException(status_code=404, detail="Post not found")
@@ -93,6 +108,7 @@ async def get_posts_by_category(
     skip: int = Query(0, ge=0),
     limit: int = Query(10, ge=1, le=100),
 ):
+    """A page of published posts in one category, by category slug."""
     category = categories.find_by_unique("slug", category_slug)
     if category is None:
         return []
@@ -102,6 +118,7 @@ async def get_posts_by_category(
 
 @router.post("/admin", response_model=PostSchema)
 async def create_post(post: PostCreate, current_user: dict = Depends(CurrentUser)):
+    """Create a post, deriving the slug from the title when omitted. Admin only."""
     require_admin(current_user, "Not authorized to create posts")
     data = post.model_dump()
     data["slug"] = data.get("slug") or slugify(post.title)
@@ -122,6 +139,7 @@ async def update_post(
     post_update: PostUpdate,
     current_user: dict = Depends(CurrentUser),
 ):
+    """Apply a partial edit to one post. Admin only."""
     require_admin(current_user, "Not authorized to update posts")
     _get_post_or_404(post_id)
     changes = post_update.model_dump(exclude_unset=True)
@@ -136,6 +154,7 @@ async def update_post(
 
 @router.delete("/admin/{post_id}")
 async def delete_post(post_id: int, current_user: dict = Depends(CurrentUser)):
+    """Delete one post outright. Admin only."""
     require_admin(current_user, "Not authorized to delete posts")
     if not posts.hard_delete(post_id):
         raise HTTPException(status_code=404, detail="Post not found")
@@ -144,6 +163,7 @@ async def delete_post(post_id: int, current_user: dict = Depends(CurrentUser)):
 
 @router.post("/admin/{post_id}/publish")
 async def publish_post(post_id: int, current_user: dict = Depends(CurrentUser)):
+    """Stamp a draft as published now, refusing one already published. Admin only."""
     require_admin(current_user, "Not authorized to publish posts")
     post = _get_post_or_404(post_id)
     if _published(post):
@@ -156,6 +176,7 @@ async def publish_post(post_id: int, current_user: dict = Depends(CurrentUser)):
 async def create_category(
     category: CategoryCreate, current_user: dict = Depends(CurrentUser)
 ):
+    """Create a category, deriving the slug from the name when omitted. Admin only."""
     require_admin(current_user, "Not authorized to create categories")
     data = category.model_dump()
     data["slug"] = data.get("slug") or slugify(category.name)
@@ -173,6 +194,7 @@ async def update_category(
     category_update: CategoryUpdate,
     current_user: dict = Depends(CurrentUser),
 ):
+    """Apply a partial edit to one category. Admin only."""
     require_admin(current_user, "Not authorized to update categories")
     _get_category_or_404(category_id)
     try:
@@ -185,6 +207,7 @@ async def update_category(
 
 @router.delete("/categories/{category_id}")
 async def delete_category(category_id: int, current_user: dict = Depends(CurrentUser)):
+    """Delete a category, refusing while any post still references it. Admin only."""
     require_admin(current_user, "Not authorized to delete categories")
     _get_category_or_404(category_id)
     if posts.has_posts_in_category(category_id):

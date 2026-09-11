@@ -1,9 +1,6 @@
-"""The resume domain's router: projects, experience, skills, education, certifications.
+"""The resume domain's router: projects, experience, skills and credentials.
 
-The prefixes and tags here are the ones the composition root used to apply
-directly, so mounting this router under ``/api/v1`` produces the same paths,
-tags and operation ids as before.
-"""
+Applies the prefix and tag for each collection under a single mount point."""
 
 from fastapi import APIRouter
 

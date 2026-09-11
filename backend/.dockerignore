@@ -1,24 +1,8 @@
-# What never reaches the build context.
-#
-# Two reasons, and the second is the one that bites. The obvious one is size:
-# a venv or an htmlcov directory in the context is megabytes uploaded to the
-# daemon on every build for nothing. The other is cache invalidation: the
-# Dockerfile's `COPY app/` is the layer that changes on every commit, and
-# anything swept into the context that changes more often than the source does
-# would invalidate layers that had no reason to rebuild.
-#
-# Nothing here is a substitute for the Dockerfile copying only what it needs.
-# The build copies `requirements.txt` and `app/` and nothing else, so tests and
-# dev dependencies stay out of the image whatever this file says. This is the
-# belt to that file's braces.
-
-# Version control and tooling
 .git
 .gitignore
 .github
 **/.DS_Store
 
-# Python build and cache artifacts
 __pycache__/
 **/__pycache__/
 *.py[cod]
@@ -27,15 +11,12 @@ __pycache__/
 build/
 dist/
 
-# Virtual environments. Named broadly because the README has used both
-# `venv/` and `.venv/` at different times.
 venv/
 .venv/
 env/
 .env
 .env.*
 
-# Test and coverage output
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
@@ -45,11 +26,8 @@ coverage.xml
 htmlcov/
 tests/
 
-# Development-only dependency pins. Never installed by the Dockerfile; excluded
-# so a stray `COPY . .` in a future edit cannot pick them up either.
 requirements-dev.txt
 
-# Local development scaffolding, none of which belongs in a Lambda image.
 compose.yaml
 docker-compose.yml
 Dockerfile
@@ -58,7 +36,6 @@ scripts/
 README.md
 pytest.ini
 
-# Editor state
 .idea/
 .vscode/
 *.swp

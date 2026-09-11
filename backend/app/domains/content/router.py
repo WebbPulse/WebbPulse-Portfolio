@@ -1,11 +1,7 @@
-"""The content domain's router: posts, categories and the site-content singleton.
+"""The content domain's router: posts, categories and the site content singleton.
 
-``router`` is the whole domain in one object, prefixes and tags included, which
-is what a per-domain application mounts under ``/api/v1``. ``posts_router`` and
-``site_content_router`` are exported alongside it so the existing composition
-root can keep mounting the two halves in their historical order and leave the
-OpenAPI document byte for byte unchanged.
-"""
+The two halves are exported alongside the combined router so a composition root
+can mount them separately."""
 
 from fastapi import APIRouter
 

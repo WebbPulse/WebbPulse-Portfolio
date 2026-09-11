@@ -1,3 +1,5 @@
+"""Request and response models for education entries."""
+
 from datetime import date, datetime
 from typing import Optional
 
@@ -5,6 +7,8 @@ from pydantic import BaseModel, ConfigDict
 
 
 class EducationBase(BaseModel):
+    """Fields every education entry representation carries."""
+
     degree: str
     school: str
     location: str
@@ -16,10 +20,12 @@ class EducationBase(BaseModel):
 
 
 class EducationCreate(EducationBase):
-    pass
+    """A new education entry, identical to the base fields."""
 
 
 class EducationUpdate(BaseModel):
+    """A partial education entry edit; every field is optional."""
+
     degree: Optional[str] = None
     school: Optional[str] = None
     location: Optional[str] = None
@@ -32,6 +38,8 @@ class EducationUpdate(BaseModel):
 
 
 class Education(EducationBase):
+    """A stored education entry as returned to a client."""
+
     id: int
     is_active: bool
     created_at: datetime
@@ -41,6 +49,8 @@ class Education(EducationBase):
 
 
 class EducationList(BaseModel):
+    """A education entry as it appears in a listing."""
+
     id: int
     degree: str
     school: str

@@ -1,24 +1,3 @@
-# Local development: DynamoDB Local, and the four domain images.
-#
-# The four services are the same image built four times with a different
-# `DOMAIN`, which is the point: what runs here is what Lambda runs, down to the
-# readiness check and the port. `docker compose up` reproduces the split
-# locally, so a route that works here works behind API Gateway.
-#
-# The DynamoDB Local service is unchanged and still comes up on its own with
-# `docker compose up dynamodb-local`, which is what the uvicorn workflow in
-# README.md uses. Building the four images needs a CodeArtifact token, so they
-# are behind the `domains` profile and are not started by a bare
-# `docker compose up`.
-#
-#   export CODEARTIFACT_AUTH_TOKEN="$(aws codeartifact get-authorization-token \
-#     --domain webbpulse --domain-owner 432410731887 \
-#     --region us-west-2 --query authorizationToken --output text)"
-#   docker compose --profile domains up --build
-#
-# The token reaches the build as a BuildKit secret, exactly as in
-# `scripts/build_image.sh`. It is never a build arg, never an `ENV`, and never
-# committed: the `secrets:` block below reads it from the environment.
 
 x-domain-service: &domain-service
   build:
@@ -26,23 +5,15 @@ x-domain-service: &domain-service
     dockerfile: Dockerfile
     secrets:
       - codeartifact_token
-  # linux/arm64 in production. Left unset here so the image builds for the
-  # developer's own architecture; an arm64 image on an amd64 laptop runs under
-  # emulation and is slow enough to be misleading.
   environment: &domain-environment
     ENVIRONMENT: development
     DYNAMODB_ENDPOINT_URL: http://dynamodb-local:8000
     DYNAMODB_TABLE_PREFIX: webbpulse-development
     LOG_LEVEL: INFO
-    # Local-only values. The deployed functions read these from the
-    # `webbpulse-<env>/app` secret via APP_SECRETS_ARN, which is deliberately
-    # unset here so nothing tries to reach Secrets Manager.
     SECRET_KEY: dev-secret
     ADMIN_USERNAME: admin
     ADMIN_PASSWORD: admin
     ADMIN_EMAIL: admin@example.com
-    # The tables live in DynamoDB Local, but boto3 still insists on credentials
-    # being present before it will sign a request to anything.
     AWS_ACCESS_KEY_ID: local
     AWS_SECRET_ACCESS_KEY: local
     AWS_DEFAULT_REGION: us-west-2
@@ -63,9 +34,6 @@ services:
       - portfolio_dynamodb:/home/dynamodblocal/data
     restart: unless-stopped
 
-  # One host port each, in the order the domains appear in `wiring.py`. The
-  # container port is always 8080, because that is what AWS_LWA_PORT is set to
-  # in the image and what `run_uvicorn` therefore binds.
   content:
     <<: *domain-service
     container_name: portfolio-content
@@ -108,9 +76,6 @@ services:
     ports:
       - "8012:8080"
 
-  # tcp, not http, and for the reason the Dockerfile gives: `public` is the one
-  # domain whose only GET /health reads DynamoDB. The Dockerfile refuses to
-  # build it with the http check, so this value is not optional.
   public:
     <<: *domain-service
     container_name: portfolio-public
@@ -125,9 +90,6 @@ services:
     ports:
       - "8013:8080"
 
-# Read from the environment, never from a committed file. `environment:` here
-# means compose reads the named variable at build time and hands its value to
-# BuildKit as the secret; the value does not enter the image or its history.
 secrets:
   codeartifact_token:
     environment: CODEARTIFACT_AUTH_TOKEN

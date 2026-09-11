@@ -1,23 +1,4 @@
 #!/usr/bin/env bash
-#
-# Build one domain's container image.
-#
-#   scripts/build_image.sh content
-#   scripts/build_image.sh public sha-1a2b3c4
-#   PLATFORM=linux/amd64 scripts/build_image.sh resume
-#
-# Deliberately thin. It exists so the two things that are easy to get wrong and
-# expensive to get wrong are in one place rather than in every caller:
-#
-#   - the CodeArtifact token reaches pip as a BuildKit secret and never as a
-#     build arg, where it would persist in `docker history`; and
-#   - `public` builds with the TCP readiness check while the other three build
-#     with the HTTP one, for the reason the Dockerfile spells out at length.
-#
-# Everything else is a pass-through. PR 8 wraps this from CI rather than
-# reimplementing the buildx line, so anything genuinely policy-shaped belongs
-# here and anything environment-shaped belongs in the caller.
-
 set -euo pipefail
 
 BACKEND_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -25,8 +6,6 @@ BACKEND_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DOMAIN="${1:-}"
 TAG="${2:-local}"
 
-# Defaults match `terraform/ecr.tf` and the CodeArtifact domain the shared
-# package is published to. Override any of them from the environment.
 PLATFORM="${PLATFORM:-linux/arm64}"
 ENVIRONMENT="${ENVIRONMENT:-staging}"
 IMAGE_REPO="${IMAGE_REPO:-webbpulse-${ENVIRONMENT}/${DOMAIN}}"
@@ -69,10 +48,6 @@ if [[ -z "${CODEARTIFACT_AUTH_TOKEN:-}" ]]; then
     usage
 fi
 
-# The readiness protocol, derived rather than passed. `public` is the one domain
-# whose only GET /health reads DynamoDB, so the adapter must not poll a route
-# for it. The Dockerfile rejects the wrong pairing; this is what makes sure a
-# caller never has to know about it.
 if [[ "${DOMAIN}" == "public" ]]; then
     READINESS_PROTOCOL="tcp"
 else
@@ -81,19 +56,12 @@ fi
 
 IMAGE="${IMAGE_REPO}:${TAG}"
 
-# --load leaves the image in the local daemon, which is what a developer wants
-# and what `docker run` needs. CI sets PUSH=1. Note that buildx will not both
-# load and push in one invocation for a single-platform build, hence the either
-# or rather than a list.
 if [[ "${PUSH:-0}" == "1" ]]; then
     OUTPUT_ARGS=(--push)
 else
     OUTPUT_ARGS=(--load)
 fi
 
-# Single platform on purpose. Lambda rejects an OCI image index, so a domain
-# image must be one architecture; only the base image this builds FROM is a
-# multi-architecture manifest.
 BUILD_ARGS=(
     --platform "${PLATFORM}"
     --build-arg "DOMAIN=${DOMAIN}"
@@ -106,8 +74,6 @@ BUILD_ARGS=(
     --tag "${IMAGE}"
 )
 
-# Only when overridden, so an unset BASE_IMAGE takes the Dockerfile's pinned
-# digest rather than an empty string.
 if [[ -n "${BASE_IMAGE:-}" ]]; then
     BUILD_ARGS+=(--build-arg "BASE_IMAGE=${BASE_IMAGE}")
 fi

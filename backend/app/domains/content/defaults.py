@@ -1,3 +1,5 @@
+"""The site content singleton's seed values, written once on first boot."""
+
 SITE_CONTENT_DEFAULTS = {
     "hero_title": "Hi, I'm Tyler Webb",
     "hero_subtitle": "Software Engineer",
