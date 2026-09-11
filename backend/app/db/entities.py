@@ -1,3 +1,5 @@
+"""The repository singleton for every entity this backend stores."""
+
 from .repository import PostRepository, Repository
 
 SITE_CONTENT_ID = 1

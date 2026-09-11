@@ -1,3 +1,8 @@
+"""The generic DynamoDB repository every entity is stored through.
+
+Ids come from a counter item in the `meta` table and uniqueness from pointer
+items beside it, both written in the same transaction as the row itself."""
+
 from boto3.dynamodb.conditions import Attr, Key
 from boto3.dynamodb.types import TypeSerializer
 from botocore.exceptions import ClientError
@@ -18,18 +23,28 @@ _serializer = TypeSerializer()
 
 
 def marshal(data):
+    """Encode a plain dict into the low level client's attribute value form."""
     return {k: _serializer.serialize(v) for k, v in data.items()}
 
 
 class UniqueViolation(Exception):
+    """A unique field already holds this value on another row."""
+
     def __init__(self, field, value):
+        """Record which field and value collided."""
         super().__init__(f"{field} '{value}' already exists")
         self.field = field
         self.value = value
 
 
 class Repository:
+    """CRUD over one entity's table, with ids, uniqueness and soft delete.
+
+    Scans rather than queries, because the tables carry no sort key and every
+    collection here is small enough to read whole."""
+
     def __init__(self, entity, unique_fields=(), soft_delete=False, defaults=None):
+        """Configure the entity name, unique fields, soft delete and defaults."""
         self.entity = entity
         self.unique_fields = tuple(unique_fields)
         self.soft_delete_enabled = soft_delete
@@ -37,27 +52,34 @@ class Repository:
 
     @property
     def table(self):
+        """The boto3 Table for this entity."""
         return client.table(self.entity)
 
     @property
     def meta(self):
+        """The shared `meta` table holding counters and uniqueness pointers."""
         return client.table(META)
 
     @property
     def table_name(self):
+        """This entity's table name under the configured prefix."""
         return table_name(settings.DYNAMODB_TABLE_PREFIX, self.entity)
 
     @property
     def meta_table_name(self):
+        """The `meta` table's name under the configured prefix."""
         return table_name(settings.DYNAMODB_TABLE_PREFIX, META)
 
     def derive(self, item):
+        """Attributes computed from the item itself; none by default."""
         return {}
 
     def counter_key(self):
+        """The `meta` partition key holding this entity's id counter."""
         return f"{COUNTER_PREFIX}{self.entity}"
 
     def next_id(self):
+        """Atomically increment and return the next id for this entity."""
         response = self.meta.update_item(
             Key={"pk": self.counter_key()},
             UpdateExpression="ADD seq :one",
@@ -67,17 +89,21 @@ class Repository:
         return int(response["Attributes"]["seq"])
 
     def set_counter(self, value):
+        """Force the id counter to `value`, used after an import."""
         self.meta.put_item(Item={"pk": self.counter_key(), "seq": int(value)})
 
     def current_counter(self):
+        """The id counter's current value, or 0 when it has never been set."""
         response = self.meta.get_item(Key={"pk": self.counter_key()})
         item = response.get("Item")
         return int(item["seq"]) if item else 0
 
     def unique_key(self, field, value):
+        """The `meta` partition key reserving one value of one unique field."""
         return f"{UNIQUE_PREFIX}{self.entity}#{field}#{value}"
 
     def _unique_put(self, field, value, ref_id):
+        """A transaction action claiming a unique value, failing if already held."""
         return {
             "Put": {
                 "TableName": self.meta_table_name,
@@ -89,6 +115,7 @@ class Repository:
         }
 
     def _unique_delete(self, field, value):
+        """A transaction action releasing a unique value."""
         return {
             "Delete": {
                 "TableName": self.meta_table_name,
@@ -97,6 +124,7 @@ class Repository:
         }
 
     def _transact(self, actions, unique_claims):
+        """Run a write transaction, translating a cancellation into a violation."""
         try:
             client.dynamodb_client().transact_write_items(TransactItems=actions)
         except ClientError as error:
@@ -106,6 +134,7 @@ class Repository:
             raise
 
     def _raise_unique_violation(self, error, actions, unique_claims):
+        """Raise `UniqueViolation` for whichever claim the transaction refused."""
         reasons = error.response.get("CancellationReasons") or []
         for index, reason in enumerate(reasons):
             if (
@@ -119,6 +148,10 @@ class Repository:
                 raise UniqueViolation(field, value)
 
     def _unique_claims(self, actions, changes, item_id, previous=None):
+        """Append claim and release actions for every changed unique field.
+
+        Returns the action index of each claim so a cancellation can be
+        attributed to the field that caused it."""
         claims = {}
         for field in self.unique_fields:
             if field not in changes:
@@ -135,6 +168,7 @@ class Repository:
         return claims
 
     def _apply_defaults(self, item):
+        """Fill in configured defaults and `is_active` on a soft deleting entity."""
         for key, value in self.defaults.items():
             if item.get(key) is None:
                 item[key] = value() if callable(value) else value
@@ -143,6 +177,7 @@ class Repository:
         return item
 
     def create(self, data, item_id=None):
+        """Insert a new row with a fresh id, claiming its unique values."""
         item = self._apply_defaults(to_item(data))
         item["id"] = int(item_id) if item_id is not None else self.next_id()
         item.setdefault("created_at", encode_datetime(utcnow()))
@@ -161,6 +196,7 @@ class Repository:
         return from_item(item)
 
     def import_item(self, data):
+        """Write a row and its pointers without a transaction, for migrations."""
         item = self._apply_defaults(to_item(data))
         item.update(to_item(self.derive(item)))
         self.table.put_item(Item=item)
@@ -173,6 +209,7 @@ class Repository:
         return from_item(item)
 
     def purge(self):
+        """Delete every row, its uniqueness pointers and the id counter."""
         removed = 0
         with self.table.batch_writer() as batch:
             for item in self.list_all(include_inactive=True):
@@ -196,6 +233,7 @@ class Repository:
         return removed
 
     def _visible(self, item, include_inactive):
+        """The item, or `None` when soft deleted and inactive rows are excluded."""
         if item is None:
             return None
         if (
@@ -207,10 +245,12 @@ class Repository:
         return item
 
     def get(self, item_id, include_inactive=False):
+        """One row by id, or `None` when it is absent or soft deleted."""
         response = self.table.get_item(Key={"id": int(item_id)})
         return self._visible(from_item(response.get("Item")), include_inactive)
 
     def get_many(self, ids, include_inactive=False):
+        """Several rows by id as a dict, batching and retrying unprocessed keys."""
         wanted = sorted({int(i) for i in ids if i is not None})
         found = {}
         for start in range(0, len(wanted), 100):
@@ -231,6 +271,7 @@ class Repository:
         return found
 
     def list_all(self, include_inactive=False):
+        """Every row, paging through the scan."""
         items = []
         kwargs = {}
         while True:
@@ -245,9 +286,11 @@ class Repository:
             kwargs["ExclusiveStartKey"] = last_key
 
     def count(self, include_inactive=False):
+        """How many rows are visible."""
         return len(self.list_all(include_inactive))
 
     def find_by_unique(self, field, value):
+        """The row holding `value` for a unique field, through its pointer."""
         if value is None:
             return None
         response = self.meta.get_item(Key={"pk": self.unique_key(field, value)})
@@ -257,6 +300,10 @@ class Repository:
         return self.get(int(pointer["ref_id"]), include_inactive=True)
 
     def update(self, item_id, changes):
+        """Apply `changes` to one row, returning it or `None` when absent.
+
+        Unchanged fields are dropped, `None` becomes a REMOVE, and a changed
+        unique value is reclaimed in the same transaction as the update."""
         current = self.get(item_id, include_inactive=True)
         if current is None:
             return None
@@ -315,9 +362,11 @@ class Repository:
         return self.get(item_id, include_inactive=True)
 
     def soft_delete(self, item_id):
+        """Mark a row inactive, returning whether it existed."""
         return self.update(item_id, {"is_active": False}) is not None
 
     def hard_delete(self, item_id):
+        """Delete a row and release its unique values, returning whether it existed."""
         current = self.get(item_id, include_inactive=True)
         if current is None:
             return False
@@ -341,10 +390,14 @@ class Repository:
 
 
 class PostRepository(Repository):
+    """Posts, with the published flag and the two secondary indexes."""
+
     def derive(self, item):
+        """The GSI partition key marking a post as published."""
         return {"published_flag": "1" if item.get("published_at") else None}
 
     def list_published(self, category_id=None):
+        """Published posts newest first, optionally filtered to one category."""
         items = []
         kwargs = {
             "IndexName": POSTS_PUBLISHED_INDEX,
@@ -363,6 +416,7 @@ class PostRepository(Repository):
         return items
 
     def has_posts_in_category(self, category_id):
+        """Whether any post references this category, used to refuse a delete."""
         response = self.table.query(
             IndexName=POSTS_CATEGORY_INDEX,
             KeyConditionExpression=Key("category_id").eq(int(category_id)),

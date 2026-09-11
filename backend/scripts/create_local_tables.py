@@ -1,3 +1,5 @@
+"""Create every DynamoDB table locally, with its TTL attribute where it has one."""
+
 import argparse
 import os
 import sys
@@ -12,6 +14,7 @@ from app.db.tables import ALL_TABLES, table_definition  # noqa: E402
 
 
 def parse_args():
+    """Parse the prefix, endpoint and region for the local DynamoDB."""
     parser = argparse.ArgumentParser(description="Create DynamoDB tables locally")
     parser.add_argument(
         "--prefix",
@@ -28,15 +31,14 @@ def parse_args():
 
 
 def create_tables(prefix, endpoint_url, region):
+    """Create any missing table and enable its TTL attribute.
+
+    Existing tables are left alone, so the script is safe to rerun.
+    """
     os.environ.setdefault("AWS_ACCESS_KEY_ID", "local")
     os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "local")
     client = boto3.client("dynamodb", endpoint_url=endpoint_url, region_name=region)
     created = []
-    # `ALL_TABLES` pairs each table with the TTL attribute it enables, or None.
-    # The names are not all the same on purpose: `meta` has always used `ttl`,
-    # while `rate-limits` and the two identity tables use the `expires_at` that
-    # `webbpulse.ratelimit`, `webbpulse.identity` and the Terraform declarations
-    # all name. `credentials` has no TTL at all and must not grow one.
     for entity, ttl_attribute in ALL_TABLES:
         definition = table_definition(prefix, entity)
         table = definition["TableName"]

@@ -1,11 +1,7 @@
 """Repositories the identity domain reads and writes.
 
-The repository instances themselves live in ``app.db.entities``, not in this
-package. Two things force that: ``app.core.security`` resolves the bearer token
-against the user table on every authenticated request, and the id allocator in
-``app.db.repository`` needs every entity registered in one place. Keeping the
-instances shared is what lets a domain module read a table it does not own
-without importing another domain's package.
+The instances live in `app.db.entities` so every entity shares one id allocator
+and one domain can read a table it does not own.
 """
 
 from ...db.entities import users

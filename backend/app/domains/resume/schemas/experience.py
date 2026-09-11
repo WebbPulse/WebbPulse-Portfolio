@@ -1,3 +1,5 @@
+"""Request and response models for work experience."""
+
 from datetime import date, datetime
 from typing import List, Optional
 
@@ -5,6 +7,8 @@ from pydantic import BaseModel, ConfigDict
 
 
 class ExperienceBase(BaseModel):
+    """Fields every experience entry representation carries."""
+
     title: str
     company: str
     location: str
@@ -17,10 +21,12 @@ class ExperienceBase(BaseModel):
 
 
 class ExperienceCreate(ExperienceBase):
-    pass
+    """A new experience entry, identical to the base fields."""
 
 
 class ExperienceUpdate(BaseModel):
+    """A partial experience entry edit; every field is optional."""
+
     title: Optional[str] = None
     company: Optional[str] = None
     location: Optional[str] = None
@@ -34,6 +40,8 @@ class ExperienceUpdate(BaseModel):
 
 
 class Experience(ExperienceBase):
+    """A stored experience entry as returned to a client."""
+
     id: int
     is_active: bool
     created_at: datetime
@@ -43,6 +51,8 @@ class Experience(ExperienceBase):
 
 
 class ExperienceList(BaseModel):
+    """A experience entry as it appears in a listing."""
+
     id: int
     title: str
     company: str

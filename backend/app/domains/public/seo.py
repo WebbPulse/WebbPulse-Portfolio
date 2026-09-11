@@ -1,3 +1,5 @@
+"""The sitemap and robots documents, rendered from the published posts."""
+
 from xml.sax.saxutils import escape
 
 from fastapi import APIRouter
@@ -11,12 +13,14 @@ router = APIRouter()
 
 
 def _lastmod(post):
+    """A post's last modified date as an ISO date, or `None` when unknown."""
     value = parse_datetime(post.get("updated_at") or post.get("published_at"))
     return value.date().isoformat() if value else None
 
 
 @router.get("/sitemap.xml", include_in_schema=False)
 async def sitemap() -> Response:
+    """An XML sitemap listing the home page, the blog index and every published post."""
     base = settings.SITE_URL.rstrip("/")
     urls = [
         {"loc": f"{base}/", "changefreq": "monthly", "priority": "1.0"},
@@ -48,6 +52,7 @@ async def sitemap() -> Response:
 
 @router.get("/robots.txt", include_in_schema=False)
 async def robots() -> Response:
+    """A robots.txt allowing everything but `/admin` and naming the sitemap."""
     base = settings.SITE_URL.rstrip("/")
     body = f"User-agent: *\nAllow: /\nDisallow: /admin\nSitemap: {base}/sitemap.xml\n"
     return Response(content=body, media_type="text/plain")

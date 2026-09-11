@@ -1,3 +1,5 @@
+"""Request and response models for skills."""
+
 from datetime import datetime
 from typing import Literal, Optional
 
@@ -8,6 +10,8 @@ SkillTier = Literal["core", "working", "familiar"]
 
 
 class SkillBase(BaseModel):
+    """Fields every skill representation carries."""
+
     name: str
     category: SkillCategory
     tier: SkillTier = "working"
@@ -16,10 +20,12 @@ class SkillBase(BaseModel):
 
 
 class SkillCreate(SkillBase):
-    pass
+    """A new skill, identical to the base fields."""
 
 
 class SkillUpdate(BaseModel):
+    """A partial skill edit; every field is optional."""
+
     name: Optional[str] = None
     category: Optional[SkillCategory] = None
     tier: Optional[SkillTier] = None
@@ -29,6 +35,8 @@ class SkillUpdate(BaseModel):
 
 
 class Skill(SkillBase):
+    """A stored skill as returned to a client."""
+
     id: int
     is_active: bool
     created_at: datetime
@@ -38,6 +46,8 @@ class Skill(SkillBase):
 
 
 class SkillList(BaseModel):
+    """A skill as it appears in a listing."""
+
     id: int
     name: str
     category: SkillCategory

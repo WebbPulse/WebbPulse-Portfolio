@@ -1,3 +1,5 @@
+"""Request and response models for the resume domain."""
+
 from .certification import (
     Certification,
     CertificationCreate,
