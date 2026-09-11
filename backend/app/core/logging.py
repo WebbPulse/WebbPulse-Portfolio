@@ -12,6 +12,6 @@ from webbpulse.logging import configure_logging, get_logger
 
 __all__ = ["configure_logging", "get_logger", "logger"]
 
-#: The shared application logger. A plain `logging.Logger`, so `extra={...}` is
-#: how a call site adds fields.
 logger: logging.Logger = get_logger("app")
+"""The shared application logger. A plain `logging.Logger`, so `extra={...}` is how a
+call site adds fields."""

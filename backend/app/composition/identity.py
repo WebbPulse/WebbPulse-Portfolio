@@ -105,12 +105,12 @@ def build_router(settings: Settings) -> APIRouter:
     )
 
 
-#: Provider name to the upper case key carrying its client secret in the
-#: `webbpulse-<env>/app` secret. Lookups are exact, so the case is load-bearing.
 OAUTH_SECRET_KEYS = {
     "google": "OAUTH_GOOGLE_CLIENT_SECRET",
     "github": "OAUTH_GITHUB_CLIENT_SECRET",
 }
+"""Provider name to the upper case key carrying its client secret in the
+`webbpulse-<env>/app` secret. Lookups are exact, so the case is load-bearing."""
 
 
 def build_oauth_client_secrets(settings: Settings) -> dict[str, str]:

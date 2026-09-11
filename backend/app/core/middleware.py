@@ -36,9 +36,9 @@ class TrailingSlashMiddleware:
         await self.app(scope, receive, send)
 
 
-#: One-slot cache for `_admin_credential_store`. A dict rather than a global so
-#: "not looked up yet" is distinguishable from "looked up, and there is none".
 _ADMIN_CREDENTIAL_STORE: dict = {}
+"""One-slot cache for `_admin_credential_store`. A dict rather than a global so "not
+looked up yet" is distinguishable from "looked up, and there is none"."""
 
 
 def _admin_credential_store():
@@ -89,12 +89,12 @@ def _seed_site_content() -> None:
     ensure_site_content_seeded()
 
 
-#: Seeders by the name a `Domain` names on its descriptor. Each imports its own
-#: domain inside the call, so naming a seed here imports no domain package.
 SEEDERS = {
     "admin": _seed_admin,
     "site_content": _seed_site_content,
 }
+"""Seeders by the name a `Domain` names on its descriptor. Each imports its own
+domain inside the call, so naming a seed here imports no domain package."""
 
 
 class SeedMiddleware:
@@ -155,13 +155,13 @@ class RequestLoggingMiddleware:
             )
 
 
-#: Response header naming the application that served the request, so which
-#: function answered is readable from the response rather than from CloudWatch.
 DOMAIN_HEADER = "x-webbpulse-domain"
+"""Response header naming the application that served the request, so which function
+answered is readable from the response rather than from CloudWatch."""
 
-#: What the whole-surface root reports, since no single domain name is true of
-#: it. Distinguishes a local whole-surface response from a domain function's.
 MONOLITH_DOMAIN = "monolith"
+"""What the whole-surface root reports, since no single domain name is true of it.
+Distinguishes a local whole-surface response from a domain function's."""
 
 
 class DomainHeaderMiddleware:

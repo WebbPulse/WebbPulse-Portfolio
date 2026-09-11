@@ -16,9 +16,9 @@ from .repository import users
 
 _seeded = False
 
-#: The legacy password column, named rather than spelled inline so the places
-#: that must not touch it are greppable.
 LEGACY_HASH_FIELD = "hashed_password"
+"""The legacy password column, named rather than spelled inline so the places that
+must not touch it are greppable."""
 
 
 def _ensure_credential(credential_store: Any, user_id: Any) -> None:
