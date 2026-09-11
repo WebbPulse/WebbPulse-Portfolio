@@ -4,13 +4,8 @@ import { Button } from '../common';
 /**
  * The second leg of an identity login, when the account has a TOTP factor.
  *
- * Deliberately small. The first leg already answered with a ticket, so all
- * this collects is the six digit code and hands it back; the ticket itself is
- * held by the panel and never reaches this component, which keeps a single
- * use credential out of a form's state.
- *
- * Reached only in identity mode. The bearer login route has no second leg, so
- * nothing renders this there.
+ * Collects the six digit code only; the ticket stays with the panel, which keeps
+ * a single use credential out of a form's state. Identity mode only.
  */
 interface TotpFormProps {
   onSubmit: (code: string) => Promise<void>;
@@ -20,6 +15,7 @@ interface TotpFormProps {
   className?: string;
 }
 
+/** Collects the six digit code for the second leg of a login. */
 export const TotpForm: React.FC<TotpFormProps> = ({
   onSubmit,
   onCancel,
@@ -67,24 +63,12 @@ export const TotpForm: React.FC<TotpFormProps> = ({
                 id="totp-code"
                 value={code}
                 onChange={e => setCode(e.target.value)}
-                // A one time code, so the browser can offer it from the
-                // platform's own autofill rather than the user retyping it.
                 autoComplete="one-time-code"
-                // Not `numeric`, because a recovery code goes in this same
-                // field and is base32 with hyphens. A numeric keypad on a
-                // phone would leave the user unable to type one.
                 inputMode="text"
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
                 required
                 disabled={loading}
               />
-              {/*
-                The server's `verify_challenge` shape tests the input: six
-                digits is tried as a TOTP code and anything else as a recovery
-                code, on this same route. So one field takes both, and saying
-                so is the difference between a locked out user and one who
-                reaches for the list they saved.
-              */}
               <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
                 If you cannot reach your authenticator app, enter one of your
                 recovery codes here instead. Each recovery code works once.

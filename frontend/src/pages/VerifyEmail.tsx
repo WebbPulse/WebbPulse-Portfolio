@@ -7,15 +7,8 @@ import { apiService } from '../services/api';
 /**
  * The page a verification link from the backend lands on.
  *
- * The mailed URL is `<frontend base>/verify-email?token=...`, and
- * `VERIFY_EMAIL_PATH` from `@webbpulse/auth` is the same literal both sides
- * agree on, so it is imported rather than written out again here.
- *
- * Confirming is a POST rather than a GET on purpose: a mail scanner following
- * the link to check it for malware would spend a single use token before the
- * user ever clicked. That is the backend's rule, and this page honours it by
- * calling `confirmEmailVerification` on mount rather than by being a link
- * target that verifies on load of the API route itself.
+ * Confirms with a POST on mount, so a mail scanner following the link cannot
+ * spend the single use token.
  */
 
 /** What the page is currently showing. */
@@ -23,17 +16,13 @@ type VerifyState =
   | { kind: 'working' }
   | { kind: 'done' }
   | { kind: 'error'; title: string; detail: string }
-  // Bearer mode has no identity routes to call, so the page says so rather
-  // than rendering a spinner that never resolves.
   | { kind: 'unavailable' };
 
 /**
  * The sentence for each refusal the confirm route can answer with.
  *
- * One case for invalid, expired, already used and wrong purpose, because that
- * is how the server answers: the difference between them is information about
- * somebody else's token, so it is not disclosed and this page does not invent
- * it.
+ * One case for invalid, expired, already used and wrong purpose, which is as
+ * much as the server discloses.
  */
 function describeRefusal(reason: string): { title: string; detail: string } {
   switch (reason) {
@@ -62,6 +51,7 @@ function describeRefusal(reason: string): { title: string; detail: string } {
   }
 }
 
+/** Confirms the token on mount and reports the outcome. */
 export const VerifyEmail: React.FC = () => {
   const [state, setState] = useState<VerifyState>({ kind: 'working' });
 
@@ -82,9 +72,6 @@ export const VerifyEmail: React.FC = () => {
       return;
     }
 
-    // `expectedPath` so a reset token pasted onto this page is not presented
-    // to the verification endpoint, which the server refuses as a wrong
-    // purpose token.
     const token = readLinkToken({ expectedPath: VERIFY_EMAIL_PATH });
     if (token === null) {
       setState({

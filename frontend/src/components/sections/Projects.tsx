@@ -55,7 +55,6 @@ const ProjectCard: React.FC<{ project: Project; index: number }> = ({
       style={{ animationDelay: `${(index % 6) * 70}ms` }}
       className={`group gradient-border relative rounded-2xl bg-surface-900/70 backdrop-blur-xl overflow-hidden flex flex-col transition-all duration-500 hover:-translate-y-1 hover:shadow-glow-soft ${isInView ? 'animate-fade-in-up' : 'opacity-0'}`}
     >
-      {/* Image / placeholder header */}
       <div className="relative aspect-[16/10] overflow-hidden bg-gradient-to-br from-accent-violet-500/20 via-accent-cyan-500/10 to-accent-fuchsia-500/20">
         {project.image ? (
           <img
@@ -140,14 +139,13 @@ const SkeletonCard: React.FC = () => (
   </div>
 );
 
+/** The projects grid, ordered by the configured sort mode. */
 export const Projects: React.FC = () => {
   const { data, loading, error } = useProjects();
   const [filter, setFilter] = useState<string>('all');
   const [showAll, setShowAll] = useState(false);
 
   const projects = data ?? [];
-  // The API already returns projects ordered: featured pinned first, then
-  // the site-wide sort mode applied within each group. Preserve that order.
   const filtered = projects.filter(p => matchesCategory(p, filter));
   const displayed = showAll ? filtered : filtered.slice(0, 6);
 
@@ -233,7 +231,6 @@ export const Projects: React.FC = () => {
           </div>
         )}
 
-        {/* CTA */}
         <div className="mt-20">
           <GradientPanel className="px-8 py-12 text-center">
             <h3 className="font-display text-2xl sm:text-3xl font-bold text-surface-50 mb-3">

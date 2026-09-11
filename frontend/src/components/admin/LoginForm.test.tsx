@@ -4,11 +4,6 @@ import { MemoryRouter } from 'react-router-dom';
 import { LoginForm } from './LoginForm';
 import { apiService } from '../../services/api';
 
-// The subject here is the mode switch: which affordances the login form offers
-// depends on whether there is an identity client behind them, and the reset
-// request must never let the user tell an address with an account apart from
-// one without.
-
 function renderForm(onLogin = vi.fn().mockResolvedValue(undefined)) {
   render(
     <MemoryRouter>
@@ -61,9 +56,6 @@ describe('LoginForm', () => {
   });
 
   it('shows the same neutral sentence whether or not the address has an account', async () => {
-    // Both calls answer the way the server does for an address it knows and
-    // one it does not: identically. The assertion is that the page adds no
-    // distinction of its own.
     const request = vi.fn().mockResolvedValue({ ok: true, detail: undefined });
     vi.spyOn(apiService, 'getIdentityClient').mockReturnValue({
       requestPasswordReset: request,

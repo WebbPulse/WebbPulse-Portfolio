@@ -4,10 +4,6 @@ import { GradientText } from '../common';
 import { useSkills, useInViewReveal } from '../../hooks';
 import type { Skill, SkillCategory, SkillTier } from '../../services/api';
 
-// `icon` is a free-form string. Strings that start with `si:` resolve to a
-// Simple Icons brand logo from react-icons (e.g. `si:react` → SiReact). Anything
-// else (emoji, plain text) renders as-is so soft skills without a brand logo
-// keep their emoji.
 const SkillIcon: React.FC<{ icon?: string | undefined; name: string }> = ({
   icon,
   name,
@@ -105,7 +101,6 @@ const TierGlyph: React.FC<{ tier: SkillTier; className?: string }> = ({
   tier,
   className = '',
 }) => {
-  // Filled / half / outline circle, color-coded
   const base = 'inline-block w-3 h-3 rounded-full border';
   if (tier === 'core') {
     return (
@@ -189,6 +184,7 @@ const TierLegend: React.FC = () => (
   </div>
 );
 
+/** The skills section, grouped by category and tier. */
 export const Skills: React.FC = () => {
   const { data, loading, error } = useSkills();
   const { ref, isInView } = useInViewReveal<HTMLDivElement>({

@@ -1,5 +1,4 @@
-// Formatting utility functions
-
+/** Formats a date as a long US date, for example "January 5, 2026". */
 export const formatDate = (date: Date | string): string => {
   const dateObj = typeof date === 'string' ? new Date(date) : date;
   return dateObj.toLocaleDateString('en-US', {
@@ -9,6 +8,7 @@ export const formatDate = (date: Date | string): string => {
   });
 };
 
+/** Formats how long ago a date was, coarsening from minutes up to years. */
 export const formatRelativeTime = (date: Date | string): string => {
   const dateObj = typeof date === 'string' ? new Date(date) : date;
   const now = new Date();
@@ -42,6 +42,7 @@ export const formatRelativeTime = (date: Date | string): string => {
   return `${diffInYears} year${diffInYears > 1 ? 's' : ''} ago`;
 };
 
+/** Abbreviates a number with a K or M suffix once it reaches a thousand. */
 export const formatNumber = (num: number): string => {
   if (num >= 1000000) {
     return (num / 1000000).toFixed(1) + 'M';
@@ -52,6 +53,7 @@ export const formatNumber = (num: number): string => {
   return num.toString();
 };
 
+/** Truncates text to `maxLength` characters, appending an ellipsis when cut. */
 export const truncateText = (text: string, maxLength: number): string => {
   if (text.length <= maxLength) {
     return text;
@@ -59,10 +61,12 @@ export const truncateText = (text: string, maxLength: number): string => {
   return text.slice(0, maxLength) + '...';
 };
 
+/** Uppercases the first character of a string. */
 export const capitalizeFirst = (str: string): string => {
   return str.charAt(0).toUpperCase() + str.slice(1);
 };
 
+/** Converts text to a lowercase, hyphen-separated URL slug. */
 export const slugify = (text: string): string => {
   return text
     .toLowerCase()

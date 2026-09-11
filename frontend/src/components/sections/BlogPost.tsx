@@ -17,6 +17,7 @@ const NAV: NavigationItem[] = [
   { label: 'Contact', href: '/#contact' },
 ];
 
+/** One blog post, resolved from the slug in the route. */
 export const BlogPost: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
   const [post, setPost] = useState<BlogPostType | null>(null);
@@ -103,7 +104,6 @@ export const BlogPost: React.FC = () => {
 
   return (
     <div className="min-h-screen">
-      {/* Reading progress */}
       <div
         className="fixed top-0 left-0 right-0 h-1 bg-surface-900/80 z-50"
         aria-hidden="true"
@@ -262,9 +262,6 @@ export const BlogPost: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => {
-                        // Rejects when the visitor dismisses the share sheet,
-                        // which is a normal outcome rather than a failure, so
-                        // it is swallowed rather than surfaced.
                         void navigator
                           .share?.({
                             title: post.title,
@@ -280,9 +277,6 @@ export const BlogPost: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => {
-                        // Rejects when the document is not focused or the
-                        // permission is denied; neither is worth interrupting
-                        // the reader over.
                         void navigator.clipboard
                           .writeText(window.location.href)
                           .catch(() => {});

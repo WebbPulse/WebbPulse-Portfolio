@@ -16,6 +16,7 @@ const inputClass =
 const labelClass =
   'block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1';
 
+/** Create and edit form for a certification. */
 export const CertificationForm: React.FC<CertificationFormProps> = ({
   form,
   setForm,

@@ -9,15 +9,6 @@ import {
   resetProviderCache,
 } from './oauthAvailability';
 
-// The subject is the reading of one explicit list, which webbpulse-python
-// 0.16.0 added and which replaced a probe of the start route per provider per
-// page load. Two things have to hold. An answer the backend gave has to be
-// rendered exactly as given, including the order and the display names, because
-// a deployment naming its own providers is the whole point of the route. And
-// anything that is not a readable answer has to come back as "nothing to draw"
-// without ever being mistaken for "the backend says there are none", because
-// the second is cached for the life of the page and the first must not be.
-
 const ORIGIN = 'https://api.example.test';
 const URL = `${ORIGIN}${OAUTH_PROVIDERS_PATH}`;
 
@@ -33,17 +24,12 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 describe('OAUTH_PROVIDERS_PATH', () => {
   it('is the route the identity package mounts', () => {
-    // Spelled out rather than derived, so a path that moved in the package is a
-    // failure here rather than a 404 at the gateway. The backend suite has the
-    // matching assertion against the package's own constant.
     expect(OAUTH_PROVIDERS_PATH).toBe('/api/auth/oauth/providers');
   });
 });
 
 describe('fetchOAuthProviders', () => {
   it('returns the providers the backend listed, in that order', async () => {
-    // The order is the deployment's own statement of which sign-in method it
-    // would rather a user reached for, so it is preserved rather than sorted.
     const fetchImpl = vi
       .fn()
       .mockResolvedValue(jsonResponse({ providers: [GITHUB, GOOGLE] }));
@@ -54,9 +40,6 @@ describe('fetchOAuthProviders', () => {
   });
 
   it('returns an empty list for a deployment with no OAuth configured', async () => {
-    // The ordinary state of this repository today, and a real answer rather
-    // than an inference: the route mounts in every deployment precisely so that
-    // "none" can be said out loud.
     const fetchImpl = vi
       .fn()
       .mockResolvedValue(jsonResponse({ providers: [] }));
@@ -67,9 +50,6 @@ describe('fetchOAuthProviders', () => {
   });
 
   it('returns undefined for a 404, which means a backend older than 0.16.0', async () => {
-    // Distinct from `[]` on purpose. An empty list is a fact about the
-    // deployment and is kept; a missing route teaches nothing about
-    // configuration and must not be cached as though it had.
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({}, 404));
 
     await expect(
@@ -94,8 +74,6 @@ describe('fetchOAuthProviders', () => {
   });
 
   it('returns undefined for a body that is not JSON', async () => {
-    // A proxy or a captive portal answering 200 with an HTML error page. It
-    // must not read as a deployment with OAuth switched off.
     const fetchImpl = vi
       .fn()
       .mockResolvedValue(new Response('<html>nope</html>', { status: 200 }));
@@ -114,8 +92,6 @@ describe('fetchOAuthProviders', () => {
   });
 
   it('drops a malformed entry rather than the whole list', async () => {
-    // One bad record must not hide a provider that is described correctly,
-    // because the consequence is a sign-in method silently missing.
     const fetchImpl = vi.fn().mockResolvedValue(
       jsonResponse({
         providers: [GOOGLE, { id: 'github' }, { display_name: 'X' }, null, 7],
@@ -128,8 +104,6 @@ describe('fetchOAuthProviders', () => {
   });
 
   it('sends no credentials', async () => {
-    // The sign-in page has no session by definition, and sending the refresh
-    // cookie to a route that does not read it is a habit worth not forming.
     const fetchImpl = vi
       .fn()
       .mockResolvedValue(jsonResponse({ providers: [] }));
@@ -164,8 +138,6 @@ describe('oauthProviders', () => {
   });
 
   it('fetches once per page load and caches the list', async () => {
-    // One request for the whole list, where the old gate made one per provider
-    // and spent the start route's own rate limit budget doing it.
     const fetchImpl = vi
       .fn()
       .mockResolvedValue(jsonResponse({ providers: [GOOGLE, GITHUB] }));
@@ -183,8 +155,6 @@ describe('oauthProviders', () => {
   });
 
   it('shares one in-flight request between concurrent callers', async () => {
-    // Two components mounting in the same tick is the ordinary case, not the
-    // edge one: the sign-in form and the connected accounts panel both ask.
     const fetchImpl = vi
       .fn()
       .mockResolvedValue(jsonResponse({ providers: [GOOGLE] }));
@@ -211,8 +181,6 @@ describe('oauthProviders', () => {
   });
 
   it('does not cache a failure, so a flaky answer is retried', async () => {
-    // The distinction this whole file turns on. A dropped request must not hide
-    // a working sign-in method for the life of the page.
     const fetchImpl = vi
       .fn()
       .mockRejectedValueOnce(new TypeError('failed'))
@@ -228,9 +196,6 @@ describe('oauthProviders', () => {
   });
 
   it('renders nothing for a backend that has no discovery route', async () => {
-    // A bundle newer than its backend. Hiding the buttons is right, and it is
-    // reached by there being nothing to render rather than by reading a 404 as
-    // an empty list.
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({}, 404));
 
     await expect(oauthProviders(ORIGIN, fetchImpl as never)).resolves.toEqual(
@@ -256,19 +221,12 @@ describe('oauthProviders', () => {
 });
 
 describe('providerLabel', () => {
-  // Still here for the linked accounts list, which comes from
-  // `GET /api/auth/oauth/links` and carries provider ids and no display names.
-  // A sign-in button never reaches it: the discovery route names its own
-  // providers and those names are rendered as given.
-
   it('names the two baseline providers', () => {
     expect(providerLabel('google')).toBe('Google');
     expect(providerLabel('github')).toBe('GitHub');
   });
 
   it('title cases a provider this build does not know', () => {
-    // The server can configure a third provider and the package explicitly
-    // allows it, so a raw lowercase wire value must not reach the screen.
     expect(providerLabel('gitlab')).toBe('Gitlab');
   });
 });

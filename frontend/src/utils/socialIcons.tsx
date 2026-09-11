@@ -19,12 +19,14 @@ import {
 } from 'react-icons/fa';
 import { SiHashnode, SiSubstack } from 'react-icons/si';
 
+/** Props for {@link SocialIcon}. */
 export interface SocialIconProps {
   platform: string;
   className?: string;
   size?: number;
 }
 
+/** The brand icon for a social platform, by platform key. */
 export const SocialIcon: React.FC<SocialIconProps> = ({
   platform,
   className = 'w-6 h-6',

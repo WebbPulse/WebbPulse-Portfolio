@@ -1,6 +1,7 @@
 import React from 'react';
 import type { ButtonProps } from '../../types';
 
+/** The shared button, in the project's variants and sizes. */
 const Button: React.FC<ButtonProps> = ({
   children,
   variant = 'primary',

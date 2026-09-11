@@ -1,4 +1,4 @@
-// Helper function to get supported platforms
+/** Social platform keys that `SocialIcon` can render an icon for. */
 export const getSupportedPlatforms = (): string[] => {
   return [
     'github',

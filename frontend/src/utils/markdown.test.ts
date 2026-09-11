@@ -62,9 +62,9 @@ Regular text
 
   describe('calculateReadingTime', () => {
     it('should calculate reading time correctly', () => {
-      const markdown = 'This is a test paragraph with some words. '.repeat(17); // ~100 words
+      const markdown = 'This is a test paragraph with some words. '.repeat(17);
       const readingTime = calculateReadingTime(markdown);
-      expect(readingTime).toBe(1); // 100 words / 200 wpm = 0.5, rounded up to 1 minute
+      expect(readingTime).toBe(1);
     });
 
     it('should return minimum 1 minute for short content', () => {

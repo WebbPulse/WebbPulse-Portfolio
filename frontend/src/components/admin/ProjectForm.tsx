@@ -11,6 +11,7 @@ interface ProjectFormProps {
   loading: boolean;
 }
 
+/** Create and edit form for a project. */
 export const ProjectForm: React.FC<ProjectFormProps> = ({
   form,
   setForm,

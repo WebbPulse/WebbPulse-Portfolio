@@ -14,6 +14,7 @@ interface BlogPostFormProps {
   loading: boolean;
 }
 
+/** Create and edit form for a blog post. */
 export const BlogPostForm: React.FC<BlogPostFormProps> = ({
   form,
   setForm,

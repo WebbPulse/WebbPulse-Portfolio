@@ -4,22 +4,8 @@ import { FaFingerprint } from 'react-icons/fa';
 /**
  * The "Sign in with a passkey" affordance under the password form.
  *
- * ## A button rather than a link
- *
- * The opposite of `OAuthButtons`, and for the opposite reason. An OAuth start
- * is a `302` to another origin, which is a navigation and so an anchor. A
- * passkey sign-in is two same-origin fetches with `navigator.credentials.get`
- * between them, which is a script call that must happen inside a user gesture.
- * That is a button.
- *
- * ## What it does not decide
- *
- * Nothing. Whether to render at all is the caller's answer, from
- * `usePasskeySignIn`: the browser has to support WebAuthn and the deployment
- * has to have passwordless sign-in switched on, and neither is something this
- * component can see. It renders nothing when `offered` is false, so a browser
- * without WebAuthn and a backend without the routes both produce the login
- * page exactly as it was.
+ * A button rather than a link, because the ceremony is a script call inside a
+ * user gesture. Renders nothing when `offered` is false; the caller decides.
  */
 
 interface PasskeySignInButtonProps {
@@ -33,6 +19,7 @@ interface PasskeySignInButtonProps {
   className?: string;
 }
 
+/** Renders the passkey sign in button, or nothing when it is not offered. */
 export const PasskeySignInButton: React.FC<PasskeySignInButtonProps> = ({
   offered,
   busy,

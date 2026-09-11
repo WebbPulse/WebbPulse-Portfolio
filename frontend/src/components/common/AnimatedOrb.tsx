@@ -21,6 +21,7 @@ const VARIANT_CLASS = {
   3: 'animate-blob-3',
 } as const;
 
+/** A decorative gradient orb, held still under reduced motion. */
 const AnimatedOrb: React.FC<AnimatedOrbProps> = ({
   gradient = 'from-accent-violet-500 to-accent-cyan-500',
   size = 'w-[28rem] h-[28rem]',

@@ -9,11 +9,10 @@ interface Options {
 }
 
 /**
- * IntersectionObserver-based reveal hook.
+ * IntersectionObserver reveal hook.
  *
- * Returns a ref to attach to the element and a boolean that flips to true
- * once the element scrolls into view. Single-fire by default.
- * If the user prefers reduced motion, isInView is true immediately.
+ * Returns a ref to attach and a flag that flips once the element scrolls into
+ * view. Single-fire by default, and immediately true under reduced motion.
  */
 export function useInViewReveal<T extends HTMLElement = HTMLDivElement>({
   threshold = 0.15,
