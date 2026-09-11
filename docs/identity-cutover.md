@@ -21,7 +21,17 @@ be undone by changing one variable and redeploying.
 ## What this PR adds
 
 `backend/scripts/migrate_credentials_to_identity.py`, which copies each user's
-bcrypt hash from the `users` table into the identity `credentials` table.
+bcrypt hash from the `users` table into the identity `credentials` table, and
+`backend/scripts/clear_legacy_credentials.py`, which removes that column once
+the copy is confirmed.
+
+Alongside them, the admin seeder became identity aware. That pairing is not
+incidental: the seeder used to rewrite `hashed_password` on the first request of
+every cold process whenever the column did not verify against `ADMIN_PASSWORD`,
+so a column cleared by hand came back within seconds, with a freshly salted hash
+that no longer matched the migrated credential. Clearing could not have held
+while the seeder looked like that. It now owns the user row and the identity
+credential and never the legacy column, so a cleared column stays cleared.
 
 **The hash copies verbatim.** The legacy column and the identity credential are
 produced by the same function: `app/core/security.py` `get_password_hash` is a
@@ -30,10 +40,31 @@ registration flow calls that same function. One bcrypt, cost 12, one encoded
 format. So the administrator keeps the password they already have and no
 password reset is needed as part of this cutover.
 
+## Where each environment stands today
+
+**Staging is flipped and migrated.** `AUTH_MODE` was set to `identity` on
+2026-09-11 at 02:25Z and the credential migration has applied, so sign-in there
+already runs through the identity path. What has not run is step 3: the legacy
+column is still populated in staging, and clearing it happens once this PR
+deploys.
+
+**Production is untouched.** It still runs on `bearer` and repeats the whole
+sequence from step 1 only after staging has been confirmed clear.
+
 ## Order of operations, per environment
 
 Staging first, in full, including a real sign-in through the identity path.
 Production repeats the same sequence only after staging is confirmed.
+
+**`--prefix` selects the environment for both scripts, and covers both tables.**
+Each script reads two places: the identity `credentials` table, through a store
+built from the parsed flag, and the legacy `users` table, through a repository
+that reads `settings.DYNAMODB_TABLE_PREFIX` from the environment. The flag used
+to reach only the first, so `--prefix webbpulse-staging` on its own read
+`webbpulse-development-users` and failed with a ResourceNotFoundException naming
+a table nobody had asked for. Both scripts now write the parsed value back into
+`DYNAMODB_TABLE_PREFIX` before anything that builds the settings singleton is
+imported, so one flag means one environment and no second export is needed.
 
 ### 1. M3 adoption is applied
 
@@ -71,7 +102,46 @@ not the legacy hash, which is either a password changed through the identity
 flow or a run pointed at the wrong environment. `--replace` overwrites from the
 users table and is the right answer only once you know which of the two it is.
 
-### 3. Flip `VITE_AUTH_MODE` to `identity`
+### 3. Clear the legacy credential column
+
+Only after the migration has applied and its output has been read. This is the
+step that makes the identity store the only place a password exists, so it is
+deliberately separated from the migration by a human verification.
+
+Dry run first, which is the default:
+
+```
+cd backend
+python scripts/clear_legacy_credentials.py --prefix webbpulse-staging
+```
+
+Read the plan, then apply:
+
+```
+python scripts/clear_legacy_credentials.py --prefix webbpulse-staging --apply
+```
+
+The script removes the attribute only for a user whose identity password
+credential holds exactly the hash the legacy column holds. Anything it cannot
+account for is a refusal rather than a warning: a `mismatch`, where a credential
+exists with a different secret, and a `missing_credential`, where there is none
+at all, both stop the run before a single row is written and exit non-zero.
+Either one means removing the column would take away a way into the account
+without a confirmed replacement. A `mismatch` is usually a password changed
+through `POST /api/auth/password` after the migration ran, in which case the
+identity store is correct and newer than the column, but the script will not
+make that judgement on its own.
+
+No hash is printed, in the summary, a detail line or an error.
+
+**Rollback changes shape after this step.** Up to here, rolling back was a
+variable and a redeploy, because the legacy column was still populated and the
+legacy routes still read it. Once the column is removed, the legacy login can no
+longer authenticate anybody, so rolling back to `bearer` means first
+re-migrating from the identity store back into the `users` table. See "Rolling
+back" below.
+
+### 4. Flip `VITE_AUTH_MODE` to `identity`
 
 Not done in this PR. See "The flip" below for the exact change.
 
@@ -81,13 +151,13 @@ lives in `BearerTokenStore` and the identity path never reads it, so the first
 page load after the flip has no session and shows the login form. Signing in
 once through the identity path is the whole of it.
 
-### 4. Later, in a separate PR: remove the legacy routes
+### 5. Later, in a separate PR: remove the legacy routes
 
 `POST /api/v1/admin/login`, `app/domains/identity/router.py`, the
 `hashed_password` column, `BearerTokenStore` and `authMode.ts` go together, once
 both environments have run on `identity` long enough to be confident. Until that
-PR lands the legacy routes stay mounted and keep working, which is what makes
-step 3 reversible.
+PR lands the legacy routes stay mounted, which is what keeps step 4
+reversible on the frontend side.
 
 ## The flip
 
@@ -505,10 +575,20 @@ Set the variable back and redeploy:
 gh variable set AUTH_MODE --env staging --body bearer --repo WebbPulse/WebbPulse-Portfolio
 ```
 
-That is the whole rollback. The legacy routes are still mounted, the
-`hashed_password` column is still populated, and the migration only ever added
-rows to a table the legacy path does not read, so nothing needs undoing on the
-backend. The cost is symmetric with the flip: one more forced sign-in.
+**That is the whole rollback only before step 3 has run.** Up to that point the
+legacy routes are still mounted, the `hashed_password` column is still
+populated, and the migration only ever added rows to a table the legacy path
+does not read, so nothing needs undoing on the backend. The cost is symmetric
+with the flip: one more forced sign-in.
 
-Once the legacy routes are removed in step 4 this rollback stops working, which
-is why that removal waits for both environments to be settled.
+**After step 3 the column is gone**, and the legacy login verifies every
+password against a dummy hash, so it refuses everybody rather than erroring.
+Setting the variable back therefore produces a sign-in page nobody can get past.
+Rolling back from there means first re-migrating in the other direction, writing
+each user's secret from the identity `credentials` table back onto the `users`
+row, and there is deliberately no script for that: the identity store is the
+system of record from step 3 onward, and the intended way out of a problem after
+it is to fix forward rather than to repopulate a column that is being retired.
+
+Once the legacy routes are removed in step 5 this rollback stops working
+entirely, which is why that removal waits for both environments to be settled.

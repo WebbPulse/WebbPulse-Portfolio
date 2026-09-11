@@ -43,7 +43,14 @@ async def login(user_credentials: UserLogin, request: Request):
         return _too_many_requests(retry_after)
 
     user = users.find_by_unique("username", user_credentials.username)
-    hashed = user["hashed_password"] if user else _DUMMY_HASH
+    # `.get(...) or _DUMMY_HASH` rather than a subscript. Once
+    # `scripts/clear_legacy_credentials.py` has run for an environment the
+    # column is removed from the row outright, and a subscript would turn this
+    # route from "refuses every password" into "500s on every attempt". The
+    # dummy hash keeps the timing the same as a wrong password, which is the
+    # reason it exists at all, so a cleared user and an unknown user are
+    # indistinguishable from the outside.
+    hashed = (user.get("hashed_password") if user else None) or _DUMMY_HASH
     if not user or not verify_password(user_credentials.password, hashed):
         failures = login_limiter.record_failure(ip)
         if failures >= login_limiter.max_failures:
