@@ -40,7 +40,8 @@ the id allocator's table is not shared with a hot, high-churn workload."""
 
 CREDENTIALS = CREDENTIALS_TABLE
 """The identity credential table, named by the package's own constant so a rename
-there is a failing test here."""
+there is a failing test here. Registered in this module because the suite and
+`scripts/create_local_tables.py` both build their tables from it."""
 REFRESH_TOKENS = REFRESH_TOKENS_TABLE
 LOGIN_ATTEMPTS = LOGIN_ATTEMPTS_TABLE
 
