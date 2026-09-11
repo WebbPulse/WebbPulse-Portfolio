@@ -66,8 +66,14 @@ locals {
 }
 
 module "api" {
-  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/http-api"
-  version = "~> 2.0"
+  source = "app.terraform.io/WebbPulse/platform-modules/aws//modules/http-api"
+
+  # 2.9 for identity_jwt, identity_jwt_depends_on and the per route
+  # require_identity_jwt flag, all three of which this file now uses. The
+  # release is additive and every new default preserves current behaviour, so
+  # the bump on its own is a no-op plan: what changes anything is the routes
+  # marked below and var.identity_jwt_mode being something other than "off".
+  version = "~> 2.9"
 
   name = "${local.prefix}-api"
 
@@ -427,13 +433,36 @@ module "api" {
     #
     # Literal, POST, and no trailing slash: a route key path segment may not be
     # empty, and a trailing slash fails at apply with a green plan.
+    #
+    # TWO OF THE SIX NOW CARRY require_identity_jwt, and the split is the one
+    # the paragraph above already describes in prose. `password` and
+    # `logout-all` are the two that need an authenticated caller, and both read
+    # the subject from verified claims and answer NOT_AUTHENTICATED without
+    # one, so marking them states at the gateway what the application already
+    # refuses without. `register`, `login` and `refresh` are how a caller
+    # obtains a token, so requiring one would make them unreachable.
+    #
+    # `logout` is the one that looks like it belongs with `logout-all` and does
+    # not. It takes no access token at all: `webbpulse.identity.router` reads
+    # the refresh cookie, ignores the Authorization header entirely, and always
+    # answers 200 because signing out is idempotent and the caller's intent is
+    # to end up signed out. Requiring an access token on it would break sign
+    # out for exactly the caller whose access token has expired, which is the
+    # common case for somebody signing out, while the refresh cookie that
+    # actually carries the session is still valid. It stays open.
     {
-      "POST /api/auth/register"   = { integration = "identity" }
-      "POST /api/auth/login"      = { integration = "identity" }
-      "POST /api/auth/password"   = { integration = "identity" }
-      "POST /api/auth/refresh"    = { integration = "identity" }
-      "POST /api/auth/logout"     = { integration = "identity" }
-      "POST /api/auth/logout-all" = { integration = "identity" }
+      "POST /api/auth/register" = { integration = "identity" }
+      "POST /api/auth/login"    = { integration = "identity" }
+      "POST /api/auth/password" = {
+        integration          = "identity"
+        require_identity_jwt = true
+      }
+      "POST /api/auth/refresh" = { integration = "identity" }
+      "POST /api/auth/logout"  = { integration = "identity" }
+      "POST /api/auth/logout-all" = {
+        integration          = "identity"
+        require_identity_jwt = true
+      }
     },
 
     # The identity standard's M3 email flows: the four POST routes
@@ -532,13 +561,44 @@ module "api" {
     # future path under it to this function without anybody declaring it.
     #
     # Literal, POST, and no trailing slash on any of the six.
+    #
+    # FIVE OF THE SIX NOW CARRY require_identity_jwt, and the sixth is
+    # `POST /api/auth/login/totp` for the reason spelled out at length above:
+    # its caller holds an MFA ticket whose `aud` is `<issuer>/mfa` rather than
+    # local.identity_audience, so any check configured with the API audience
+    # refuses it and every MFA login becomes unfinishable. That is true of the
+    # native JWT authorizer and equally true of the gate Lambda doing the same
+    # verification, because both are configured from the same pair of values.
+    # The paragraph above said this route must stay outside the identity JWT
+    # authorizer; this is where that sentence becomes a flag not set.
+    #
+    # The other five all call `require_subject` in
+    # `webbpulse.identity.router` and answer 401 NOT_AUTHENTICATED without a
+    # verified subject, so the gateway is now refusing the same requests the
+    # application already refused, one hop earlier. The application check stays
+    # exactly where it is: nothing here replaces it.
     {
-      "POST /api/auth/login/totp"     = { integration = "identity" }
-      "POST /api/auth/totp/enrol"     = { integration = "identity" }
-      "POST /api/auth/totp/activate"  = { integration = "identity" }
-      "POST /api/auth/totp/disable"   = { integration = "identity" }
-      "POST /api/auth/recovery-codes" = { integration = "identity" }
-      "POST /api/auth/step-up"        = { integration = "identity" }
+      "POST /api/auth/login/totp" = { integration = "identity" }
+      "POST /api/auth/totp/enrol" = {
+        integration          = "identity"
+        require_identity_jwt = true
+      }
+      "POST /api/auth/totp/activate" = {
+        integration          = "identity"
+        require_identity_jwt = true
+      }
+      "POST /api/auth/totp/disable" = {
+        integration          = "identity"
+        require_identity_jwt = true
+      }
+      "POST /api/auth/recovery-codes" = {
+        integration          = "identity"
+        require_identity_jwt = true
+      }
+      "POST /api/auth/step-up" = {
+        integration          = "identity"
+        require_identity_jwt = true
+      }
     },
 
     # The identity standard's M0 spike, which is now only its mint route.
@@ -601,6 +661,42 @@ module "api" {
 
   disable_execute_api_endpoint = local.staging_gate_enabled
   authorizer_id                = local.staging_gate_enabled ? one(module.staging_access_gate[*].http_api_authorizer_id) : null
+
+  # The native JWT authorizer, and ONLY in the native mode. Non-null here is
+  # what makes the module create an aws_apigatewayv2_authorizer and move every
+  # route marked require_identity_jwt above onto it; null leaves all seven
+  # routes exactly where they are and publishes their keys in the
+  # identity_jwt_route_keys output instead, which is what
+  # terraform/staging_access_gate.tf reads.
+  #
+  # It is null in staging and it has to be. Every route on this API carries the
+  # gate's REQUEST authorizer, an HTTP API route takes exactly one authorizer,
+  # and a second one has no slot to occupy. var.identity_jwt_mode's own
+  # validation refuses "native" in staging for that reason, so this expression
+  # and that validation say the same thing from two directions.
+  #
+  # The issuer and the audience are local.identity_issuer and
+  # local.identity_audience, the same two locals module.identity is configured
+  # with in terraform/identity.tf and the same two the `iss` and `aud` claims
+  # are stamped from. Byte identity with the signer is the whole requirement
+  # here, so they are read rather than restated: a second spelling of either
+  # string is a token that verifies nowhere.
+  identity_jwt = local.identity_jwt_native_enforced ? {
+    issuer   = local.identity_issuer
+    audience = local.identity_audience
+  } : null
+
+  # What CreateAuthorizer cannot be ordered against by the resource graph alone.
+  # The call synchronously fetches <issuer>/.well-known/openid-configuration
+  # from outside AWS with none of our credentials, so the identity function has
+  # to be deployed and answering before it runs. depends_on orders API calls
+  # rather than their effects, which is why the module takes this as an input
+  # and why the module's own README recommends two runs for a first apply:
+  # routes and function, then the authorizer.
+  #
+  # Empty in every mode but native, because in the other two no authorizer is
+  # created and there is nothing to order.
+  identity_jwt_depends_on = local.identity_jwt_native_enforced ? [module.lambda_domain["identity"]] : []
 
   domain_name     = local.custom_domains_enabled ? local.api_host : null
   certificate_arn = module.api_certificate.certificate_arn

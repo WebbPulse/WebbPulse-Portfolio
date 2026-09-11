@@ -12,8 +12,14 @@
 module "staging_access_gate" {
   count = local.staging_gate_count
 
-  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/staging-access-gate"
-  version = "~> 2.3"
+  source = "app.terraform.io/WebbPulse/platform-modules/aws//modules/staging-access-gate"
+
+  # 2.9 for identity_jwt and identity_jwt_route_keys, which is how a gated
+  # environment enforces the identity access token at all. The release is
+  # additive: the module merges the new environment variables rather than
+  # setting them empty, so the bump alone changes nothing and what changes
+  # anything is the two inputs below being non-empty.
+  version = "~> 2.9"
 
   name             = local.prefix
   cookie_domain    = local.domain
@@ -30,4 +36,39 @@ module "staging_access_gate" {
     domain   = local.domain
     www_host = local.www_host
   })
+
+  # Identity access token enforcement, staging's half of it.
+  #
+  # This is where the gate mode does its work. Every route on this API already
+  # carries this module's REQUEST authorizer and an HTTP API route takes
+  # exactly one authorizer, so the native JWT authorizer that production will
+  # use has no slot here. The gate's own Lambda does both checks instead: the
+  # signed cookie first, exactly as before, and then a valid Bearer access
+  # token on the routes named below. The gate check still runs first and still
+  # has to pass, so this only ever narrows access and can never open anything.
+  #
+  # The issuer and the audience are the same two locals module.identity is
+  # configured with and module.api would be given in native mode, for the same
+  # reason: byte identity with what the signer stamps is the entire
+  # requirement, and a second spelling of either is a token that verifies
+  # nowhere. jwks_url is left to the module, which derives
+  # <issuer>/.well-known/jwks.json, and that is the URL this product actually
+  # serves, because the discovery document builds jwks_uri the same way.
+  identity_jwt = local.identity_jwt_gate_enforced ? {
+    issuer   = local.identity_issuer
+    audience = local.identity_audience
+  } : null
+
+  # THE ROUTE KEYS COME FROM module.api RATHER THAN BEING RESTATED HERE, and
+  # that is the whole of the wiring. The output is the set of routes marked
+  # require_identity_jwt in terraform/apigateway.tf, already sorted, and a
+  # route key is the same string on both sides by construction: it is the map
+  # key in that module's routes and it is requestContext.routeKey in this
+  # authorizer's event. Listing the seven keys again here would be a second
+  # place for the set to drift from the routes it is supposed to describe.
+  #
+  # Empty in every mode but gate, which is what leaves the authorizer checking
+  # only the gate credentials. Both halves have to be set for anything to be
+  # enforced: the module's identity_jwt_enforced output is the AND of them.
+  identity_jwt_route_keys = local.identity_jwt_gate_enforced ? module.api.identity_jwt_route_keys : []
 }
