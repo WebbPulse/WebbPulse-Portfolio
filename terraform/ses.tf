@@ -257,7 +257,7 @@ resource "aws_route53_record" "ses_dmarc" {
   name    = "_dmarc.${local.domain}"
   type    = "TXT"
   ttl     = 1800
-  records = ["v=DMARC1; p=quarantine; adkim=s; aspf=s"]
+  records = ["v=DMARC1; p=quarantine; adkim=s; aspf=s; rua=mailto:tyler@webbpulse.com"]
 }
 
 # SPF. SES needs `v=spf1 include:amazonses.com ~all` on whichever domain the
