@@ -1,10 +1,29 @@
 /**
  * Whether this deployment offers passwordless passkey sign-in.
  *
- * ## Why this is a probe, like the OAuth one
+ * ## Why this is still a probe when the OAuth one no longer is
  *
- * Same shape of problem as `services/oauthAvailability.ts`, for the same
- * reason: there is no discovery endpoint. The identity service mounts the
+ * webbpulse-python 0.16.0 replaced the OAuth probe with
+ * `GET /api/auth/oauth/providers`, and the obvious move was to do the same
+ * here. There is nothing to move to. 0.16.0 adds exactly one discovery route
+ * and it is about OAuth: it answers a provider list and carries no passkey
+ * field. The OIDC discovery document at
+ * `/api/auth/.well-known/openid-configuration` is not a candidate either. It
+ * is `build_discovery_document`, a pure function of the issuer returning five
+ * fixed keys, `issuer`, `jwks_uri`, `response_types_supported`,
+ * `subject_types_supported` and `id_token_signing_alg_values_supported`, none
+ * of which says anything about a capability. And there is no
+ * `/api/auth/passkeys/config` route: the only passkey GET the package mounts
+ * is `GET /api/auth/passkeys`, which lists the signed-in user's own
+ * credentials from behind the authorizer, so it is useless to a sign-in page
+ * that by definition holds no token.
+ *
+ * **A package change would settle this.** A future release adding
+ * `GET /api/auth/passkeys/availability`, unconditional and anonymous and
+ * `Cache-Control`ed the way `oauth/providers` is, would delete this probe
+ * outright and turn this file into one fetch and one field read.
+ *
+ * Until then: the identity service mounts the
  * passkey routes only when the capability is configured, and it can mount the
  * enrolment routes while leaving passwordless sign-in off. Neither fact is
  * published anywhere the bundle can read. The only observable difference
@@ -23,19 +42,29 @@
  *
  * Unlike the OAuth start route, this one is an ordinary same-origin JSON POST:
  * no redirect to a third party, no CORS surprise, no `redirect: 'manual'`
- * dance. What it does cost is one of the thirty login-options calls per
- * fifteen minutes the standard's section 5.1 allows per IP, and it consumes a
- * challenge row that is then never spent. That is why the result goes through
- * the shared once-per-page cache rather than being asked on every render.
+ * dance. What it does cost is real: one of the thirty login-options calls per
+ * fifteen minutes that `PASSKEY_OPTIONS_LIMIT` allows per IP, and a challenge
+ * row that is written and then never spent.
+ *
+ * So the answer is cached for the tab's session rather than for the page load.
+ * A page-load cache still meant a probe per *reload*, and a sign-in page is
+ * reloaded: a mistyped password, a back button, a link followed and returned
+ * from. Thirty of those in a quarter of an hour is not a hostile number, and
+ * hitting it meant the rate limiter refusing the sign-in the user was
+ * reloading in order to attempt. The verdict is a fact about the deployment,
+ * not about the user, so it is the same on the next reload and there is
+ * nothing to learn by asking again.
+ *
+ * The probe is also gated on `passkeysSupported()` in `usePasskeySignIn`,
+ * which reads `PublicKeyCredential` off the global. A browser that cannot do
+ * WebAuthn never reaches this file at all, so it never spends a request
+ * finding out about a capability it could not use.
  *
  * The body is deliberately empty rather than carrying an email. An address
  * would be a discoverable-credential request for a specific account, and the
  * probe has no account in hand: it is asking about the deployment, not about a
  * user. The server answers an empty body with a discoverable challenge, which
  * is exactly the "is this switched on" signal wanted here.
- *
- * A discovery endpoint in the identity package would replace this file and
- * `oauthAvailability.ts` both. The note in the OAuth PR still stands.
  */
 import { type Availability, cachedAvailability } from './availabilityCache';
 
@@ -142,7 +171,12 @@ export function passkeyLoginAvailability(
   optionsUrl: string,
   fetchImpl: typeof fetch = fetch
 ): Promise<Availability> {
-  return cachedAvailability(optionsUrl, () =>
-    probePasskeyLogin(optionsUrl, fetchImpl)
+  return cachedAvailability(
+    optionsUrl,
+    () => probePasskeyLogin(optionsUrl, fetchImpl),
+    // Remembered for the tab's session, not just the page load. This is the
+    // expensive probe of the two and the only one whose answer is complete on
+    // its own. See `availabilityCache.ts`.
+    { persist: true }
   );
 }
