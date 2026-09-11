@@ -56,6 +56,23 @@ locals {
         ttl_attribute          = "expires_at"
         point_in_time_recovery = false
       }
+
+      # ---------------------------------------------------------------
+      # The identity standard's four tables are NOT here any more.
+      #
+      # credentials, refresh-tokens, login-attempts and identity-tokens moved
+      # into the platform identity module, which owns the whole identity layer:
+      # the same four tables, the KMS signing key, and the two IAM grants the
+      # identity function needs on both. terraform/identity.tf has the module
+      # call and the `moved` blocks; the physical names are unchanged, because
+      # both modules build "<name_prefix>-<key>" from the same local.prefix.
+      #
+      # The key schemas travelled with them rather than being restated: the
+      # module's default `tables` map already carries the package's contract for
+      # all four, byte identical to what this file declared. Only the point in
+      # time recovery override on identity-tokens is repeated at the module
+      # call, because the module's default leaves it null.
+      # ---------------------------------------------------------------
     },
   )
 }

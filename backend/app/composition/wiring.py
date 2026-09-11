@@ -56,6 +56,34 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 API_PREFIX = "/api/v1"
 
+#: The error envelope options, in one place because both composition roots have
+#: to pass them and a root that passed different ones would render a different
+#: body for the same failure. `build_domain_app` spreads this, and
+#: `app.composition.app` spreads the same dict, so there is a single switch.
+#:
+#: `error_codes=True` adds a stable `error_code` to every error body:
+#: `UNAUTHORIZED`, `NOT_FOUND`, `VALIDATION_ERROR`, `INTERNAL_ERROR` and the
+#: rest of the shared package's status table. It is additive. `success`,
+#: `status`, `message` and `request_id` keep the values and the order they have
+#: always had, so nothing reading the envelope today sees a different answer;
+#: what changes is that a caller can branch on a code rather than on the
+#: message text. `@webbpulse/api-client` already surfaces it as
+#: `getWebbPulseError().errorCode`, and `frontend/src/services/api.ts` already
+#: logs it, where it has been `undefined` until now.
+#:
+#: `validation_details=True` adds `details` to a 422: one
+#: `{"field", "message", "type"}` entry per offending field, with the leading
+#: `body`/`query` segment dropped so the field reads as the form control's
+#: name. The existing `errors` key is untouched, so the older shape still
+#: works. The client types `details` as `unknown[] | Record<string, unknown>`,
+#: which the list satisfies, and this is the shape a form needs to put a
+#: message beside the input that caused it rather than one banner for the
+#: whole request.
+ERROR_ENVELOPE_OPTIONS: dict[str, bool] = {
+    "error_codes": True,
+    "validation_details": True,
+}
+
 #: Service name pattern. Terraform sets `SERVICE_NAME` to the same string, and it
 #: becomes the OpenTelemetry `service.name` and the `service` field on every log
 #: line, so the two have to agree.
@@ -249,6 +277,9 @@ def build_domain_app(
         # duplicate path and the first declaration would win.
         include_health=domain.name != "public",
         redirect_slashes=False,
+        # Spread rather than named, so adding an envelope option is one edit
+        # here rather than one per composition root.
+        **ERROR_ENVELOPE_OPTIONS,
         **domain.extra,
     )
 
@@ -260,6 +291,69 @@ def build_domain_app(
         app.include_router(
             router, prefix=domain.router_prefix, tags=list(domain.router_tags)
         )
+
+    # The identity standard's M1, on the `identity` domain only and in every
+    # environment. `webbpulse.identity.build_identity_router` serves the two
+    # `.well-known` documents and its own `/health`, and nothing else: the flows
+    # are M2 and later. `app/composition/identity.py` builds the settings and
+    # the KMS client.
+    #
+    # Mounted at the issuer's path, which is load-bearing rather than tidy, and
+    # is not the same thing as mounting at the origin.
+    #
+    # API Gateway builds the discovery URL by appending
+    # `/.well-known/openid-configuration` to the configured issuer *including its
+    # path*. M0 proved that directly: an issuer of
+    # `https://api.staging.webbpulse.com` with no path produced a create-time
+    # error quoting `https://api.staging.webbpulse.com/.well-known/openid-
+    # configuration`. The standard's issuer is `https://<api host>/api/auth`, so
+    # the documents have to answer under `/api/auth`, and `IdentitySettings`
+    # agrees: its `discovery_url` and `jwks_url` are `f"{issuer}{PATH}"`, and
+    # `jwks_uri` in the served document is built the same way. API Gateway
+    # follows that `jwks_uri` literally, so a document advertising a path the
+    # router does not serve fails `CreateAuthorizer` at M2.
+    #
+    # The prefix is therefore derived from the issuer rather than written out, so
+    # the mount point and the advertised URLs cannot drift apart. Mounting at the
+    # origin instead would serve both documents at paths nothing fetches.
+    #
+    # SINCE 0.10.0 THE PACKAGE DOES THAT DERIVATION AND THIS MOUNTS NO PREFIX.
+    # `build_identity_router` places every route it declares under
+    # `identity_prefix(settings)`, the issuer's path. 0.9.0 served the documents
+    # at the origin whatever the issuer said, and the workaround here was an
+    # `identity_mount_prefix` helper feeding `prefix=`. Passing that prefix now
+    # would double every route to `/api/auth/api/auth/...`, and keeping the
+    # helper would be a second implementation of a derivation the package owns,
+    # which can only drift from it. Both are gone.
+    #
+    # This is why it does not go through `domain.load_routers`, which mounts
+    # everything it loads at this domain's own `/api/v1/admin`.
+    #
+    # It is deliberately unconditional. The two documents are what this product
+    # publishes about itself from M1 on, `terraform/apigateway.tf` carries their
+    # route keys unconditionally, and `terraform/identity.tf` creates the signing
+    # key they publish in both environments.
+    #
+    # As of 0.10.0 this also mounts M2's six flow routes, because
+    # `composition/identity.py` passes hooks and a credential store and the
+    # package mounts the flows conditionally on exactly that pair. They land
+    # under the same issuer path: `/api/auth/register` and the rest.
+    #
+    # The existing `POST /api/v1/admin/login` is untouched. It is a different
+    # router at a different prefix signing a different kind of token, and the two
+    # run side by side. The cutover that retires the legacy one is M9.
+    #
+    # Wrapped in a guard on the issuer being configured: `IdentitySettings` requires
+    # `IDENTITY_ISSUER` and `IDENTITY_AUDIENCE` and raises without them, and a
+    # local checkout or a test that builds the identity application with no
+    # identity environment at all must not fail to construct. In a deployed
+    # function Terraform always sets both, so the guard is never the reason a
+    # document is missing there; a function whose environment is half configured
+    # still fails loudly at startup, inside `IdentitySettings`, naming the field.
+    if domain.name == "identity" and resolved.IDENTITY_ISSUER:
+        from .identity import build_router
+
+        app.include_router(build_router(resolved))
 
     if domain.seeds:
         from ..core.middleware import SeedMiddleware

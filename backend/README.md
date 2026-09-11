@@ -51,7 +51,7 @@ app/
 │   ├── security.py         bcrypt, JWT, get_current_user, require_admin
 │   ├── login_limiter.py    Login brute-force limiter backed by DynamoDB
 │   ├── middleware.py       Trailing-slash, seeding, request logging
-│   └── logging.py          Powertools logger
+│   └── logging.py          The app logger, on webbpulse.logging's JSON formatter
 └── db/                     Shared datastore layer
     ├── tables.py           Canonical table and index definitions
     ├── client.py           boto3 resource/client factories
@@ -77,9 +77,7 @@ tests/                      pytest suite backed by moto
 | `ENVIRONMENT` | Environment label | `development` |
 | `CORS_ORIGINS` | Comma-separated allowed origins (localhost dev origins are always added) | empty |
 | `SITE_URL` | Base URL used in sitemap and robots | `https://www.webbpulse.com` |
-| `LOG_LEVEL` | Powertools logger level | `INFO` |
-| `POWERTOOLS_SERVICE_NAME` | Logger service name | `webbpulse-portfolio-api` |
-| `POWERTOOLS_METRICS_NAMESPACE` | Reserved for metrics | `WebbPulse/Portfolio` |
+| `LOG_LEVEL` | Root log level, passed to `configure_logging` | `INFO` |
 | `LOGIN_MAX_FAILURES` / `LOGIN_FAILURE_WINDOW_SECONDS` | Login limiter | `10` / `900` |
 
 Constructing the settings reads no AWS and no secret. The four secret fields are
@@ -152,6 +150,59 @@ closer still, since it runs the real images under the Web Adapter, and the
 The admin user is created (or reconciled with the settings) on the first
 request handled by each process, so there is no separate seed step. Docs are
 served at `/docs` and `/redoc`.
+
+## Logging
+
+One JSON object per line on stdout, from `webbpulse.logging`. Each entrypoint's
+`main()` calls `configure_logging(level=..., service=..., environment=...)`
+before it builds the application, and `app/core/logging.py` exports the `logger`
+every module imports.
+
+```json
+{"timestamp":"2026-09-09T06:12:44.311Z","level":"INFO","message":"request",
+ "logger":"app","service":"webbpulse-portfolio-content","environment":"staging",
+ "request_id":"1f0b9e2c-...","user_id":"1","trace_id":"...","span_id":"...",
+ "method":"GET","path":"/api/v1/posts","status":200,"duration_ms":12.5}
+```
+
+`request_id` and `user_id` come from `webbpulse.log_context`, two ContextVars
+that `JsonFormatter` merges into every record:
+
+- **`request_id`** is bound by `RequestIdMiddleware`, which `create_app` mounts
+  on every application. An inbound `X-Request-ID` is honoured and bounded to 128
+  characters, a UUID4 is minted otherwise, and the value is echoed on the
+  response, so a caller can correlate from its own side.
+- **`user_id`** is bound by `get_current_user` once it has resolved a principal.
+  An anonymous request has no `user_id` key at all rather than a null one.
+
+Both also go onto the active OpenTelemetry span, as `webbpulse.request_id` and
+`webbpulse.user_id`, so a log line and a trace join on one string.
+
+The fields are the same names CarModPicker emits, because both products format
+through the same class, so one saved Logs Insights query reads both log groups
+and the `{ $.level = "ERROR" }` metric filter behind the `api-alarms` module
+matches the same key in each.
+
+**Adding fields at a call site.** `logger` is a standard `logging.Logger`, so
+extra fields go through `extra={...}` and the formatter lifts them to top-level
+keys. The keyword form some call sites used under Powertools raises.
+
+```python
+logger.info("Seeded site content", extra={"id": SITE_CONTENT_ID})
+```
+
+**What replaced Powertools.** `aws-lambda-powertools` is gone. Its correlation
+is `@logger.inject_lambda_context`, a decorator on a Lambda handler, and there
+is no handler here: the Lambda Web Adapter turns each invoke into an HTTP
+request against the uvicorn process, so the decorator never ran and every log
+line reached CloudWatch with no correlation id on it. The ContextVar path above
+is what actually correlates. Nothing else imported Powertools, and Terraform
+never set the two `POWERTOOLS_*` variables on a domain function, so they went
+with it.
+
+**Custom metrics.** None are emitted yet. `webbpulse.metrics` (Embedded Metric
+Format on stdout) is what to use when that starts; it needs an explicit
+`namespace` and is deliberately not defaulted.
 
 ## Tests and lint
 

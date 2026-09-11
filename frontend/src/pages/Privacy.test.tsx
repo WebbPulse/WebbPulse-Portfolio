@@ -37,12 +37,10 @@ describe('Privacy', () => {
     stubSiteContent({ email: 'tyler@webbpulse.com' });
     renderPage();
 
-    // `getByRole` and `getByText` throw when there is no match, so reaching
-    // the assertion is itself the check that the element rendered.
     expect(
       screen.getByRole('heading', { name: /privacy policy/i, level: 1 })
-    ).toBeTruthy();
-    expect(screen.getByText(/September 10, 2026/)).toBeTruthy();
+    ).toBeInTheDocument();
+    expect(screen.getByText(/September 10, 2026/)).toBeInTheDocument();
   });
 
   it('uses the contact address from site content', () => {
@@ -51,7 +49,7 @@ describe('Privacy', () => {
 
     const links = screen.getAllByRole('link', { name: 'hello@example.com' });
     expect(links.length).toBeGreaterThan(0);
-    expect(links[0]?.getAttribute('href')).toBe('mailto:hello@example.com');
+    expect(links[0]).toHaveAttribute('href', 'mailto:hello@example.com');
   });
 
   it('falls back to the site address when site content has not loaded', () => {
@@ -59,6 +57,6 @@ describe('Privacy', () => {
     renderPage();
 
     const links = screen.getAllByRole('link', { name: 'tyler@webbpulse.com' });
-    expect(links[0]?.getAttribute('href')).toBe('mailto:tyler@webbpulse.com');
+    expect(links[0]).toHaveAttribute('href', 'mailto:tyler@webbpulse.com');
   });
 });

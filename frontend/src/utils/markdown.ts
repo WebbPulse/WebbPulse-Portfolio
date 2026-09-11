@@ -196,9 +196,13 @@ export const extractHeadings = (
 
   for (const line of lines) {
     const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
-    if (headingMatch) {
-      const level = headingMatch[1].length;
-      const text = headingMatch[2].trim();
+    // Both groups are non optional in the pattern, so a match always carries
+    // them. Destructuring with a guard states that to the compiler rather than
+    // asserting it away.
+    const [, hashes, rawText] = headingMatch ?? [];
+    if (hashes !== undefined && rawText !== undefined) {
+      const level = hashes.length;
+      const text = rawText.trim();
       const id = text.toLowerCase().replace(/[^\w]+/g, '-');
 
       // Only include h2 and h3 for table of contents

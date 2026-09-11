@@ -30,30 +30,31 @@ from app.config import settings  # noqa: E402
 from app.core.security import create_access_token, get_password_hash  # noqa: E402
 from app.db import client as db_client  # noqa: E402
 from app.db import entities  # noqa: E402
-from app.db.tables import (  # noqa: E402
-    ENTITIES,
-    META,
-    RATE_LIMIT_TTL_ATTRIBUTE,
-    RATE_LIMITS,
-    TTL_ATTRIBUTE,
-    table_definition,
-)
+from app.db.tables import ALL_TABLES, table_definition  # noqa: E402
 from app.domains.content import service as site_content  # noqa: E402
 from app.domains.identity import service as admin  # noqa: E402
 
 
 def create_all_tables(prefix: str = settings.DYNAMODB_TABLE_PREFIX):
+    """Create every table this backend owns, TTL included where there is one.
+
+    Walks `ALL_TABLES` rather than keeping its own list, so a table registered
+    in `app.db.tables` is a table the suite creates. That is what stops an
+    identity flow from failing here with ResourceNotFoundException on a table
+    the deployed stack has.
+    """
     resource = boto3.resource("dynamodb", region_name="us-west-2")
-    for entity in ENTITIES + (META, RATE_LIMITS):
+    for entity, ttl_attribute in ALL_TABLES:
         definition = table_definition(prefix, entity)
         resource.create_table(**definition)
-    for entity, attribute in (
-        (META, TTL_ATTRIBUTE),
-        (RATE_LIMITS, RATE_LIMIT_TTL_ATTRIBUTE),
-    ):
+        if ttl_attribute is None:
+            continue
         resource.meta.client.update_time_to_live(
-            TableName=f"{prefix}-{entity}",
-            TimeToLiveSpecification={"Enabled": True, "AttributeName": attribute},
+            TableName=definition["TableName"],
+            TimeToLiveSpecification={
+                "Enabled": True,
+                "AttributeName": ttl_attribute,
+            },
         )
 
 

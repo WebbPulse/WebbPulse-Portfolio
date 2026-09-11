@@ -184,8 +184,9 @@ class TestTokenSecurity:
         data = {"sub": "testuser"}
         token = create_access_token(data=data)
 
-        # Decode token to check expiration
-        from jose import jwt
+        # Decode token to check expiration. PyJWT now, for the same reason as
+        # in test_auth_hardening: python-jose is gone from the backend.
+        import jwt
 
         decoded = jwt.decode(
             token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]

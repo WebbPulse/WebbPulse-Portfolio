@@ -41,7 +41,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
         {editingProject ? 'Edit Project' : 'Add New Project'}
       </h3>
-      <form onSubmit={onSubmit} className="space-y-4">
+      <form onSubmit={e => void onSubmit(e)} className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">

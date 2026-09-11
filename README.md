@@ -75,6 +75,37 @@ Parts of the stack come from `app.terraform.io/WebbPulse/platform-modules/aws`, 
 | `staging-dns` | The `staging.webbpulse.com` child zone and its NS delegation in the parent zone; a no-op in production (`route53.tf`) |
 | `http-api` | The HTTP API, `$default` stage, Lambda integration and permission, routes, access log group, custom domain and API mapping (`apigateway.tf`) |
 | `staging-access-gate` | Cognito, the login Lambda, the signed-cookie key group, the viewer-request function, the origin-verify secret and the HTTP API authorizer (`staging_access_gate.tf`) |
+| `identity` | The KMS signing key, its alias, the four identity tables (`credentials`, `refresh-tokens`, `login-attempts`, `identity-tokens`) and the two IAM grants the identity function needs on them (`identity.tf`) |
+
+### Identity
+
+`terraform/identity.tf` calls the `identity` platform module, which owns the whole
+identity layer: the RSA_2048 signing key the access tokens are signed with, the
+`alias/webbpulse-<env>-identity-signing` alias pointing at it, the four DynamoDB
+tables the identity flows read and write, and the `identity-signing` and
+`identity-tables` policies on the identity Lambda's role. The issuer, the
+audience and the registrable domain are still derived in `identity.tf` and passed
+in, because all three are close to irreversible and belong where they can be
+reviewed.
+
+The module's `identity_environment` output is merged **last** into the identity
+function's environment in `lambda_domains.tf`, so `IDENTITY_ISSUER`,
+`IDENTITY_AUDIENCE`, `IDENTITY_SIGNING_KEY_ARNS`, `IDENTITY_COOKIE_DOMAIN` and
+`IDENTITY_RP_ID` come from the same place the resources do. The product strings
+around it, the SES pair and the registration switch stay in `lambda_domains.tf`.
+
+The four identity tables are **not** in `dynamodb.tf`. They moved into the module
+with `moved` blocks; the physical names are unchanged because both modules build
+`"<name_prefix>-<key>"` from the same `local.prefix`.
+
+`http_api_id` is deliberately not passed, so the module creates no JWT
+authorizer. An HTTP API route takes one authorizer while the staging access gate
+already occupies that slot on every route.
+
+Rotating a signing key is two applies against the module's `signing_key_count`
+and `active_signing_key` inputs, never a mutation of one key: `kid` is derived
+from the key material, so rotating material behind one key id strands every
+already-issued token.
 
 The ACM certificates and their validation records (`acm.tf`) and the `www`, apex and `api` alias records (`route53.tf`) stay hand-written because a Terraform module has one `aws` provider and production writes DNS cross-account through the `aws.dns` alias. They point at module outputs.
 

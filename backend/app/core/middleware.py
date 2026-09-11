@@ -39,10 +39,62 @@ class TrailingSlashMiddleware:
 #: which is what `Domain.requires_secrets` claimed it did not do.
 
 
+#: Resolved once per process by `_admin_credential_store`, which is why this is
+#: a one-slot dict rather than a plain global: the sentinel distinguishes "not
+#: looked up yet" from "looked up and there is no store", and the second of
+#: those is the common case in a local checkout and in the test suite.
+_ADMIN_CREDENTIAL_STORE: dict = {}
+
+
+def _admin_credential_store():
+    """The identity credential store, when this deployment has one.
+
+    `None` when `IDENTITY_ISSUER` is unset, which is the same condition
+    `app/composition/wiring.py` mounts the identity router on, so the seeder is
+    in identity mode exactly when the identity flows are served. A checkout or a
+    test with no identity environment gets the legacy path unchanged.
+
+    This module is the right place for the lookup rather than the domain,
+    because `app/domains/` may not import `app/composition/` and this file is
+    already the one shared module that knows about more than one domain. See
+    `tests/test_domain_boundaries.py`.
+
+    Cached for the life of the process. The store is one `Repository` over one
+    table name and building it per request would be pure waste on a path that
+    runs before every request.
+    """
+    if "store" in _ADMIN_CREDENTIAL_STORE:
+        return _ADMIN_CREDENTIAL_STORE["store"]
+
+    from ..config import settings
+
+    store = None
+    if settings.IDENTITY_ISSUER:
+        from webbpulse.dynamodb import Repository
+        from webbpulse.identity import DynamoCredentialStore
+
+        from ..db.tables import CREDENTIALS
+
+        store = DynamoCredentialStore(
+            Repository(
+                CREDENTIALS,
+                prefix=settings.DYNAMODB_TABLE_PREFIX,
+                endpoint_url=settings.DYNAMODB_ENDPOINT_URL,
+            )
+        )
+    _ADMIN_CREDENTIAL_STORE["store"] = store
+    return store
+
+
+def reset_admin_credential_store() -> None:
+    """Drop the cached store, so a test can change the environment underneath it."""
+    _ADMIN_CREDENTIAL_STORE.clear()
+
+
 def _seed_admin() -> None:
     from ..domains.identity.service import ensure_admin_seeded
 
-    ensure_admin_seeded()
+    ensure_admin_seeded(_admin_credential_store())
 
 
 def _seed_site_content() -> None:
@@ -113,10 +165,12 @@ class RequestLoggingMiddleware:
         finally:
             logger.info(
                 "request",
-                method=scope.get("method"),
-                path=scope.get("path"),
-                status=status["code"],
-                duration_ms=round((time.perf_counter() - started) * 1000, 2),
+                extra={
+                    "method": scope.get("method"),
+                    "path": scope.get("path"),
+                    "status": status["code"],
+                    "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+                },
             )
 
 

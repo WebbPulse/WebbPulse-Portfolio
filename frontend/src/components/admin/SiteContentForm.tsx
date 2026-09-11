@@ -68,7 +68,7 @@ export const SiteContentForm: React.FC<SiteContentFormProps> = ({
     }));
 
   return (
-    <form onSubmit={onSubmit} className="space-y-8">
+    <form onSubmit={e => void onSubmit(e)} className="space-y-8">
       {/* Hero */}
       <section className="bg-gray-50 dark:bg-gray-700 rounded-lg p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">

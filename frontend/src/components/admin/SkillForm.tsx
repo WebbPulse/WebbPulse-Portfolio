@@ -29,7 +29,7 @@ export const SkillForm: React.FC<SkillFormProps> = ({
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
         {editingSkill ? 'Edit Skill' : 'Add New Skill'}
       </h3>
-      <form onSubmit={onSubmit} className="space-y-4">
+      <form onSubmit={e => void onSubmit(e)} className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className={labelClass}>Name *</label>

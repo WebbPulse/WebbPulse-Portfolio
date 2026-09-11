@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import timedelta
 
 import boto3
@@ -72,7 +73,11 @@ class TestTokens:
     def test_token_signed_with_other_key_rejected(
         self, client: TestClient, test_admin_user
     ):
-        from jose import jwt
+        # PyJWT rather than python-jose, which left with `app/core/security.py`'s
+        # own implementation. The token is the same bytes either library would
+        # produce for these claims; what is asserted is that a signature made
+        # with the wrong key is refused.
+        import jwt
 
         token = jwt.encode(
             {"sub": test_admin_user["username"]}, "other-key", algorithm="HS256"
@@ -424,19 +429,26 @@ class TestLimiterFailsOpen:
         limiter.clear("10.0.0.6")
 
     @pytest.mark.auth
-    def test_the_failure_is_logged_as_failed_open(self, aws_tables, monkeypatch):
-        """The WARNING is the compensating control; an alarm watches for it."""
-        recorded = []
-        monkeypatch.setattr(
-            limiter_module.logger,
-            "warning",
-            lambda message, **kwargs: recorded.append(kwargs),
-        )
-        self.missing_table_limiter(monkeypatch).record_failure("10.0.0.6")
+    def test_the_failure_is_logged_as_failed_open(
+        self, aws_tables, monkeypatch, caplog
+    ):
+        """The WARNING is the compensating control; an alarm watches for it.
 
-        assert recorded, "a fail-open must not be silent"
-        assert recorded[0]["rate_limit_failed_open"] is True
-        assert recorded[0]["error_type"] == "ResourceNotFoundException"
+        Asserted on the emitted record rather than on a patched `logger.warning`.
+        The call site now passes `extra={...}`, which the standard library folds
+        onto the `LogRecord` and `webbpulse.logging.JsonFormatter` lifts to
+        top-level JSON keys, so the record attribute is what the CloudWatch
+        metric filter behind the alarm actually matches on. Reading the call's
+        keyword arguments instead would pass just as well if the fields never
+        reached a record at all.
+        """
+        with caplog.at_level(logging.WARNING):
+            self.missing_table_limiter(monkeypatch).record_failure("10.0.0.6")
+
+        assert caplog.records, "a fail-open must not be silent"
+        record = caplog.records[0]
+        assert record.rate_limit_failed_open is True
+        assert record.error_type == "ResourceNotFoundException"
 
     @pytest.mark.auth
     def test_login_still_answers_401_with_the_table_missing(

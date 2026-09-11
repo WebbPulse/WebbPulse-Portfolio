@@ -8,7 +8,7 @@ import type { Skill, SkillCategory, SkillTier } from '../../services/api';
 // Simple Icons brand logo from react-icons (e.g. `si:react` → SiReact). Anything
 // else (emoji, plain text) renders as-is so soft skills without a brand logo
 // keep their emoji.
-const SkillIcon: React.FC<{ icon?: string; name: string }> = ({
+const SkillIcon: React.FC<{ icon?: string | undefined; name: string }> = ({
   icon,
   name,
 }) => {

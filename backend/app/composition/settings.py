@@ -88,18 +88,34 @@ class Settings(BaseServiceSettings):
     LOGIN_MAX_FAILURES: int = 10
     LOGIN_FAILURE_WINDOW_SECONDS: int = 900
 
+    # M1's issuer, and the only `IDENTITY_*` variable this class reads for it.
+    #
+    # The rest of M1's configuration is not here on purpose. `IdentitySettings`
+    # in `webbpulse.identity` is a `BaseSettings` with `env_prefix="IDENTITY_"`,
+    # so it reads `IDENTITY_AUDIENCE`, `IDENTITY_SIGNING_KEY_ARNS` and the other
+    # dozen fields out of the environment itself. Restating them here would be a
+    # second copy of the same list, kept in step by hand, with this one's types
+    # and validation necessarily weaker than the package's.
+    #
+    # This one field is the exception because the composition root needs a cheap
+    # way to answer "is the identity application configured at all" before it
+    # constructs `IdentitySettings`, which raises when it is not. `IDENTITY_ISSUER`
+    # is required by that class and set by Terraform on every deployed identity
+    # function, so its presence is exactly that question. Naming it here rather
+    # than reading `os.environ` in the composition root keeps every environment
+    # variable this application reads visible in one class.
+    IDENTITY_ISSUER: Optional[str] = None
+
     APP_NAME: str = "Portfolio Blog API"
     SITE_URL: str = "https://www.webbpulse.com"
     DEBUG: bool = False
     LOG_LEVEL: str = "INFO"
-    # Powertools is still what `app/core/logging.py` logs through, and the
-    # `content`, `identity` and `public` services import that logger directly.
-    # The monolith is gone but they were never migrated onto
-    # `webbpulse.logging`, so the dependency and these two settings stay until
-    # that is done. It is real work on the domain code, not a line in a
-    # deletion PR.
-    POWERTOOLS_SERVICE_NAME: str = "webbpulse-portfolio-api"
-    POWERTOOLS_METRICS_NAMESPACE: str = "WebbPulse/Portfolio"
+    # The two `POWERTOOLS_*` settings are gone with the dependency. Every domain
+    # service now logs through `app/core/logging.py`, which is
+    # `webbpulse.logging`, and the entrypoints already passed `service_name` and
+    # `environment` to `configure_logging` rather than reading either of them.
+    # Terraform never set them on a domain function, so nothing deployed loses a
+    # variable it was reading.
     CORS_ORIGINS: str = DEFAULT_CORS_ORIGINS
 
     @field_validator("CORS_ORIGINS")
@@ -190,6 +206,10 @@ class Settings(BaseServiceSettings):
         not, with an ARN configured, fetches the blob once per execution
         environment and fills every field it carries, so four unset fields cost
         one Secrets Manager call rather than four.
+
+        The fetch itself is `webbpulse.config.load_json_secret`, reached through
+        `app.secrets`, so the caching and the "this secret is not a JSON object"
+        errors are the shared package's rather than a second copy of them here.
         """
         current = object.__getattribute__(self, field)
         if current is not None:

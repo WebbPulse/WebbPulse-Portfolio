@@ -1,32 +1,23 @@
+// The entity shapes come from the API service, which is the single definition
+// of what the backend returns. They used to be copied here verbatim, which let
+// the two drift: the copy of BlogPost had already diverged from the form type
+// that feeds it. Only the admin form and view models are declared below.
+import type { SkillCategory, SkillTier } from '../../services/api';
+
+export type {
+  BlogPost,
+  Category,
+  Certification,
+  Education,
+  Experience,
+  Project,
+  Skill,
+  SkillCategory,
+  SkillTier,
+} from '../../services/api';
+
 export interface AdminPanelProps {
   className?: string;
-}
-
-export interface Project {
-  id: number;
-  title: string;
-  description: string;
-  image: string;
-  technologies: string[];
-  github_url?: string;
-  live_url?: string;
-  featured: boolean;
-  display_order: number;
-  created_at: string;
-}
-
-export interface Experience {
-  id: number;
-  title: string;
-  company: string;
-  location: string;
-  period: string;
-  start_date: string;
-  end_date?: string;
-  description: string;
-  technologies: string[];
-  achievements: string[];
-  created_at: string;
 }
 
 export interface ProjectFormData {
@@ -62,55 +53,10 @@ export interface BlogPostFormData {
   published_at: string | undefined;
 }
 
-export interface BlogPost {
-  id: number;
-  title: string;
-  slug: string;
-  content: string;
-  excerpt?: string;
-  read_time?: string;
-  published_at?: string;
-  created_at: string;
-  updated_at?: string;
-  category_id?: number;
-  category?: {
-    id: number;
-    name: string;
-    slug: string;
-  };
-}
-
-export interface Category {
-  id: number;
-  name: string;
-  slug: string;
-  description?: string;
-}
-
 export interface CategoryFormData {
   name: string;
   slug: string;
   description: string;
-}
-
-// Skill
-export type SkillTier = 'core' | 'working' | 'familiar';
-export type SkillCategory =
-  | 'frontend'
-  | 'backend'
-  | 'devops'
-  | 'cloud'
-  | 'networking'
-  | 'other';
-
-export interface Skill {
-  id: number;
-  name: string;
-  category: SkillCategory;
-  tier: SkillTier;
-  icon?: string;
-  order: number;
-  created_at: string;
 }
 
 export interface SkillFormData {
@@ -119,20 +65,6 @@ export interface SkillFormData {
   tier: SkillTier;
   icon: string;
   order: number;
-}
-
-// Education
-export interface Education {
-  id: number;
-  degree: string;
-  school: string;
-  location: string;
-  period: string;
-  start_date: string;
-  end_date?: string | null;
-  description?: string | null;
-  order: number;
-  created_at: string;
 }
 
 export interface EducationFormData {
@@ -144,17 +76,6 @@ export interface EducationFormData {
   end_date: string;
   description: string;
   order: number;
-}
-
-// Certification
-export interface Certification {
-  id: number;
-  name: string;
-  issuer: string;
-  issued_date: string;
-  credential_url?: string | null;
-  order: number;
-  created_at: string;
 }
 
 export interface CertificationFormData {
@@ -195,4 +116,5 @@ export type AdminTab =
   | 'certifications'
   | 'blog'
   | 'categories'
-  | 'site-content';
+  | 'site-content'
+  | 'security';

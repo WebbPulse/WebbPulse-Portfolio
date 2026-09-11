@@ -98,9 +98,10 @@ import json, sys
 import app.config as config
 from app.composition.settings import Settings
 
-called = []
-import app.secrets as secrets
-secrets._get_client = lambda: (_ for _ in ()).throw(AssertionError("client built"))
+import webbpulse.config as shared_config
+shared_config._secrets_client = lambda region=None: (
+    (_ for _ in ()).throw(AssertionError("client built"))
+)
 
 app_module = __import__("app.entrypoints.%s", fromlist=["build_app"])
 built = app_module.build_app()

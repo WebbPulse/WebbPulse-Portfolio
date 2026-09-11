@@ -12,7 +12,7 @@ def seed_site_content() -> None:
         return
     try:
         site_content.create(SITE_CONTENT_DEFAULTS, item_id=SITE_CONTENT_ID)
-        logger.info("Seeded site content", id=SITE_CONTENT_ID)
+        logger.info("Seeded site content", extra={"id": SITE_CONTENT_ID})
     except ClientError as error:
         if error.response["Error"]["Code"] != "TransactionCanceledException":
             raise

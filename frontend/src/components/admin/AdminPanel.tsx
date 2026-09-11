@@ -1,7 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '../common';
-import { apiService } from '../../services/api';
+import {
+  describeOAuthCallbackError,
+  readOAuthCallback,
+  stripOAuthParams,
+} from '@webbpulse/auth';
+import type { PasskeySignInOutcome } from '@webbpulse/auth';
+import {
+  API_BASE_URL,
+  apiService,
+  identityOriginFrom,
+} from '../../services/api';
+import { useOAuthProviders } from '../../hooks/useOAuthProviders';
 import { LoginForm } from './LoginForm';
+import { TotpForm } from './TotpForm';
 import { ProjectForm } from './ProjectForm';
 import { ExperienceForm } from './ExperienceForm';
 import { BlogPostForm } from './BlogPostForm';
@@ -10,6 +22,7 @@ import { SkillForm } from './SkillForm';
 import { EducationForm } from './EducationForm';
 import { CertificationForm } from './CertificationForm';
 import { SiteContentForm } from './SiteContentForm';
+import { SecuritySection } from './SecuritySection';
 import type {
   AdminPanelProps,
   AdminTab,
@@ -113,13 +126,43 @@ const TABS: { id: AdminTab; label: string }[] = [
   { id: 'certifications', label: 'Certifications' },
   { id: 'blog', label: 'Blog Posts' },
   { id: 'categories', label: 'Categories' },
+  { id: 'security', label: 'Security' },
 ];
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
   const [activeTab, setActiveTab] = useState<AdminTab>('site-content');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  /**
+   * The MFA ticket from a first login leg that asked for a second factor.
+   *
+   * Non-null is exactly the condition for showing the code step, so there is
+   * no separate boolean that could disagree with it. Identity mode only.
+   */
+  const [mfaTicket, setMfaTicket] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /**
+   * The identity client, which is null in bearer mode.
+   *
+   * Null is what gates the Security tab: the five MFA routes are identity's,
+   * and the bearer login route has no second factor to manage. Read on every
+   * render rather than held in state because it is fixed for the life of the
+   * bundle, chosen by `VITE_AUTH_MODE` at build time.
+   */
+  const identityClient = apiService.getIdentityClient();
+
+  /**
+   * The providers this deployment configured, probed once per page load.
+   *
+   * Passed to the Security tab so the "Connect ..." buttons appear only for
+   * providers that exist. The list of what is already linked comes from the
+   * route and is a separate question. See `services/oauthAvailability.ts`.
+   */
+  const oauthProviders = useOAuthProviders(
+    identityClient,
+    identityOriginFrom(API_BASE_URL)
+  );
 
   // Projects
   const [projects, setProjects] = useState<Project[]>([]);
@@ -177,20 +220,97 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
   const [siteContentForm, setSiteContentForm] =
     useState<SiteContentFormData>(EMPTY_SITE_CONTENT);
 
+  /**
+   * Bumped whenever a link callback lands, to make the Security tab reload.
+   *
+   * `ConnectedAccounts` loads its own list on mount and there is no route that
+   * pushes at it, so a `?oauth_linked=1` return has to tell it to look again.
+   * A counter through `key` remounts the component, which is the smallest
+   * thing that reliably re-runs the load without lifting the whole list into
+   * this file.
+   */
+  const [linksEpoch, setLinksEpoch] = useState(0);
+
+  /**
+   * Reads whatever the OAuth callback left in the address bar.
+   *
+   * Exactly one of four parameters is present, and `readOAuthCallback` narrows
+   * them with a fixed precedence: an error outranks a ticket, which outranks a
+   * link, which outranks a sign-in. That order matters because a `return_to`
+   * carrying a stale `?oauth=1` of its own must not let a successful-looking
+   * parameter mask a live refusal.
+   *
+   * The parameters are stripped immediately, before any await. The MFA ticket
+   * is a live single-use bearer value and leaving it in the address bar leaves
+   * it in the browser history and in the `Referer` of the next navigation. The
+   * strip also stops a reload re-running this against a callback that was
+   * already handled.
+   *
+   * Runs once, on mount, and only in identity mode: bearer mode has no OAuth
+   * routes and nothing can have redirected here from one.
+   */
   useEffect(() => {
-    if (apiService.isAuthenticated()) setIsAuthenticated(true);
+    if (identityClient === null) {
+      if (apiService.isAuthenticated()) setIsAuthenticated(true);
+      return;
+    }
+
+    const result = readOAuthCallback(window.location.href);
+    if (result !== null) {
+      window.history.replaceState(
+        null,
+        '',
+        stripOAuthParams(window.location.href)
+      );
+    }
+
+    switch (result?.kind) {
+      case 'signed-in':
+        // The refresh cookie is already set. `initialize` spends it and puts
+        // the access token in memory, which is the same thing a reload does.
+        setLoading(true);
+        void identityClient
+          .initialize()
+          .then(() => {
+            setIsAuthenticated(apiService.isAuthenticated());
+          })
+          .catch(() => {
+            setError('That sign-in could not be completed. Try again.');
+          })
+          .finally(() => {
+            setLoading(false);
+          });
+        return;
+      case 'mfa-required':
+        // The same second leg the password path reaches, and the same screen.
+        // The ticket is posted to the same route by `completeTotp`.
+        setMfaTicket(result.ticket);
+        return;
+      case 'linked':
+        setIsAuthenticated(apiService.isAuthenticated());
+        setLinksEpoch(epoch => epoch + 1);
+        return;
+      case 'error':
+        setError(describeOAuthCallbackError(result));
+        setIsAuthenticated(apiService.isAuthenticated());
+        return;
+      default:
+        setIsAuthenticated(apiService.isAuthenticated());
+    }
+    // Runs once. `identityClient` is fixed for the life of the bundle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    loadProjects();
-    loadExperience();
-    loadBlogPosts();
-    loadCategories();
-    loadSkills();
-    loadEducation();
-    loadCertifications();
-    loadSiteContent();
+    void loadProjects();
+    void loadExperience();
+    void loadBlogPosts();
+    void loadCategories();
+    void loadSkills();
+    void loadEducation();
+    void loadCertifications();
+    void loadSiteContent();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
@@ -266,8 +386,63 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
     setError(null);
     try {
       const r = await apiService.login({ username, password });
-      if (r.error) setError(r.error);
-      else setIsAuthenticated(true);
+      if (r.status === 'authenticated') setIsAuthenticated(true);
+      else if (r.status === 'mfa-required') setMfaTicket(r.ticket);
+      else setError(r.error);
+    } catch {
+      setError('Login failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /**
+   * Settles a sign-in that came from a passkey rather than a password.
+   *
+   * The same two landings the password path has, reached by the same states,
+   * which is the point: `LoginForm` runs the ceremony because the ceremony
+   * needs a user gesture, and hands back the outcome because only this file
+   * owns the session and the MFA ticket.
+   *
+   * A user-verified passkey is two factors in one gesture and arrives already
+   * signed in. One from an authenticator that did not verify the user, on an
+   * account with TOTP, arrives with a ticket for the same code step and the
+   * same route the password path uses.
+   *
+   * Refusals never reach here. `LoginForm` renders them, and swallows a
+   * dismissed prompt entirely.
+   */
+  const handlePasskeySignIn = (outcome: PasskeySignInOutcome) => {
+    if (!outcome.ok) return;
+    if (outcome.kind === 'mfa-required') {
+      setMfaTicket(outcome.ticket);
+      return;
+    }
+    setError(null);
+    setIsAuthenticated(apiService.isAuthenticated());
+  };
+
+  /**
+   * Finishes a login that asked for a second factor.
+   *
+   * Clearing the ticket on success matters as much as setting the session:
+   * the ticket is single use, so leaving it in state would show the code step
+   * again on the next sign out with a value the server has already spent.
+   */
+  const handleTotp = async (code: string) => {
+    if (mfaTicket === null) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const r = await apiService.completeTotp({ ticket: mfaTicket, code });
+      if (r.status === 'authenticated') {
+        setMfaTicket(null);
+        setIsAuthenticated(true);
+      } else if (r.status === 'mfa-required') {
+        setMfaTicket(r.ticket);
+      } else {
+        setError(r.error);
+      }
     } catch {
       setError('Login failed');
     } finally {
@@ -479,11 +654,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    // Convert empty strings to nullable fields
+    // Convert empty strings to nulls. These fields are `string | null` on the
+    // wire, and null is what clears them; omitting the key would leave the
+    // stored value untouched.
     const payload = {
       ...educationForm,
-      end_date: educationForm.end_date || undefined,
-      description: educationForm.description || undefined,
+      end_date: educationForm.end_date || null,
+      description: educationForm.description || null,
     };
     const r = editingEducation
       ? await apiService.updateEducation(editingEducation.id, payload)
@@ -527,7 +704,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
     setError(null);
     const payload = {
       ...certForm,
-      credential_url: certForm.credential_url || undefined,
+      credential_url: certForm.credential_url || null,
     };
     const r = editingCert
       ? await apiService.updateCertification(editingCert.id, payload)
@@ -573,9 +750,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
   };
 
   if (!isAuthenticated) {
+    if (mfaTicket !== null) {
+      return (
+        <TotpForm
+          onSubmit={handleTotp}
+          onCancel={() => {
+            setMfaTicket(null);
+            setError(null);
+          }}
+          loading={loading}
+          error={error}
+          className={className}
+        />
+      );
+    }
     return (
       <LoginForm
         onLogin={handleLogin}
+        onPasskeySignIn={handlePasskeySignIn}
         loading={loading}
         error={error}
         className={className}
@@ -743,7 +935,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleProjectDelete(project.id)}
+                            onClick={() => void handleProjectDelete(project.id)}
                             disabled={loading}
                             className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
                           >
@@ -827,7 +1019,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleExperienceDelete(exp.id)}
+                            onClick={() => void handleExperienceDelete(exp.id)}
                             disabled={loading}
                             className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
                           >
@@ -910,7 +1102,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleSkillDelete(skill.id)}
+                          onClick={() => void handleSkillDelete(skill.id)}
                           disabled={loading}
                           className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
                         >
@@ -992,7 +1184,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleEducationDelete(ed.id)}
+                            onClick={() => void handleEducationDelete(ed.id)}
                             disabled={loading}
                             className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
                           >
@@ -1077,7 +1269,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleCertDelete(c.id)}
+                            onClick={() => void handleCertDelete(c.id)}
                             disabled={loading}
                             className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
                           >
@@ -1163,7 +1355,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => handleBlogPostPublish(post.id)}
+                              onClick={() =>
+                                void handleBlogPostPublish(post.id)
+                              }
                               disabled={loading}
                               className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300"
                             >
@@ -1173,7 +1367,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleBlogPostDelete(post.id)}
+                            onClick={() => void handleBlogPostDelete(post.id)}
                             disabled={loading}
                             className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
                           >
@@ -1211,7 +1405,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
                   <CategoryForm
                     form={categoryForm}
                     setForm={setCategoryForm}
-                    onSubmit={handleCategorySubmit}
+                    onSubmit={e => void handleCategorySubmit(e)}
                     onCancel={() => {
                       setShowCategoryForm(false);
                       setEditingCategory(null);
@@ -1253,7 +1447,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleCategoryDelete(category.id)}
+                            onClick={() =>
+                              void handleCategoryDelete(category.id)
+                            }
                             disabled={loading}
                             className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
                           >
@@ -1264,6 +1460,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* Security */}
+            {activeTab === 'security' && (
+              <div>
+                {identityClient === null ? (
+                  <div>
+                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+                      Security
+                    </h2>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      A second factor needs the identity service, which this
+                      bundle is not built against. Nothing to configure here.
+                    </p>
+                  </div>
+                ) : (
+                  <SecuritySection
+                    key={linksEpoch}
+                    client={identityClient}
+                    oauthClient={identityClient}
+                    availableProviders={oauthProviders}
+                    passkeysClient={identityClient}
+                  />
+                )}
               </div>
             )}
           </div>
