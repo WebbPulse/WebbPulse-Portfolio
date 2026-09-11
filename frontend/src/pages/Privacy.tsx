@@ -87,12 +87,11 @@ export const Privacy: React.FC = () => {
                 <strong className="text-surface-100">
                   Sign in with GitHub or Google.
                 </strong>{' '}
-                The site supports signing in through GitHub or Google, but
-                neither is switched on today, so no data is being received from
-                either of them. If one is enabled later, the provider would
-                return the email address and the account identifier it assigns,
-                and that is what would be stored. A password is never received
-                from a provider.
+                Administrators can sign in through GitHub or Google instead of a
+                password. When someone does, the provider returns the email
+                address on their account and the identifier it assigns to it,
+                and those are stored so the account can be recognised next time.
+                A password is never received from a provider.
               </p>
               <p>
                 <strong className="text-surface-100">Failed sign-ins.</strong>{' '}
@@ -134,9 +133,9 @@ export const Privacy: React.FC = () => {
                 The site runs on Amazon Web Services, which hosts it and stores
                 the data described above on my behalf. Page fonts are served by
                 Google Fonts, so loading a page requests those font files from
-                Google. If sign in with GitHub or Google is enabled in future,
-                that provider would process a sign-in only when someone chooses
-                to use it.
+                Google. When an administrator chooses to sign in with GitHub or
+                Google, that provider processes the sign-in under its own
+                privacy policy.
               </p>
             </Section>
 
