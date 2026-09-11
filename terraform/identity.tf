@@ -1,13 +1,10 @@
 # ---------------------------------------------------------------------------
-# Identity standard, milestone M1. The permanent thing, beside the M0 spike.
+# Identity standard, milestone M1. The permanent thing.
 #
-# M0 (identity_spike.tf) answered one question: does an API Gateway HTTP API JWT
-# authorizer verify an RS256 token signed by a real KMS key, against a JWKS and
-# a discovery document served by our own Lambda? It does, and that file records
-# what it cost to find out. M0 is throwaway and stays gated behind
-# var.identity_spike_enabled.
-#
-# This file is what replaces it. The scope is exactly section 9.1's M1 row and
+# M0 was a throwaway spike that answered one question: does an API Gateway HTTP
+# API JWT authorizer verify an RS256 token signed by a real KMS key, against a
+# JWKS and a discovery document served by our own Lambda? It does. M0 has been
+# retired and this file is what replaced it. The scope is exactly section 9.1's M1 row and
 # no more: a signing key, the grants the identity function needs to use it, and
 # the configuration that lets the function serve the two `.well-known` documents
 # through webbpulse.identity's own router.
@@ -26,11 +23,9 @@
 #  - No symmetric data key. That is TOTP envelope encryption at M4.
 #  - No SES wiring. Email is M3.
 #
-# The one thing M1 does that M0 did not, and the reason this file is not simply
-# an edit of that one: the `.well-known` routes stop being conditional. Under
-# the spike they exist only when var.identity_spike_enabled is true, which is
-# staging only and off by default. Here they are permanent and unconditional in
-# both environments, because from M1 on the discovery document and the JWKS are
+# The one thing M1 does that M0 did not: the `.well-known` routes are not
+# conditional. Under the spike they existed only when a staging only flag was
+# on. Here they are permanent and unconditional in both environments, because from M1 on the discovery document and the JWKS are
 # what this product publishes about itself rather than an experiment's exhaust.
 # Section 3.4 is emphatic that both have to answer anonymously before an
 # authorizer can be created at all, so having them already live and already
@@ -73,10 +68,8 @@ locals {
   # every token from now.
   #
   # Section 3.2's convention is `<product>-api`. The M0 spike used
-  # `webbpulse-<env>` and its own comment says M1 settles the convention, so
-  # this settles it on the standard's shape rather than on the spike's. The two
-  # are separate values on separate resources and nothing compares them, so
-  # both can be live at once while the spike is still switched on.
+  # `webbpulse-<env>` and left M1 to settle the convention, so this settles it
+  # on the standard's shape.
   #
   # It carries the environment because a staging token must not be accepted by
   # production. The audience is the only claim that distinguishes them once the
@@ -186,13 +179,10 @@ locals {
 # WHAT IS DELIBERATELY NOT PASSED.
 #
 # `http_api_id` stays unset, so no aws_apigatewayv2_authorizer is created here.
-# The M0 spike in identity_spike.tf still owns the only JWT authorizer on this
-# API and its behaviour is untouched by this change. An HTTP API route takes one
-# authorizer and in staging the access gate already occupies that slot on every
-# route, so which of section 2.5's three answers to take is still open and
-# nothing here forces it. Leaving http_api_id null also leaves
-# terraform_data.discovery_document_ready uncreated, which is what we want: the
-# spike has its own poll and a second one would wait on the same URL twice.
+# An HTTP API route takes one authorizer and in staging the access gate already
+# occupies that slot on every route, so which of section 2.5's three answers to
+# take is still open and nothing here forces it. Leaving http_api_id null also
+# leaves terraform_data.discovery_document_ready uncreated.
 #
 # The rotation inputs are left at their defaults, one key at index zero, which
 # is exactly the single key state this environment is in. Section 3.5's rotation
@@ -664,11 +654,11 @@ output "identity_table_names" {
 # Adoption of the platform identity module. Every block below is a state move
 # and none of them changes a resource in AWS.
 #
-# THE FIRST THREE ARE CHAINS, and the chaining is the point. The M0 spike
-# declared the key, the alias and the signing policy under
-# `count = local.identity_spike_count`, M1 made them unconditional, and the
-# three `moved` blocks that expressed that are still needed: a workspace that
-# has never applied since M1 still has state at the indexed spike address.
+# THE FIRST THREE ARE CHAINS, and the chaining is the point. The retired M0
+# spike declared the key, the alias and the signing policy under a count, M1
+# made them unconditional, and the three `moved` blocks that expressed that are
+# still needed: a workspace that has never applied since M1 still has state at
+# the indexed address.
 # Terraform follows a chain of moves in one plan, so `[0]` to the bare address
 # to the module address resolves in a single step, and dropping the first hop
 # would destroy the signing key and create a new one under the same alias. That

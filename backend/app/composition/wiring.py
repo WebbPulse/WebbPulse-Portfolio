@@ -343,8 +343,7 @@ def build_domain_app(
     # router at a different prefix signing a different kind of token, and the two
     # run side by side. The cutover that retires the legacy one is M9.
     #
-    # Wrapped in a guard on the issuer being configured, for the same reason the
-    # spike below guards on its own two values: `IdentitySettings` requires
+    # Wrapped in a guard on the issuer being configured: `IdentitySettings` requires
     # `IDENTITY_ISSUER` and `IDENTITY_AUDIENCE` and raises without them, and a
     # local checkout or a test that builds the identity application with no
     # identity environment at all must not fail to construct. In a deployed
@@ -355,43 +354,6 @@ def build_domain_app(
         from .identity import build_router
 
         app.include_router(build_router(resolved))
-
-    # The identity standard's M0 spike, on the `identity` domain only and only
-    # when `IDENTITY_SPIKE_ENABLED` is set. Terraform writes that variable onto
-    # the staging identity function alone, behind `var.identity_spike_enabled`,
-    # which defaults to false, so nothing below is constructed in production or
-    # in a workspace that has not opted in. `app/domains/identity/spike.py` has
-    # the full rationale and says plainly that it is throwaway.
-    #
-    # This does not go through `domain.load_routers` and `domain.router_prefix`,
-    # and the reason is the whole reason it is here rather than on the
-    # descriptor. The descriptor mounts every router it loads at one prefix, and
-    # `identity`'s is `/api/v1/admin`. The spike router needs a different one:
-    # it mounts at `/api/identity/spike`, matching the route key in
-    # terraform/apigateway.tf, deliberately outside `/api/v1`, because
-    # `/api/v1` is the published contract that
-    # `backend/tests/fixtures/route_contract.json` pins and a throwaway
-    # experiment does not belong in it.
-    #
-    # THE SPIKE NO LONGER SERVES THE `.well-known` DOCUMENTS. It used to mount
-    # `webbpulse.identity.identity_router` here for exactly that, and M1 above
-    # now mounts `build_identity_router`, which declares the same two paths.
-    # Mounting both would declare each path twice on one application: FastAPI
-    # keeps the first match and silently ignores the second, so the surviving
-    # document would depend on the order of two blocks in this file, which is
-    # the kind of thing that is correct until somebody reorders them.
-    #
-    # M1's is the one that survives, and it is strictly better: it renders the
-    # JWKS over every configured key rather than one, it carries the
-    # Cache-Control headers section 3.4 asks for, and it omits a key whose
-    # GetPublicKey fails rather than failing the whole document. The spike keeps
-    # only its mint route, which is the part that was ever really throwaway.
-    if domain.name == "identity" and resolved.IDENTITY_SPIKE_ENABLED:
-        from ..domains.identity.spike import router as spike_router
-
-        app.include_router(
-            spike_router, prefix="/api/identity/spike", tags=["identity-spike"]
-        )
 
     if domain.seeds:
         from ..core.middleware import SeedMiddleware

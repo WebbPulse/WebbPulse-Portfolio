@@ -139,10 +139,6 @@ def test_only_router_modules_import_fastapi(domain):
         "seo.py",
         "site_content.py",
         "skills.py",
-        # The identity standard's M0 spike, which declares routes and so
-        # belongs on this list by the same rule as every other entry: it is a
-        # domain's HTTP edge. It is throwaway, and this line goes when it does.
-        "spike.py",
     }
     offences = [
         str(path.relative_to(APP.parent))
