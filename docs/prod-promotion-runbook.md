@@ -774,10 +774,19 @@ git revert --no-commit <promotion-merge-sha>
 
 ## Executed 2026-09-11
 
-The promotion ran on 2026-09-11 against production, 036807648992. It is
-**paused at step 7**, not finished. The identity stack is live in production and
-the public site is unaffected, but the credential migration refused and the
-legacy column is untouched, which is the safe state.
+The promotion ran on 2026-09-11 against production, 036807648992, across two
+sessions. It is **paused at step 9's credentialed sign-in**, which is an owner
+action. Steps 0 through 8 are complete: the identity stack is live, the three
+SES DKIM CNAMEs exist, the administrator credential is migrated, and the native
+JWT authorizer is enforcing on fifteen routes. The public site is unaffected
+and the legacy `hashed_password` column is still intact, so the one-way door at
+step 11 has not been opened.
+
+The first session reached step 7 and stopped. The second session fixed the
+Route 53 permission that had failed the first apply, took the owner's
+`--replace` decision on step 7, and ran step 8. What follows records both, with
+the first session's account kept where it still holds and corrected where it
+does not.
 
 ### Outcome by step
 
@@ -790,8 +799,14 @@ legacy column is untouched, which is the safe state.
 | 4, verify | Pass on everything that applied. DMARC unchanged. |
 | 5, deploy backend | Pass, run `34566117153`, all nine jobs green. |
 | 6, discovery and JWKS gate | **Pass.** Both 200, issuer carries its path, one RS256 key. |
-| 7, credential migration | **Stopped. The dry run reports one conflict.** Nothing written. |
-| 8 to 12 | Not started. `identity_jwt_mode` was never created, so production is still mode `off` and no authorizer exists. |
+| 7, credential migration | **Complete, session two.** One conflict, overridden with `--replace` on the owner's decision. Rerun reports `unchanged=1, conflict=0`. |
+| 8, second apply, mode native | **Complete, session two.** `run-yfo3Wsic55mYZLfx`. One JWT authorizer, fifteen routes replaced. |
+| 9, verification | **Non-credential checks pass.** The credentialed sign-in is an owner action and is still open. |
+| 10 to 12 | Not started. `AUTH_MODE` is still unset, so the frontend is still `bearer`, and the legacy column is still populated. |
+
+The Route 53 permission that failed the first apply was fixed between the two
+sessions, in `WebbPulse-Platform` PR 23, and the three DKIM CNAMEs were then
+created by `run-hfK2cAJ3qhMiZwPQ`.
 
 ### Unplanned work: the promotion pull request opened conflicting
 
@@ -844,14 +859,14 @@ is not authorized to perform: route53:ChangeResourceRecordSets
 on resource: arn:aws:route53:::hostedzone/Z01273391K7FAD6GLXNTW
 ```
 
-The cross-account Route 53 role in the management account, 488386929690, can
-assume into the production zone but carries no
-`route53:ChangeResourceRecordSets` permission for it. This is a pre-existing
-permissions gap the runbook did not anticipate, and it is unrelated to the
-identity work. Consequence: SES DKIM for `webbpulse.com` is `PENDING` and the
-domain is not verified for sending. Nothing in the promotion sends mail, and
-SES is sandboxed anyway, so this did not block step 6. **It does need fixing
-before identity email is usable.**
+This session read the diagnosis as a missing permission. **That was wrong, and
+the correction matters because it changes the fix.** See the Route 53 section
+below: the action was always granted, and what failed was the name condition
+attached to it.
+
+Consequence at the time: SES DKIM for `webbpulse.com` was `PENDING` and the
+domain was not verified for sending. Nothing in the promotion sends mail, and
+SES is sandboxed anyway, so this did not block step 6.
 
 Everything else landed: ten tables, both KMS keys and aliases, four IAM
 policies, 33 routes, the SES identity and configuration set, the secret version
@@ -892,8 +907,10 @@ classifies the same row as `mismatch`, refusing and writing nothing:
 totals: cleared=0, already_clear=0, mismatch=1, missing_credential=0, errors=0
 ```
 
-Both refusals are the scripts working as designed. Neither was overridden:
-`--replace` was not passed, and the legacy column is intact.
+Both refusals are the scripts working as designed. Neither was overridden in
+session one: `--replace` was not passed, and the legacy column was left intact.
+The owner took the `--replace` decision afterwards, and session two carried it
+out. See "Session two" below.
 
 **This is an ordering gap in the runbook.** Step 5 deploys the backend, which
 starts the seeder, and step 7 then expects an empty `credentials` table. For any
@@ -902,41 +919,269 @@ wins that race. The runbook should either run the migration before the backend
 deploy, or state that a single seeded conflict is the expected outcome and say
 which override is correct.
 
-### Verification performed
+## Session two, 2026-09-11
 
-All non-credential checks from step 9 pass:
+Picked up at the two things session one left open: the Route 53 permission that
+failed the first apply, and the step 7 decision. Then ran step 8 and step 9's
+non-credential checks.
 
-- Discovery `200`, issuer `https://api.webbpulse.com/api/auth`, `jwks_uri` exact, one RS256 key.
-- `/health`, `/api/v1/projects`, `/api/v1/site-content` all `200`, unchanged.
-- `/api/auth/oauth/providers` advertises both `google` and `github`, which is the
-  behavioural confirmation that both `OAUTH_*_CLIENT_SECRET` keys reached the
-  `app` secret.
-- Identity login rejects a wrong password with `401`.
-- Identity Lambda logs carry no errors.
-- All CloudWatch alarms quiet.
-- `dig +short TXT _dmarc.webbpulse.com` still `"v=DMARC1; p=none; rua=mailto:tyler@webbpulse.com"`.
+### The Route 53 failure was a name pattern, not a missing permission
 
-Not performed: the credentialed sign-in and the browser sign-in. Both need the
-administrator's password typed by a person, so steps 9's sign-in, 10 and 11 were
-not attempted.
+Session one reported that `WebbPulse-Portfolio-Route53` in 488386929690 "carries
+no `route53:ChangeResourceRecordSets` permission". Reading the live policy back
+before changing anything showed otherwise. The inline policy `route53-webbpulse`
+on that role already granted the action, on that exact hosted zone ARN, and
+already granted `ListResourceRecordSets`, `GetHostedZone` and `GetChange`. So
+none of the permissions the resume note asked for were actually missing.
+
+What failed is the **name condition** on the one `Allow`. SES Easy DKIM names
+its records:
+
+```
+<token>._domainkey.webbpulse.com
+```
+
+where `<token>` is a 32 character alphanumeric string SES mints, for example
+`ojyzrqwhawhutvgwjlnfpdf7347oxqhk`. The role's patterns were
+`_*.webbpulse.com`, `_*.www.webbpulse.com` and `_*.api.webbpulse.com`. A DKIM
+name's left label does not begin with an underscore, so **no pattern matched**
+and `ForAllValues:StringLike` evaluated false.
+
+The misreading is easy to make and worth recording, because the error text
+points somewhere else. When the only `Allow` statement's condition fails, IAM
+reports the outcome as "because no identity-based policy allows the
+route53:ChangeResourceRecordSets action". That names the action, so it reads as
+a missing grant rather than as a pattern that does not reach the name.
+
+**The fix**, `WebbPulse-Platform` PR 23, merge commit `4f093a2`: one pattern
+added to the `portfolio-prod` writer in `locals_dns.tf`.
+
+```hcl
+record_name_patterns = [
+  "_*.webbpulse.com",
+  "_*.www.webbpulse.com",
+  "_*.api.webbpulse.com",
+  "*._domainkey.webbpulse.com",
+]
+```
+
+No new actions, no new record types, no new resources. The wildcard has to be
+bare because the token cannot be written down in advance.
+
+**Why the bare wildcard stays safe.** It also matches
+`google._domainkey.webbpulse.com`, which is the organization's Google Workspace
+DKIM record and part of the mail set that root deliberately keeps away from
+workload writers. That costs nothing: the Google record is `TXT`, this writer
+holds only `A` and `CNAME`, and the `DenyRecordTypesThisRootOwns` statement
+denies `MX`, `NS`, `SOA` and `TXT` on the zone outright. It is the same
+separation that already lets `_*.webbpulse.com` match `_dmarc.webbpulse.com`
+without being able to touch it. None of the `guards.tf` preconditions needed
+changing: the new pattern is lowercase, carries no trailing dot, sits inside the
+zone, and adds no record type.
+
+Applied on the `WebbPulse-Platform` workspace, `ws-Z8YfJZZAg5VnHRb7`, as
+`run-vcCyJGUCU9pZvYRy`. Plan **0 add, 1 change, 0 destroy**, the single change
+being `aws_iam_role_policy.dns_writer["portfolio-prod"]`. A speculative plan on
+the branch, `run-GjFnW6fWYoGZ7pQJ`, showed the identical shape first.
+
+### The three DKIM records
+
+With the writer fixed, a plan-only run on `ws-JpNLUhFzVCzMDgAN`,
+`run-jJ9WofyCv8CvCerr`, showed exactly what the resume note predicted:
+
+| Expected | Observed |
+| --- | --- |
+| 3 add, 0 change, 0 destroy | **3 add, 0 change, 0 destroy** |
+| The three DKIM CNAMEs | `aws_route53_record.ses_dkim[0]`, `[1]`, `[2]` |
+| Zero `ses_dmarc` changes | **zero** |
+
+Applied as `run-hfK2cAJ3qhMiZwPQ`, same plan shape. All three CNAMEs resolve in
+public DNS and each points at its `dkim.amazonses.com` target. `_dmarc` is
+unchanged and still carries its `rua`.
+
+One `get-email-identity` read after the apply still showed `DkimStatus:
+PENDING`, which is expected: SES re-polls DNS on its own schedule. Per the
+owner's instruction, SES status was not chased further and **no SES account
+configuration was touched** at any point.
+
+### Step 7, with the owner's `--replace`
+
+The dry run was re-run first and reproduced session one's finding exactly:
+**one row, one conflict, zero unsupported hashes**. The `~/prod-users-preflight.json`
+snapshot was confirmed present first, one item carrying a 60 character bcrypt
+hash, mode 600, as the rollback point.
+
+The owner accepted `--replace` on the reasoning that the legacy hash is the
+administrator's canonical password hash and the seeded credential came from the
+same `ADMIN_PASSWORD`, so the two differ by salt alone:
+
+```
+credential migration (applied)
+  user 1: conflict (credential differs from legacy hash)
+  totals: write=0, unchanged=0, conflict=1, skip=0
+```
+
+Rerunning the dry run afterwards confirms the override took:
+
+```
+credential migration (dry run, nothing written)
+  user 1: unchanged (credential already matches)
+  totals: write=0, unchanged=1, conflict=0, skip=0
+```
+
+And `clear_legacy_credentials.py`, **dry run only, `--apply` deliberately not
+passed**, now classifies the row as clearable instead of refusing it:
+
+```
+legacy credential clearing (dry run, nothing written)
+  user 1: cleared (credential matches the legacy column, removing it)
+  totals: cleared=1, already_clear=0, mismatch=0, missing_credential=0, errors=0
+```
+
+That is the state step 11 needs, and step 11 was **not** run. The legacy column
+is still populated.
+
+### Step 8, mode native
+
+`identity_jwt_mode = native` created on `ws-JpNLUhFzVCzMDgAN` as
+`var-8Eb4WVzRSiGDuH4h`, confirmed absent beforehand. Run
+`run-yfo3Wsic55mYZLfx`, plan **16 add, 0 change, 15 destroy**, checked against
+the step 8 table before applying:
+
+| Gate | Expected | Observed |
+| --- | --- | --- |
+| `aws_apigatewayv2_authorizer` | 1 create, type JWT | **1 create, type `JWT`**, issuer `https://api.webbpulse.com/api/auth`, audience `webbpulse-portfolio-production-api`, identity source `$request.header.Authorization` |
+| Marked routes | replace, not update | **15 delete plus 15 create, a 1:1 swap**, `route.this[...]` to `route.identity_jwt[...]` on the same fifteen keys |
+| `.well-known` routes | unchanged | **untouched.** Both still `AuthorizationType: NONE` after the apply |
+| MFA ticket route | unchanged and unprotected | **untouched.** Still `NONE` |
+| Everything else | no change | **nothing else in the plan.** Zero `ses_dmarc` changes |
+
+**The count is fifteen, not seven.** The step 8 table says "roughly seven
+replacements", and that number is stale. `terraform/apigateway.tf` on `main`
+carries fifteen `require_identity_jwt = true` assignments, the plan replaced
+exactly fifteen routes, and the gateway reports exactly fifteen `JWT` routes
+afterwards. The runbook's "five and two across the M4 and M6 groups" no longer
+describes the file. **Correct that table to fifteen**, and keep the instruction
+to verify against the plan rather than the prose, which is what caught it.
+
+The fifteen routes now behind the authorizer:
+
+```
+DELETE /api/auth/oauth/{provider}/link     POST /api/auth/passkeys/register/options
+DELETE /api/auth/passkeys/{credential_id}  POST /api/auth/passkeys/register/verify
+GET    /api/auth/oauth/links               POST /api/auth/password
+GET    /api/auth/passkeys                  POST /api/auth/recovery-codes
+PATCH  /api/auth/passkeys/{credential_id}  POST /api/auth/step-up
+POST   /api/auth/logout-all                POST /api/auth/totp/activate
+POST   /api/auth/oauth/{provider}/link     POST /api/auth/totp/disable
+                                           POST /api/auth/totp/enrol
+```
+
+Applied cleanly. `CreateAuthorizer` fetched the discovery document and the JWKS
+without error, so step 6's gate had genuinely held and the runbook's remedy
+path, setting the variable back to `off`, was not needed.
+
+A note on the passkey routes: eight of the fifteen are passkey or TOTP routes
+that exist as declarations even though `passkeys_enabled` derives to `false` in
+production. They are protected by the authorizer like the rest; whether the
+handlers serve is a separate question the promotion does not answer.
+
+### Step 9, non-credential checks
+
+The six probes, expected `200, 200, 401, 200, 200, 200`:
+
+```
+discovery 200
+jwks      200
+no token  404   <-- see below
+health    200
+projects  200
+content   200
+```
+
+**The 401 probe as written does not test what it means to test.**
+`/api/auth/sessions` returns `404` because **that route does not exist** in this
+version of the API, and never did during this promotion. API Gateway returns
+`404` for an unrouted path whether or not an authorizer exists, so the probe
+would have printed `404` before step 8 as well, and printing `401` was never
+possible. It is a stale route name in the runbook, not a failure.
+
+Re-run against routes that are genuinely protected, the gate passes properly:
+
+```
+GET  /api/auth/passkeys          401 {"message":"Unauthorized"}
+GET  /api/auth/oauth/links       401 {"message":"Unauthorized"}
+POST /api/auth/password          401
+GET  /api/auth/passkeys  with a garbage bearer token   401
+```
+
+`{"message":"Unauthorized"}` is API Gateway's own envelope rather than the
+application's, which is the evidence that the authorizer is rejecting at the
+gateway before the request reaches Lambda. **Replace `/api/auth/sessions` in the
+step 9 probe list with `GET /api/auth/passkeys`.**
+
+OAuth providers, the behavioural check that both secret keys reached the `app`
+blob without ever reading it:
+
+```json
+{"providers":[{"id":"google","display_name":"Google"},{"id":"github","display_name":"GitHub"}]}
+```
+
+A wrong password against `POST /api/auth/login`, using a random non-existent
+username and an obviously fake password, returns a clean application-level
+`401` rather than a `500`:
+
+```json
+{"success":false,"status":401,"message":"Invalid email or password.","error_code":"INVALID_CREDENTIALS"}
+```
+
+That is the webbpulse error envelope, so the request reached the application and
+the credential store answered. Identity Lambda logs carry no `ERROR`, `CRITICAL`,
+`Traceback` or `Exception` in the hour covering the apply and the probes, the
+log group is live with recent invocations, and the Lambda `Errors` metric is
+`0.0` for that hour.
+
+**Not performed:** the credentialed sign-in, and steps 10 and 11. The owner
+reported signing in, but no `POST /api/auth/login` appeared in the production
+gateway access log in the surrounding window, so that gate is treated as **still
+open**. It needs a person to type the password.
 
 ### State left behind
 
-- Production runs the promoted code, mode `off`, no gateway authorizer.
-- `identity_jwt_mode` was **never created** on `ws-JpNLUhFzVCzMDgAN`.
-- Frontend `AUTH_MODE` is **unset**, so production is still `bearer`.
-- The legacy `hashed_password` column is **intact**. Nothing one-way happened.
+- Production runs the promoted code in mode **`native`**, with the JWT
+  authorizer live on fifteen routes.
+- The administrator's credential is migrated and the identity and legacy hashes
+  now match byte for byte.
+- The legacy `hashed_password` column is **still populated**. Step 11 was not
+  run, so the one-way door is closed.
+- Frontend `AUTH_MODE` is **still unset**, so production still builds `bearer`.
+  Step 10 was not run.
 - `~/prod-users-preflight.json` still exists and should be deleted once the
   promotion holds.
+- SES DKIM last read as `PENDING`; SES configuration was not touched.
+
+Rollback from here is the runbook's "through step 9" row: set
+`identity_jwt_mode` back to `off`, apply, then revert `main`. The frontend was
+never flipped, and because the legacy column is intact, bearer login still works
+the moment the authorizer is removed.
 
 ### To resume
 
-1. Decide the step 7 question: the seeded credential already verifies the
-   correct password, so either accept it and skip the migration, or run with
-   `--replace` to make the two hashes byte identical, which is what unblocks
-   `clear_legacy_credentials.py` later.
-2. Grant `route53:ChangeResourceRecordSets` on `Z01273391K7FAD6GLXNTW` to
-   `WebbPulse-Portfolio-Route53` in 488386929690, then re-apply to create the
-   three DKIM records.
-3. Confirm one real sign-in at `https://www.webbpulse.com`, then continue from
-   step 8.
+1. **Owner signs in** at `https://www.webbpulse.com` or via
+   `POST /api/auth/login`, confirming the identity path end to end. This is the
+   gate everything below waits on.
+2. Step 10: `AUTH_MODE=identity` on the production GitHub Environment, redeploy
+   the frontend, confirm a browser sign-in survives a reload.
+3. Step 11, only after that: `clear_legacy_credentials.py --apply`. The dry run
+   already reports the row as clearable.
+4. Step 12 close-out, including deleting the snapshot file.
+
+### Runbook corrections this session earned
+
+- Step 8's table says "roughly seven" replaced routes. It is **fifteen**.
+- Step 9's `401` probe names `/api/auth/sessions`, which does not exist. Use
+  `GET /api/auth/passkeys`.
+- The Route 53 note in session one's "To resume" asks for permissions that were
+  already granted. The real fix was a **name pattern**, and an IAM
+  `AccessDenied` that names an action can still mean a condition that did not
+  match.
