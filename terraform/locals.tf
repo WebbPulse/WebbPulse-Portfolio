@@ -35,4 +35,18 @@ locals {
   # the browser sends the signed cookies to https://api.staging.webbpulse.com itself, because they
   # are scoped to the staging apex, and the API's own authorizer checks them.
   frontend_api_url = local.api_url
+
+  # Gateway level enforcement of the identity access token, split into the two booleans the two
+  # modules actually read. var.identity_jwt_mode is the one place the choice is written; these
+  # exist so neither module block has to repeat the string comparison, and so the mode and the
+  # environment's actual shape are reconciled in one place rather than two.
+  #
+  # The gate branch is additionally conditioned on local.staging_gate_enabled. "gate" names a
+  # mechanism that only exists when the gate module is instantiated, so a workspace left on "gate"
+  # while the gate is off would otherwise index a module with count 0 and fail the plan. Resolving
+  # to false instead means an environment without a gate enforces nothing rather than failing,
+  # which is the same relationship every other staging_gate_enabled consumer in this configuration
+  # has.
+  identity_jwt_gate_enforced   = var.identity_jwt_mode == "gate" && local.staging_gate_enabled
+  identity_jwt_native_enforced = var.identity_jwt_mode == "native"
 }
