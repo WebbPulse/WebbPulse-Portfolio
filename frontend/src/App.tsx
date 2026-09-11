@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { Home } from './pages';
+import { Home, Privacy } from './pages';
 import { UnderConstruction } from './pages/UnderConstruction';
 import { AdminPanel } from './components/admin/AdminPanel';
 import { BlogList } from './components/sections/BlogList';
@@ -26,6 +26,13 @@ function App() {
           </>
         )}
         <Route path="/admin" element={<AdminPanel />} />
+        {/*
+          Registered outside the under construction switch on purpose. Google's
+          OAuth consent screen requires a reachable privacy policy URL, and a
+          policy that turned into a placeholder whenever the site was being
+          worked on would fail that check at the worst possible moment.
+        */}
+        <Route path="/privacy" element={<Privacy />} />
       </Routes>
     </Router>
   );

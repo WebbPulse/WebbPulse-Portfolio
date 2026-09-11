@@ -73,7 +73,15 @@ const Footer: React.FC = () => {
         </div>
 
         <div className="mt-10 pt-6 border-t border-surface-800 flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between text-xs text-surface-500">
-          <p>© {currentYear} Tyler Webb</p>
+          <div className="flex items-center gap-4">
+            <p>© {currentYear} Tyler Webb</p>
+            <Link
+              to="/privacy"
+              className="text-surface-500 hover:text-surface-300 transition-colors"
+            >
+              Privacy
+            </Link>
+          </div>
           <p className="text-surface-600">
             Built with React, FastAPI, and a lot of caffeine.
           </p>
