@@ -68,6 +68,16 @@ already carries and what `app/db/tables.py` builds every table name from. The
 logical names are the package's own `CREDENTIALS_TABLE` and this repository's
 `users`, so a rename in either place travels here without an edit.
 
+**`--prefix` sets the environment variable as well as the store's prefix**, and
+that is not redundant. The credential store is constructed from the parsed
+value, but the legacy users repository reads `settings.DYNAMODB_TABLE_PREFIX`,
+which the `Settings` singleton resolves from the environment at import. Passing
+the flag alone therefore used to read the default `webbpulse-development-users`
+and fail with a ResourceNotFoundException naming a table nobody asked for.
+`parse_args` now writes the value back into the environment before `main`
+imports anything that builds that singleton, so one flag means one environment
+and the documented command in `docs/identity-cutover.md` needs no second export.
+
 ## The store is the package's, not a hand rolled PutItem
 
 Writes go through `webbpulse.identity.DynamoCredentialStore` over a
@@ -287,7 +297,12 @@ def parse_args(argv=None):
     parser.add_argument(
         "--prefix",
         default=os.environ.get("DYNAMODB_TABLE_PREFIX"),
-        help="DynamoDB table prefix (default: $DYNAMODB_TABLE_PREFIX)",
+        help=(
+            "DynamoDB table prefix, covering both the identity credentials "
+            "table and the legacy users table. Exported back into "
+            "DYNAMODB_TABLE_PREFIX so one flag selects one environment "
+            "(default: $DYNAMODB_TABLE_PREFIX)"
+        ),
     )
     parser.add_argument(
         "--endpoint-url",
@@ -307,6 +322,30 @@ def parse_args(argv=None):
     args = parser.parse_args(argv)
     if not args.prefix:
         parser.error("--prefix is required when DYNAMODB_TABLE_PREFIX is not set")
+
+    # `--prefix` has to reach BOTH sides of this migration, and until now it
+    # reached only one.
+    #
+    # The identity credential store is built from the parsed value and honours
+    # the flag. The legacy users repository is not: `app/db/repository.py`
+    # reads `settings.DYNAMODB_TABLE_PREFIX`, which `app/composition/settings.py`
+    # resolves from the environment when the `Settings` singleton is
+    # constructed, and it defaults to `webbpulse-development`. So
+    # `--prefix webbpulse-staging` on its own read `webbpulse-development-users`
+    # and failed with ResourceNotFoundException naming a table nobody asked for,
+    # which read as a broken script rather than as a missing variable.
+    #
+    # Writing the value back into the environment here is what makes one flag
+    # mean one environment. It happens in `parse_args` rather than in `main`
+    # because `main` imports `app.db.entities`, and that import is what builds
+    # the singleton: setting it afterwards would be too late.
+    #
+    # `os.environ[...] = ` rather than `setdefault`, because the flag is the
+    # explicit instruction and an inherited variable naming a different
+    # environment is exactly the mistake this is closing.
+    os.environ["DYNAMODB_TABLE_PREFIX"] = args.prefix
+    if args.endpoint_url:
+        os.environ["DYNAMODB_ENDPOINT_URL"] = args.endpoint_url
     return args
 
 
