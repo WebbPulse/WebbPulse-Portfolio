@@ -1,6 +1,6 @@
 -r requirements.txt
 
-webbpulse[testing]==0.19.0
+webbpulse[testing]==0.20.0
 moto[dynamodb]==5.1.6
 pytest==8.4.1
 pytest-cov==6.2.1
