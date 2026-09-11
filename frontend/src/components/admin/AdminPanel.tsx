@@ -6,7 +6,11 @@ import {
   stripOAuthParams,
 } from '@webbpulse/auth';
 import type { PasskeySignInOutcome } from '@webbpulse/auth';
-import { apiService } from '../../services/api';
+import {
+  API_BASE_URL,
+  apiService,
+  identityOriginFrom,
+} from '../../services/api';
 import { useOAuthProviders } from '../../hooks/useOAuthProviders';
 import { LoginForm } from './LoginForm';
 import { TotpForm } from './TotpForm';
@@ -155,7 +159,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
    * providers that exist. The list of what is already linked comes from the
    * route and is a separate question. See `services/oauthAvailability.ts`.
    */
-  const oauthProviders = useOAuthProviders(identityClient);
+  const oauthProviders = useOAuthProviders(
+    identityClient,
+    identityOriginFrom(API_BASE_URL)
+  );
 
   // Projects
   const [projects, setProjects] = useState<Project[]>([]);

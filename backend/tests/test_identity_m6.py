@@ -85,6 +85,12 @@ OAUTH_GET_PATHS = (
 OAUTH_POST_PATHS = ("/api/auth/oauth/{provider}/link",)
 OAUTH_DELETE_PATHS = ("/api/auth/oauth/{provider}/link",)
 
+#: The one OAuth path that is mounted in every deployment, new in webbpulse
+#: 0.16.0. Kept out of `OAUTH_GET_PATHS` deliberately: that tuple is the set of
+#: routes that appear only once a client id is set, and this route's whole point
+#: is that it does not belong to it.
+OAUTH_PROVIDERS_PATH_FULL = "/api/auth/oauth/providers"
+
 #: A client id shaped like Google's. Nothing verifies its shape, and no test
 #: here reaches a provider; what matters is only that it is non-empty, because
 #: non-empty is the entire switch.
@@ -477,7 +483,7 @@ def test_only_the_providers_whose_secret_is_present_are_returned(
         _FakeSecretsModule(
             {
                 "SECRET_KEY": "x",
-                "oauth_google_client_secret": "google-secret",
+                "OAUTH_GOOGLE_CLIENT_SECRET": "google-secret",
             }
         ),
     )
@@ -511,6 +517,34 @@ def test_a_secret_with_no_oauth_keys_yields_an_empty_mapping(
     settings = Settings(APP_SECRETS_ARN="arn:aws:secretsmanager:us-west-2:1:secret:x")
 
     assert composition.build_oauth_client_secrets(settings) == {}
+
+
+def test_the_oauth_secret_keys_are_upper_case_like_every_other_secret_key() -> None:
+    """The secret's keys are one convention, and this is what holds them to it.
+
+    Every lookup against the app secret is `loaded.get(name)` against a plain
+    dict, here and in `Settings._resolve_secret`, so the match is exact. The four
+    keys `terraform/db.tf` has always written are upper case, and these two are
+    written by the same `json` block in the same module, so a lower case name
+    here would be a key that is in Secrets Manager and never found.
+
+    That failure is silent in the worst way. Both client ids set, both secrets
+    present, `build_oauth_client_secrets` returning `{}`, and from webbpulse
+    0.16.0 a `GET /api/auth/oauth/providers` answering `{"providers": []}`
+    because a provider is only listed when it has both halves. No exception, no
+    log line, just a sign-in page with no buttons on it.
+
+    Asserting the convention rather than the two literal names on purpose: the
+    names themselves are asserted by the test above that reads one out of a fake
+    secret, and what this protects is the rule that the next provider added to
+    the mapping has to follow.
+    """
+    from app.composition.identity import OAUTH_SECRET_KEYS
+
+    assert OAUTH_SECRET_KEYS
+    for provider, key in OAUTH_SECRET_KEYS.items():
+        assert key == key.upper(), f"{provider} maps to a non upper case key: {key}"
+        assert provider == provider.lower(), provider
 
 
 # ---------------------------------------------------------------------------
@@ -578,10 +612,22 @@ def test_no_oauth_route_mounts_without_a_client_id(
     that FastAPI's own `/docs/oauth2-redirect` Swagger helper does not read as an
     identity route. That helper is mounted by `FastAPI()` itself and has nothing
     to do with this feature.
+
+    `/api/auth/oauth/providers` is excluded, and that exclusion is the one thing
+    webbpulse 0.16.0 changed about this assertion. Discovery mounts in every
+    deployment by design, including this one, and answers `{"providers": []}`
+    here; the test below is the one that pins it. Everything else about the claim
+    stands: no flow route, so nothing that can hand a user to a provider.
     """
     paths = _all_paths(identity_app_without_providers)
 
-    assert not [path for path in paths if path.startswith("/api/auth/oauth")]
+    mounted = [
+        path
+        for path in paths
+        if path.startswith("/api/auth/oauth") and path != OAUTH_PROVIDERS_PATH_FULL
+    ]
+
+    assert not mounted
 
 
 def test_the_other_identity_routes_still_mount_without_a_client_id(
@@ -648,6 +694,111 @@ def test_the_mounted_paths_are_the_packages_own_constants(
     assert f"{prefix}{OAUTH_CALLBACK_PATH}" in OAUTH_GET_PATHS
     assert f"{prefix}{OAUTH_LINKS_PATH}" in OAUTH_GET_PATHS
     assert f"{prefix}{OAUTH_LINK_PATH}" in OAUTH_POST_PATHS
+
+
+# ---------------------------------------------------------------------------
+# Provider discovery, new in webbpulse 0.16.0
+# ---------------------------------------------------------------------------
+
+
+def test_provider_discovery_mounts_with_no_client_id_set(
+    identity_app_without_providers: FastAPI,
+) -> None:
+    """THE DEPLOYED STATE, and the one OAuth route that is in it.
+
+    Every other route in this file is conditional on a client id. This one is
+    not, and that is the whole design: a sign-in page needs one authoritative
+    answer to "which providers", and a route that is absent when OAuth is off
+    gives a 404 that cannot be told apart from a routing mistake or a frontend
+    talking to an older backend. An empty list says "none, and I am sure".
+    """
+    assert OAUTH_PROVIDERS_PATH_FULL in _paths_for_method(
+        identity_app_without_providers, "GET"
+    )
+
+
+def test_provider_discovery_answers_an_empty_list_when_unconfigured(
+    identity_app_without_providers: FastAPI,
+) -> None:
+    """It answers, it answers 200, and the list is empty.
+
+    The mount test above says the route is in the table; this one calls it,
+    because a route that is declared and raises on its first request is a
+    regression the path assertion cannot see. It is also the assertion the
+    frontend's switch away from probing rests on: `oauthAvailability.ts` now
+    renders buttons straight from this body, so an unconfigured deployment
+    showing no buttons is exactly this `[]` and nothing else.
+
+    Anonymous, deliberately. No credential is sent and none is needed, which is
+    what lets the sign-in page fetch it before anybody has signed in.
+    """
+    from fastapi.testclient import TestClient
+
+    with TestClient(identity_app_without_providers) as client:
+        response = client.get(OAUTH_PROVIDERS_PATH_FULL)
+
+    assert response.status_code == 200
+    assert response.json() == {"providers": []}
+
+
+def test_provider_discovery_is_publicly_cacheable(
+    identity_app_without_providers: FastAPI,
+) -> None:
+    """`Cache-Control: public, max-age=300`, which is why this is cheap to call.
+
+    The frontend fetches this on every sign-in page load. The header is what
+    keeps that off the Lambda for five minutes at a time, and `public` is sound
+    because the body is configuration and holds nothing about any user. Pinned
+    here because dropping it would turn one fetch per five minutes into one per
+    page load with nothing failing to say so.
+    """
+    from fastapi.testclient import TestClient
+
+    with TestClient(identity_app_without_providers) as client:
+        response = client.get(OAUTH_PROVIDERS_PATH_FULL)
+
+    assert response.headers["cache-control"] == "public, max-age=300"
+
+
+def test_provider_discovery_lists_nothing_without_the_client_secrets(
+    identity_app_with_providers: FastAPI,
+) -> None:
+    """Both client ids set, no secret in the blob, and still an empty list.
+
+    0.16.0 is stricter than `enabled_providers()` on purpose: a provider is
+    advertised only when it has **both** an id and a secret. Before that rule, an
+    id with no secret was a button that sent a user to Google and met a 503 on
+    the way back.
+
+    `_build_identity_app` sets the two ids and supplies no secret, so this is
+    precisely that half-configured state, and it is the state this repository
+    would be in if `terraform/db.tf` set the ids without the two new secret keys.
+    The five flow routes mount, and discovery still says there is nothing to draw
+    a button for.
+    """
+    from fastapi.testclient import TestClient
+
+    assert "/api/auth/oauth/{provider}/start" in _paths_for_method(
+        identity_app_with_providers, "GET"
+    )
+
+    with TestClient(identity_app_with_providers) as client:
+        response = client.get(OAUTH_PROVIDERS_PATH_FULL)
+
+    assert response.status_code == 200
+    assert response.json() == {"providers": []}
+
+
+def test_the_discovery_path_is_the_packages_own_constant() -> None:
+    """The literal above against the package's constant, like the five below it.
+
+    Same reasoning as `test_the_mounted_paths_are_the_packages_own_constants`: a
+    path renamed in the package and not here is a 404 in staging that no other
+    test in this file would catch.
+    """
+    from webbpulse.identity.oauth_routes import OAUTH_PROVIDERS_PATH
+
+    assert f"/api/auth{OAUTH_PROVIDERS_PATH}" == OAUTH_PROVIDERS_PATH_FULL
 
 
 def test_one_provider_is_enough_to_mount_the_routes(

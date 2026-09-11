@@ -538,9 +538,21 @@ def build_router(settings: Settings) -> APIRouter:
 #: Keeping the mapping here as one dict rather than two string literals inside
 #: the function is what makes adding a provider one line, on the day the package
 #: gains one.
+#:
+#: UPPER CASE, matching `SECRET_FIELDS` and the four keys `terraform/db.tf`
+#: already writes. The names were lower case until the Terraform half of this
+#: was written, at which point the case stopped being cosmetic: every lookup
+#: against the secret, here and in `Settings._resolve_secret`, is
+#: `loaded.get(name)` against a plain dict, so it is exact and a key spelled
+#: `oauth_google_client_secret` in this file and `OAUTH_GOOGLE_CLIENT_SECRET` in
+#: the secret would silently find nothing. The symptom would be the worst kind:
+#: a deployment with both client ids set, both secrets present in Secrets
+#: Manager, and a providers route answering `{"providers": []}` with nothing
+#: logged to say why. One convention, enforced by the test below that asserts
+#: every key here is upper case.
 OAUTH_SECRET_KEYS = {
-    "google": "oauth_google_client_secret",
-    "github": "oauth_github_client_secret",
+    "google": "OAUTH_GOOGLE_CLIENT_SECRET",
+    "github": "OAUTH_GITHUB_CLIENT_SECRET",
 }
 
 
@@ -573,15 +585,20 @@ def build_oauth_client_secrets(settings: Settings) -> dict[str, str]:
     deployment that is correctly serving no OAuth into a cold start failure.
 
     That stays true one provider at a time. Registering Google alone puts
-    `oauth_google_client_secret` in the secret and leaves `github` out of this
+    `OAUTH_GOOGLE_CLIENT_SECRET` in the secret and leaves `github` out of this
     mapping, and the package mounts the routes with only Google enabled.
 
     A client id set with no matching secret is the one bad combination this
-    cannot prevent, and it does not try to: the routes mount, the start route
-    works, and the token exchange answers 503 with a message that names no
-    configuration. That is the package's behaviour and it is the right one,
-    because the alternative is a service that will not start over a key that
-    only one route needs.
+    cannot prevent, and it does not try to. From 0.16.0 the package makes that
+    state quiet rather than broken: `GET /oauth/providers` lists a provider only
+    when it has both halves, so no button is ever rendered for it, and
+    `OAuthService.start` refuses at the top with a 503
+    `OAUTH_PROVIDER_UNAVAILABLE` whose message names no configuration, logging
+    the detail for the operator instead. Before 0.16.0 the failure came later,
+    at the token exchange, after the user had already been sent to the provider
+    and consented. Either way the service still starts, which is the right
+    trade: the alternative is refusing to boot over a key that only one route
+    needs.
 
     ## Why it does not go through `Settings.__getattribute__`
 

@@ -247,14 +247,64 @@ locals {
 # ---------------------------------------------------------------------------
 
 variable "oauth_google_client_id" {
-  description = "Google OAuth client id for identity M6 sign in, from the OAuth client the owner creates in the Google Cloud console. Empty means Google sign in is off and the package declares no OAuth route for it. Not a secret: it travels in the authorization URL in the user's browser. The matching secret is the `oauth_google_client_secret` key of the webbpulse-<env>/app secret."
+  description = "Google OAuth client id for identity M6 sign in, from the OAuth client the owner creates in the Google Cloud console. Empty means Google sign in is off and the package declares no OAuth route for it. Not a secret: it travels in the authorization URL in the user's browser. The matching secret is var.oauth_google_client_secret, delivered as the OAUTH_GOOGLE_CLIENT_SECRET key of the webbpulse-<env>/app secret."
   type        = string
   default     = ""
 }
 
 variable "oauth_github_client_id" {
-  description = "GitHub OAuth client id for identity M6 sign in, from the OAuth app the owner creates in GitHub developer settings. Empty means GitHub sign in is off and the package declares no OAuth route for it. Not a secret, on the same reasoning as the Google id. The matching secret is the `oauth_github_client_secret` key of the webbpulse-<env>/app secret."
+  description = "GitHub OAuth client id for identity M6 sign in, from the OAuth app the owner creates in GitHub developer settings. Empty means GitHub sign in is off and the package declares no OAuth route for it. Not a secret, on the same reasoning as the Google id. The matching secret is var.oauth_github_client_secret, delivered as the OAUTH_GITHUB_CLIENT_SECRET key of the webbpulse-<env>/app secret."
   type        = string
+  default     = ""
+}
+
+# ---------------------------------------------------------------------------
+# The two matching client secrets, and why they travel a different road than
+# the two ids above.
+#
+# THESE ARE NOT LAMBDA ENVIRONMENT VARIABLES AND MUST NOT BECOME THEM. The ids
+# above are rendered into IDENTITY_OAUTH_* variables in lambda_domains.tf
+# because they are public by construction: a client id is in the authorization
+# URL in the user's own browser. A client secret is not, and a secret in a
+# function's environment is a secret visible in the console, in
+# get-function-configuration, and in every Terraform plan that touches the
+# function. So these two are delivered as keys of the single webbpulse-<env>/app
+# secret in db.tf, which is the estate's one-secret-per-service rule, and the
+# backend reads them through build_oauth_client_secrets in
+# app/composition/identity.py rather than through settings fields.
+#
+# THE KEY NAMES ARE UPPER CASE AND THE CASE IS LOAD BEARING. Every lookup
+# against that secret is a plain dict get, so it is exact. OAUTH_SECRET_KEYS in
+# app/composition/identity.py holds the names and a test asserts the convention;
+# these two variables and the json block in db.tf are the other half of that
+# agreement. A mismatch would be silent: both ids set, both secrets present in
+# Secrets Manager, and GET /api/auth/oauth/providers answering with an empty
+# list because webbpulse 0.16.0 lists a provider only when it has both halves.
+#
+# BOTH DEFAULT TO EMPTY, which is the deployed state and a supported one. An
+# empty value writes an empty string into the secret, the backend's
+# `if loaded.get(key)` skips it, and the provider is simply not advertised.
+# Nothing fails to plan and nothing fails to start; the route set is the one the
+# repository serves today.
+#
+# An id set with no matching secret is the one bad combination, and from
+# webbpulse 0.16.0 it is a quiet one rather than a broken sign in: the provider
+# is left off the discovery list and OAuthService.start refuses it with
+# OAUTH_PROVIDER_UNAVAILABLE, so a user never reaches a provider consent screen
+# they cannot come back from. Set both halves of a provider in the same apply.
+# ---------------------------------------------------------------------------
+
+variable "oauth_google_client_secret" {
+  description = "Google OAuth client secret matching var.oauth_google_client_id, delivered into the webbpulse-<env>/app secret as OAUTH_GOOGLE_CLIENT_SECRET. Set as a sensitive workspace variable in HCP Terraform. Defaults to empty, which is the deployed state: the backend skips an empty value and Google is not advertised by the provider discovery route. Set it in the same apply as the client id, because an id without a secret is a provider that is configured and cannot sign anyone in."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "oauth_github_client_secret" {
+  description = "GitHub OAuth client secret matching var.oauth_github_client_id, delivered into the webbpulse-<env>/app secret as OAUTH_GITHUB_CLIENT_SECRET. Set as a sensitive workspace variable in HCP Terraform. Defaults to empty, on the same terms as the Google secret, and is set in the same apply as the matching client id."
+  type        = string
+  sensitive   = true
   default     = ""
 }
 
@@ -287,20 +337,66 @@ variable "oauth_github_client_id" {
 # oracle. Whether a single administrator product wants a passwordless entry
 # point is the owner's call, and it stays false until they make it.
 #
-# So the ordinary sequence is two separate HCP variable changes with a redeploy
-# each, not one. docs/identity-cutover.md carries it.
+# The rollout has now reached its first step, and the defaults below carry it
+# rather than a pair of typed HCP values.
+#
+# BOTH DEFAULT ON IN STAGING AND OFF IN PRODUCTION, DERIVED FROM
+# var.environment. The frontend precondition that kept `passkeys_enabled` false
+# everywhere is met: `@webbpulse/auth` 0.8.0 shipped and PR 172 landed the admin
+# panel code that calls `navigator.credentials.create`, so a mounted route in
+# staging is now a route the frontend actually drives. Production stays off
+# until the owner promotes it, which is the same two-environment sequence every
+# other identity switch in this file has followed.
+#
+# WHY A DERIVED DEFAULT RATHER THAN A WORKSPACE VARIABLE. Every other per
+# environment decision in this configuration is a `var.environment` conditional
+# in code: the domain, the OTEL sample ratio, deletion protection on both
+# tables, the staging access gate. A typed HCP value would put this one switch
+# somewhere no reader of this repository can see it, and the failure that
+# matters here is the silent one, a promotion to production that carries a
+# staging value nobody remembered was set. Derived, the environment split is
+# reviewable in the diff and cannot drift between the two workspaces.
+#
+# BOTH STAY OVERRIDABLE. Each variable is nullable with a null default, and null
+# means "use the environment's answer". Setting either in HCP still wins, which
+# is what keeps the rollback in docs/identity-cutover.md a one variable change
+# with no code deploy: `passkeys_enabled = false` on the staging workspace turns
+# the routes off at the next apply.
 # ---------------------------------------------------------------------------
 
 variable "passkeys_enabled" {
-  description = "Whether identity M5's passkey routes are declared. False, the shipping default, mounts none of the seven and leaves the served API identical to M6's. The package's own default is true, so this is set explicitly rather than omitted: an unset value here would mount routes the frontend has no code for. Turning it on needs @webbpulse/auth 0.8.0 on the frontend first."
+  description = "Whether identity M5's passkey routes are declared. Null, the default, derives the answer from var.environment: true in staging, false in production. The package's own default is true, so this is always resolved to an explicit bool before it reaches the Lambda environment rather than omitted. Set it on an HCP workspace to override the derived value, which is how the rollback in docs/identity-cutover.md turns the routes back off without a code deploy."
   type        = bool
-  default     = false
+  default     = null
+  nullable    = true
 }
 
 variable "passkeys_passwordless" {
-  description = "Whether a passkey is an entry point as well as a credential. False, the shipping default, refuses both /login/passkey routes, so a passkey can be enrolled and managed and used as a second factor but cannot sign anybody in on its own. Independent of passkeys_enabled and stays off until the owner decides a passwordless sign in is wanted; the package's own default is true."
+  description = "Whether a passkey is an entry point as well as a credential. Null, the default, derives the answer from var.environment: true in staging, false in production. With it false and passkeys_enabled true, both /login/passkey routes refuse and a passkey is a managed credential and a second factor but not a way in. Independent of passkeys_enabled and overridable per workspace on the same terms."
   type        = bool
-  default     = false
+  default     = null
+  nullable    = true
+}
+
+locals {
+  # The two switches resolved to the explicit bools lambda_domains.tf renders.
+  #
+  # `var.environment` is validated to be exactly "production" or "staging" in
+  # variables.tf, so the conditional has no third case to answer for. Writing it
+  # as `!= "production"` rather than `== "staging"` is deliberate: if a third
+  # environment is ever added it should arrive with passkeys on, matching every
+  # non production environment, rather than silently off.
+  passkeys_enabled = (
+    var.passkeys_enabled != null
+    ? var.passkeys_enabled
+    : var.environment != "production"
+  )
+
+  passkeys_passwordless = (
+    var.passkeys_passwordless != null
+    ? var.passkeys_passwordless
+    : var.environment != "production"
+  )
 }
 
 variable "identity_rp_name" {

@@ -249,7 +249,39 @@
 # is installed rather than omitted because the flag is a runtime switch: leaving
 # the extra out would turn flipping one HCP variable into an ImportError on the
 # first registration instead of a working route.
-webbpulse[fastapi,dynamodb,otel,aws-otel,security,identity,oauth,passkeys]==0.15.0
+# 0.16.0 adds public OAuth provider discovery: `GET <prefix>/oauth/providers`.
+# No new extra, no new store, no new setting. The smallest bump in this list and
+# the only one whose whole content is a single route.
+#
+# THE ROUTE MOUNTS IN EVERY DEPLOYMENT, including this one, which is the part
+# that changes behaviour here on the day it deploys rather than on the day a
+# variable is flipped. Every other identity group is conditional on a store, a
+# sender or a flag; this one is unconditional by design, because the answer a
+# sign-in page needs is "which providers, and I am sure", and a route that is
+# absent when OAuth is off gives a 404 that cannot be told apart from a routing
+# mistake or an older package. With neither client id set it answers
+# `{"providers": []}` with `Cache-Control: public, max-age=300`, so the surface
+# this repository serves today gains exactly one route and one constant body.
+#
+# A PROVIDER IS LISTED ONLY WITH BOTH A CLIENT ID AND A CLIENT SECRET, which is
+# stricter than `enabled_providers()` and is the reason `terraform/db.tf` grows
+# the two secret keys in the same pull request as this bump. Before it, an id
+# with no secret was a button that sent a user to Google and met a 503 on the
+# way back; from 0.16.0 such a provider is not advertised and `OAuthService.start`
+# refuses it outright with `OAUTH_PROVIDER_UNAVAILABLE`. `build_oauth_client_secrets`
+# in `app/composition/identity.py` already read those two keys, so the code side
+# of that was in place a bump early and only the Terraform half was missing.
+#
+# WHAT IT REPLACES ON THE FRONTEND: `services/oauthAvailability.ts` probed
+# `GET /oauth/{provider}/start` once per provider per page load and read the
+# status code. That spent the start route's own rate limit budget, 20 per 15
+# minutes per IP, on page loads rather than sign-ins, and it could not tell "not
+# configured" from "configured and briefly broken". This bump is what lets that
+# file become one fetch of an explicit list.
+#
+# NO SHARED INTERFACE CHANGES. `IdentityHooks` is byte identical to 0.15.0, so
+# `PortfolioIdentityHooks` satisfies the protocol unchanged.
+webbpulse[fastapi,dynamodb,otel,aws-otel,security,identity,oauth,passkeys]==0.16.0
 
 fastapi==0.115.12
 boto3==1.38.46

@@ -38,6 +38,13 @@ function refusal(reason: string, message = '') {
   return { ok: false as const, reason, message, code: undefined };
 }
 
+// The shape `GET /api/auth/oauth/providers` answers with since
+// webbpulse-python 0.16.0. The display name is the backend's and is what a
+// "Connect ..." button is labelled with; the linked rows above still go through
+// `providerLabel`, because the links route carries ids and no names.
+const GOOGLE = { id: 'google', display_name: 'Google' };
+const GITHUB = { id: 'github', display_name: 'GitHub' };
+
 describe('ConnectedAccounts', () => {
   it('lists the links the account has', async () => {
     const client = stubClient({
@@ -70,7 +77,7 @@ describe('ConnectedAccounts', () => {
     render(
       <ConnectedAccounts
         client={client}
-        availableProviders={['google', 'github']}
+        availableProviders={[GOOGLE, GITHUB]}
       />
     );
 
@@ -113,7 +120,7 @@ describe('ConnectedAccounts', () => {
     render(
       <ConnectedAccounts
         client={client}
-        availableProviders={['github']}
+        availableProviders={[GITHUB]}
         navigate={navigate}
       />
     );

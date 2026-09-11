@@ -50,6 +50,26 @@ module "app_secrets" {
         ADMIN_USERNAME = var.admin_username
         ADMIN_PASSWORD = var.admin_password
         ADMIN_EMAIL    = var.admin_email
+
+        # The two identity M6 OAuth client secrets. Keys of this blob rather
+        # than Lambda environment variables, because a client secret in a
+        # function's environment is visible in the console, in
+        # get-function-configuration and in every plan that touches the
+        # function. The matching client ids are public and do travel as
+        # IDENTITY_OAUTH_* variables; identity.tf has the full reasoning.
+        #
+        # UPPER CASE, MATCHING THE FOUR ABOVE, AND THE CASE IS LOAD BEARING.
+        # Both this file and OAUTH_SECRET_KEYS in
+        # app/composition/identity.py have to spell them the same way: every
+        # read of this secret is a plain dict get, so a lower case name on
+        # either side is a key that is present and never found, with no
+        # exception and no log line to say so.
+        #
+        # Both default to empty and empty is the deployed state. The backend's
+        # `if loaded.get(key)` skips an empty value, so the provider is not
+        # advertised by GET /api/auth/oauth/providers and no route changes.
+        OAUTH_GOOGLE_CLIENT_SECRET = var.oauth_google_client_secret
+        OAUTH_GITHUB_CLIENT_SECRET = var.oauth_github_client_secret
       }
     }
   }

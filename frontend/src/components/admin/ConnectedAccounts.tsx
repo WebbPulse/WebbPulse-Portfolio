@@ -7,7 +7,10 @@ import type {
 } from '@webbpulse/auth';
 
 import { Button } from '../common';
-import { providerLabel } from '../../services/oauthAvailability';
+import {
+  type OAuthProvider,
+  providerLabel,
+} from '../../services/oauthAvailability';
 
 /**
  * The provider links on this account, with the link and unlink actions.
@@ -46,12 +49,19 @@ export interface OAuthLinksClient {
 interface ConnectedAccountsProps {
   client: OAuthLinksClient;
   /**
-   * The providers this deployment has configured.
+   * The providers this deployment has configured, in backend order.
    *
    * Gates the attach buttons only. See the note above for why unlinking is not
    * gated on it.
+   *
+   * Carries a `display_name` per provider since webbpulse-python 0.16.0, so a
+   * "Connect ..." button is labelled with the backend's own name for the
+   * provider. The linked rows above still go through `providerLabel`, because
+   * `GET /api/auth/oauth/links` returns provider ids and no display names, and
+   * an account can be linked to a provider the deployment has since switched
+   * off and which therefore appears in no list here.
    */
-  availableProviders: readonly string[];
+  availableProviders: readonly OAuthProvider[];
   /** Where the link callback should land. Defaults to the current path. */
   returnTo?: string;
   /**
@@ -243,7 +253,7 @@ export const ConnectedAccounts: React.FC<ConnectedAccountsProps> = ({
   const linked = links ?? [];
   const linkedProviders = new Set(linked.map(link => link.provider));
   const connectable = availableProviders.filter(
-    provider => !linkedProviders.has(provider)
+    provider => !linkedProviders.has(provider.id)
   );
 
   return (
@@ -295,14 +305,14 @@ export const ConnectedAccounts: React.FC<ConnectedAccountsProps> = ({
 
       {connectable.length > 0 && (
         <div className="flex flex-wrap gap-3 mt-4">
-          {connectable.map(provider => (
+          {connectable.map(({ id, display_name: label }) => (
             <Button
-              key={provider}
+              key={id}
               variant="outline"
-              onClick={() => void handleLink(provider)}
+              onClick={() => void handleLink(id)}
               disabled={busy}
             >
-              Connect {providerLabel(provider)}
+              Connect {label}
             </Button>
           ))}
         </div>
