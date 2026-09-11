@@ -9,6 +9,7 @@ import type {
 import { Button } from '../common';
 import { qrCodeSvgPath } from '../../utils/qrCode';
 import { ConnectedAccounts, type OAuthLinksClient } from './ConnectedAccounts';
+import type { OAuthProvider } from '../../services/oauthAvailability';
 import { PasskeysPanel, type PasskeysClient } from './PasskeysPanel';
 
 /**
@@ -76,14 +77,14 @@ interface SecuritySectionProps {
    * Separate from `client` rather than folded into it because the two are
    * gated on different things. The MFA routes exist wherever identity mode
    * does; the OAuth ones exist only when the deployment configured a provider,
-   * which is probed rather than read. Null renders no "Connected accounts"
+   * which is read from the discovery route. Null renders no "Connected accounts"
    * block at all, which is the right answer for a backend with no OAuth
    * routes mounted: an empty block would suggest the feature exists and is
    * merely unused.
    */
   oauthClient?: OAuthLinksClient | null;
   /** The providers that deployment has configured. See `oauthClient`. */
-  availableProviders?: readonly string[];
+  availableProviders?: readonly OAuthProvider[];
   /**
    * The four passkey management routes, or null where they are not offered.
    *

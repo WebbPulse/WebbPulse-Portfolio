@@ -66,11 +66,18 @@ export const LoginForm: React.FC<LoginFormProps> = ({
   /**
    * The providers this deployment configured, or an empty list.
    *
-   * Empty in bearer mode, empty while the probe is in flight, and empty on a
-   * backend with no OAuth routes mounted. `OAuthButtons` renders nothing for
+   * Empty in bearer mode, empty while the request is in flight, and empty on a
+   * deployment that has no OAuth configured. `OAuthButtons` renders nothing for
    * an empty list, so all three cases produce the login page as it was.
+   *
+   * Takes the identity origin for the same reason `usePasskeySignIn` below
+   * does: the discovery route is a sibling of `API_BASE_URL` at the origin
+   * rather than a child of its `/api/v1` path.
    */
-  const providers = useOAuthProviders(identity);
+  const providers = useOAuthProviders(
+    identity,
+    identityOriginFrom(API_BASE_URL)
+  );
 
   /**
    * Whether a passkey button belongs on this page, and whether this browser

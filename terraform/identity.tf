@@ -247,14 +247,64 @@ locals {
 # ---------------------------------------------------------------------------
 
 variable "oauth_google_client_id" {
-  description = "Google OAuth client id for identity M6 sign in, from the OAuth client the owner creates in the Google Cloud console. Empty means Google sign in is off and the package declares no OAuth route for it. Not a secret: it travels in the authorization URL in the user's browser. The matching secret is the `oauth_google_client_secret` key of the webbpulse-<env>/app secret."
+  description = "Google OAuth client id for identity M6 sign in, from the OAuth client the owner creates in the Google Cloud console. Empty means Google sign in is off and the package declares no OAuth route for it. Not a secret: it travels in the authorization URL in the user's browser. The matching secret is var.oauth_google_client_secret, delivered as the OAUTH_GOOGLE_CLIENT_SECRET key of the webbpulse-<env>/app secret."
   type        = string
   default     = ""
 }
 
 variable "oauth_github_client_id" {
-  description = "GitHub OAuth client id for identity M6 sign in, from the OAuth app the owner creates in GitHub developer settings. Empty means GitHub sign in is off and the package declares no OAuth route for it. Not a secret, on the same reasoning as the Google id. The matching secret is the `oauth_github_client_secret` key of the webbpulse-<env>/app secret."
+  description = "GitHub OAuth client id for identity M6 sign in, from the OAuth app the owner creates in GitHub developer settings. Empty means GitHub sign in is off and the package declares no OAuth route for it. Not a secret, on the same reasoning as the Google id. The matching secret is var.oauth_github_client_secret, delivered as the OAUTH_GITHUB_CLIENT_SECRET key of the webbpulse-<env>/app secret."
   type        = string
+  default     = ""
+}
+
+# ---------------------------------------------------------------------------
+# The two matching client secrets, and why they travel a different road than
+# the two ids above.
+#
+# THESE ARE NOT LAMBDA ENVIRONMENT VARIABLES AND MUST NOT BECOME THEM. The ids
+# above are rendered into IDENTITY_OAUTH_* variables in lambda_domains.tf
+# because they are public by construction: a client id is in the authorization
+# URL in the user's own browser. A client secret is not, and a secret in a
+# function's environment is a secret visible in the console, in
+# get-function-configuration, and in every Terraform plan that touches the
+# function. So these two are delivered as keys of the single webbpulse-<env>/app
+# secret in db.tf, which is the estate's one-secret-per-service rule, and the
+# backend reads them through build_oauth_client_secrets in
+# app/composition/identity.py rather than through settings fields.
+#
+# THE KEY NAMES ARE UPPER CASE AND THE CASE IS LOAD BEARING. Every lookup
+# against that secret is a plain dict get, so it is exact. OAUTH_SECRET_KEYS in
+# app/composition/identity.py holds the names and a test asserts the convention;
+# these two variables and the json block in db.tf are the other half of that
+# agreement. A mismatch would be silent: both ids set, both secrets present in
+# Secrets Manager, and GET /api/auth/oauth/providers answering with an empty
+# list because webbpulse 0.16.0 lists a provider only when it has both halves.
+#
+# BOTH DEFAULT TO EMPTY, which is the deployed state and a supported one. An
+# empty value writes an empty string into the secret, the backend's
+# `if loaded.get(key)` skips it, and the provider is simply not advertised.
+# Nothing fails to plan and nothing fails to start; the route set is the one the
+# repository serves today.
+#
+# An id set with no matching secret is the one bad combination, and from
+# webbpulse 0.16.0 it is a quiet one rather than a broken sign in: the provider
+# is left off the discovery list and OAuthService.start refuses it with
+# OAUTH_PROVIDER_UNAVAILABLE, so a user never reaches a provider consent screen
+# they cannot come back from. Set both halves of a provider in the same apply.
+# ---------------------------------------------------------------------------
+
+variable "oauth_google_client_secret" {
+  description = "Google OAuth client secret matching var.oauth_google_client_id, delivered into the webbpulse-<env>/app secret as OAUTH_GOOGLE_CLIENT_SECRET. Set as a sensitive workspace variable in HCP Terraform. Defaults to empty, which is the deployed state: the backend skips an empty value and Google is not advertised by the provider discovery route. Set it in the same apply as the client id, because an id without a secret is a provider that is configured and cannot sign anyone in."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "oauth_github_client_secret" {
+  description = "GitHub OAuth client secret matching var.oauth_github_client_id, delivered into the webbpulse-<env>/app secret as OAUTH_GITHUB_CLIENT_SECRET. Set as a sensitive workspace variable in HCP Terraform. Defaults to empty, on the same terms as the Google secret, and is set in the same apply as the matching client id."
+  type        = string
+  sensitive   = true
   default     = ""
 }
 
