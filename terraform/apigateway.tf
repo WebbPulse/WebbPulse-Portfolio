@@ -1008,6 +1008,48 @@ module "api" {
     integrationLatency      = "$context.integrationLatency"
   }
 
+  # CORS is answered by the gateway, not by the functions.
+  #
+  # Every route key on this API is an explicit method key ("POST /api/auth/login",
+  # "ANY /api/v1/posts/{proxy+}") and there is no $default and no OPTIONS key, so
+  # an OPTIONS preflight matches no route and API Gateway answers its own 404 with
+  # no CORS headers on it. The function's CORSMiddleware never runs, because the
+  # request never reaches an integration. That is invisible while a broad
+  # ANY /<prefix>/{proxy+} key exists, since OPTIONS is a method ANY matches and
+  # FastAPI then answers the preflight itself; it became a browser sign-in outage
+  # the moment the identity cutover replaced the legacy ANY /api/v1/admin/{proxy+}
+  # key with explicit method keys.
+  #
+  # Setting cors_configuration hands CORS to API Gateway for the whole API. It
+  # answers OPTIONS itself without invoking any integration, and it attaches the
+  # CORS headers to every response it produces, authorizer 401s included, which is
+  # the other half the middleware could never cover: a request refused by the JWT
+  # or access-gate authorizer never reaches the function either, so a genuine 401
+  # showed up in the browser as an opaque CORS failure instead of a sign-in error.
+  #
+  # The values mirror what the functions' own CORSMiddleware returns, so the two
+  # agree rather than contradict: local.cors_origins is the same string
+  # lambda_domains.tf passes as CORS_ORIGINS, split back into the list shape the
+  # module's object wants, which gives staging its staging origins and production
+  # its production ones from one source. Accept-Language and Content-Language are
+  # CORS-safelisted request headers and are listed for completeness; the rest are
+  # the middleware's own allow_headers.
+  cors_configuration = {
+    allow_origins = split(",", local.cors_origins)
+    allow_methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+    allow_headers = [
+      "Accept",
+      "Accept-Language",
+      "Authorization",
+      "Content-Language",
+      "Content-Type",
+      "Origin",
+      "X-Request-ID",
+    ]
+    allow_credentials = true
+    max_age           = 86400
+  }
+
   disable_execute_api_endpoint = local.staging_gate_enabled
   authorizer_id                = local.staging_gate_enabled ? one(module.staging_access_gate[*].http_api_authorizer_id) : null
 
