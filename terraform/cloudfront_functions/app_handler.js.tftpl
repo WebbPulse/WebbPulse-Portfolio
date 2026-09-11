@@ -1,9 +1,9 @@
-// Application viewer-request logic for the frontend distribution. Rendered by Terraform.
-//
-// Redirects the bare apex (${domain}) to the www host with a 301, keeping the path and dropping
-// the query string, exactly as the original inline apex redirect did. Every other request passes
-// through unchanged. The staging access gate runs this before its own session check; without the
-// gate, aws_cloudfront_function.apex_redirect wraps it directly.
+/**
+ * CloudFront viewer-request handler for the frontend distribution.
+ * Redirects the apex host to the www host with a 301 and passes everything else through.
+ * @param {object} event CloudFront Functions viewer-request event.
+ * @returns {object} A 301 response for the apex, otherwise the unchanged request.
+ */
 function appHandler(event) {
   const host = event.request.headers.host
     ? event.request.headers.host.value

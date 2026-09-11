@@ -1,8 +1,3 @@
-# ---------------------------------------------------------------------------
-# Account housekeeping from the shared app-baseline module: the tag based
-# resource group, Cost Explorer anomaly detection and the two free budgets.
-# ---------------------------------------------------------------------------
-
 module "app_baseline" {
   source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/app-baseline"
   version = "~> 1.6"

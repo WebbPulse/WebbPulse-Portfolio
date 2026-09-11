@@ -1,22 +1,3 @@
-# The repository's one pull request gate.
-#
-# This replaces `test-backend.yml` and `test-frontend.yml`, which were two separate
-# workflows each carrying its own `paths:` filter. That shape cannot support a required
-# status check, and the reason is worth stating because it fails silently rather than
-# loudly: a required context that is never *reported* leaves a pull request pending
-# forever rather than failing it. With a workflow-level path filter, a pull request
-# touching only `docs/` never starts the workflow, never reports the context, and sits
-# unmergeable with auto-merge armed and nothing on the page saying why.
-#
-# So this workflow runs on every pull request with no `paths:` filter, and the filtering
-# moves *inside*, into the `changes` job below. The expensive jobs still skip when their
-# tree is untouched; the difference is that skipping is now a result the gate can see and
-# forgive, rather than the absence of a run.
-#
-# `all-checks-passed` at the end is the context `main-protection` and `staging-protection`
-# require. It has to be a job *in this workflow*: a job inside a called workflow reports
-# as `<caller-job> / <job>` (here it would be `backend / all-checks-passed`), which is not
-# the bare name a ruleset can require.
 name: CI
 
 on:
@@ -31,8 +12,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Which trees this pull request touches. Everything downstream keys off these
-  # outputs rather than off a workflow-level filter.
   changes:
     name: Detect changed paths
     runs-on: ubuntu-latest
@@ -45,7 +24,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - id: filter
+      - name: Detect changed paths
+        id: filter
         uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
         with:
           filters: |
@@ -56,17 +36,10 @@ jobs:
               - 'frontend/**'
               - '.github/workflows/ci.yml'
 
-  # Lint, type check, security and one pytest job per domain. The domain list comes from
-  # `[tool.webbpulse.ci.domains]` in backend/pyproject.toml, so adding a domain is a line
-  # there rather than an edit here.
   backend:
     name: Backend
     needs: changes
     if: needs.changes.outputs.backend == 'true'
-    # A called workflow cannot hold permissions wider than the caller's grant, and a job
-    # level block replaces rather than merges with the top level one, so both have to be
-    # named here. Getting this wrong fails the run before any step, with an error naming
-    # the permission rather than the credential.
     permissions:
       contents: read
       id-token: write
@@ -76,8 +49,6 @@ jobs:
       working-directory: backend
       ruff-target: "app tests"
       coverage-source: app
-      # No paths here. v2 takes them from the domain table; a path passed here would be
-      # appended to every job and make each domain run the whole suite.
       pytest-args: ""
       codeartifact-domain: webbpulse
       codeartifact-repository: python
@@ -91,8 +62,6 @@ jobs:
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     permissions:
-      # Both are required on the calling job: id-token for the OIDC assume role behind the
-      # CodeArtifact login, contents to check the repository out.
       id-token: write
       contents: read
     uses: WebbPulse/.github/.github/workflows/typescript-ci.yml@v2
@@ -101,8 +70,6 @@ jobs:
       working-directory: frontend
       lint-command: npm run lint
       format-check-command: npm run format:check
-      # This repository has no separate type-check script: `npm run build` runs `tsc -b`
-      # before vite build, so the build step covers it.
       typecheck-command: ""
       test-command: npm run test:run -- --coverage
       build-command: npm run build
@@ -113,12 +80,6 @@ jobs:
       role-to-assume: ${{ vars.CI_AWS_ROLE_ARN }}
       codeartifact-domain-owner: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
 
-  # The single context both rulesets require.
-  #
-  # `skipped` counts as success on purpose: that is what lets a docs-only pull request
-  # merge. `failure` and `cancelled` both fail, cancellation because a cancelled job has
-  # proven nothing and treating it as success would let a run cancelled mid-flight satisfy
-  # the ruleset.
   all-checks-passed:
     name: all-checks-passed
     runs-on: ubuntu-latest
