@@ -18,14 +18,6 @@ DOMAINS = sorted(
     if path.is_dir() and not path.name.startswith("__")
 )
 
-# The composition roots: the only places allowed to assemble routers from more
-# than one domain.
-#
-# `app/composition/` is the only one left. `app/main.py` and `app/api/v1/api.py`
-# were the monolith's and are deleted: the function that served them was
-# destroyed in PR #118 and the source went with it. `wiring.py` names all four
-# domains and `app.py` walks them, which is what makes root A and the four root
-# B entrypoints two views of one list rather than two lists that can drift.
 COMPOSITION_ROOT = {
     APP / "composition" / "wiring.py",
     APP / "composition" / "app.py",
@@ -108,26 +100,12 @@ def test_only_the_composition_root_assembles_more_than_one_domain():
         }
         if len(touched) > 1:
             offenders.append((str(path.relative_to(APP.parent)), sorted(touched)))
-    # `app.core.middleware` is the one shared module that reaches into two
-    # domains, and it is listed here deliberately rather than exempted: when
-    # the seeding moves out of the middleware stack in a later PR, this
-    # assertion is what notices.
-    #
-    # Its two imports sit inside `SeedMiddleware.__call__`, not at module
-    # scope, and that placement is what keeps the rule honest at runtime as
-    # well as in the source. `TrailingSlashMiddleware` lives in the same module
-    # and every domain application adds it, so a module-level import would put
-    # `content` and `identity` in all four images.
-    # `tests/entrypoints/test_entrypoint_isolation.py` asserts the consequence
-    # directly, by reading `sys.modules` after each entrypoint builds.
     assert offenders == [("app/core/middleware.py", ["content", "identity"])]
 
 
 @pytest.mark.parametrize("domain", DOMAINS)
 def test_only_router_modules_import_fastapi(domain):
     """FastAPI stays at the domain's edge, so the rest of it stays testable."""
-    # Every module here declares routes: they are the domain's HTTP edge. The
-    # point of the assertion is that nothing else in a domain grows one.
     allowed = {
         "certifications.py",
         "crud_router.py",

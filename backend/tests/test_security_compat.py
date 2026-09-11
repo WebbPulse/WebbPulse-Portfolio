@@ -38,8 +38,6 @@ from app.core.security import (
     verify_token,
 )
 
-# jose.jwt.encode({"sub": "legacy-user", "exp": datetime(2100, 1, 1, tzinfo=utc)},
-#                 "test-secret-key", algorithm="HS256") on python-jose 3.5.0.
 LEGACY_JOSE_TOKEN = (
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
     ".eyJzdWIiOiJsZWdhY3ktdXNlciIsImV4cCI6NDEwMjQ0NDgwMH0"
@@ -48,8 +46,6 @@ LEGACY_JOSE_TOKEN = (
 LEGACY_JOSE_TOKEN_SECRET = "test-secret-key"
 LEGACY_JOSE_TOKEN_SUBJECT = "legacy-user"
 
-# bcrypt.hashpw(b"legacy-password", bcrypt.gensalt()).decode() on bcrypt 4.3.0,
-# which is what the deleted `get_password_hash` called with no rounds argument.
 LEGACY_BCRYPT_HASH = "$2b$12$pPzV2dQSBbbXcCXKzRW0iuHDlg05tnoACL93xRplz27cErmFCwSq2"
 LEGACY_BCRYPT_PASSWORD = "legacy-password"
 
@@ -202,8 +198,6 @@ class TestTruncationMovedIntoThePackage:
         would feed bcrypt different bytes and stop matching stored hashes, so
         this is the assertion that would catch such a change.
         """
-        # 71 ASCII bytes then a 3 byte character, so the character starts at byte
-        # 71 and is cut after its first byte.
         password = "a" * 71 + "€" + "tail"
         hashed = get_password_hash(password)
         assert verify_password("a" * 71 + "€", hashed)

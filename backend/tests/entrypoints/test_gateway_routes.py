@@ -59,44 +59,23 @@ from app.composition.wiring import build_domain_app
 REPO = Path(__file__).resolve().parents[3]
 APIGATEWAY_TF = REPO / "terraform" / "apigateway.tf"
 
-# Excluded from the comparison for the same reason test_route_split.py excludes
-# them: FastAPI serves them itself and every domain application declares its own
-# copy, so they are not routed per domain.
 DOCUMENTATION_PATHS = {"/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json"}
 
-# `<METHOD> <path> = { integration = "<name>" }`, including the interpolated
-# form the resume collections are generated with. The interpolation is resolved
-# against local.resume_collections below rather than being evaluated, because
-# the point is to read what Terraform will build without running Terraform.
 ROUTE_ENTRY = re.compile(
     r'"(?P<key>(?:ANY|GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) /[^"]*)"\s*='
     r'\s*\{\s*integration\s*=\s*"(?P<integration>[^"]+)"'
 )
 
-# The same entry, but only when it goes on to set `authorization_type = "NONE"`.
-# Every other entry in the map omits the argument and takes the module's CUSTOM
-# default, which is the staging access gate, so this reads the map's whole
-# anonymous surface.
-# `test_the_anonymous_surface_is_exactly_the_two_discovery_documents` is what it
-# exists for.
 ANONYMOUS_ROUTE_ENTRY = re.compile(
     r'"((?:ANY|GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) /[^"]*)"\s*='
     r'\s*\{\s*integration\s*=\s*"[^"]+"\s*'
     r'authorization_type\s*=\s*"NONE"'
 )
 
-# The `local.<name> = [ "a", "b" ]` lists the route keys interpolate over.
 COLLECTION_LIST = re.compile(
     r"^\s*(?P<name>\w+)\s*=\s*\[(?P<body>[^\]]*)\]", re.MULTILINE
 )
 
-# The same entry, but only when it goes on to set `require_identity_jwt = true`.
-# This is the other flag a routes entry can carry, and it is the one that decides
-# whether a caller needs a valid access token: in production the module moves the
-# key onto its own JWT authorizer, and in staging it publishes the key in
-# `identity_jwt_route_keys` for the access gate's Lambda to enforce. Reading it
-# here is what lets a test assert the split between the routes that need a signed
-# in caller and the routes that are how a caller signs in.
 IDENTITY_JWT_ROUTE_ENTRY = re.compile(
     r'"((?:ANY|GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) /[^"]*)"\s*='
     r'\s*\{\s*integration\s*=\s*"[^"]+"\s*'
@@ -158,11 +137,7 @@ def gateway_route_keys() -> dict[str, set[str]]:
             keys.setdefault(integration, set()).add(key)
             continue
 
-        # One loop variable per key in practice. Expand it over its list.
         (name,) = set(interpolations)
-        # `${collection}` inside a for expression over local.resume_collections
-        # is written `${collection}`, not `${local.resume_collections}`, so this
-        # branch only fires if a future key interpolates a local directly.
         for value in lists[name]:
             keys.setdefault(integration, set()).add(
                 key.replace("${local.%s}" % name, value)
@@ -238,16 +213,11 @@ def matches(route_key: str, path: str) -> bool:
     """
     key_path = route_key.split(" ", 1)[1]
 
-    # The modelled assumption: a trailing slash on the request is normalised
-    # away before route selection. A key can never carry one, so without this
-    # the served collection path could match nothing. Verified against the real
-    # gateway by scripts/verify_route_cut.sh, not by this test.
     if len(path) > 1 and path.endswith("/"):
         path = path[:-1]
 
     if key_path.endswith("/{proxy+}"):
         prefix = key_path[: -len("{proxy+}")]
-        # Greedy, and it needs at least one character to capture.
         return path.startswith(prefix) and len(path) > len(prefix)
 
     key_segments = key_path.split("/")
@@ -563,54 +533,17 @@ def test_no_content_route_key_points_at_a_path_the_app_does_not_serve():
         assert any(matches(key, path) for path in paths), key
 
 
-#: M1's permanent identity keys, which are excluded from `identity_route_keys()`
-#: because every assertion that helper feeds is about cut 4's shape, which is
-#: two `ANY` keys under `/api/v1/admin`, and M1 is deliberately none of those
-#: things.
-#:
-#: These are unconditional. They are created in every environment, because M2
-#: creates a JWT authorizer whose CreateAuthorizer call fetches the discovery
-#: document before the authorizer exists, so the two documents have to already
-#: be live on their own apply. `terraform/identity.tf` and
-#: `build_identity_router` own them.
-#:
-#: All three sit under `/api/auth`, which is the issuer's path. API Gateway
-#: appends the discovery path to the issuer with its path included, and follows
-#: the `jwks_uri` the returned document advertises, which `IdentitySettings`
-#: builds from the issuer too. So the documents answer under the issuer or they
-#: answer nowhere the authorizer looks.
-#:
-#: `GET /api/auth/health` is the identity function's own health route, which is
-#: the router's `/health` seen through that same mount. It is not `GET /health`,
-#: which already belongs to the `public` domain.
 IDENTITY_M1_ROUTE_KEYS = {
     "GET /api/auth/.well-known/jwks.json",
     "GET /api/auth/.well-known/openid-configuration",
     "GET /api/auth/health",
 }
 
-#: The M1 keys that carry `authorization_type = "NONE"`, which is a deliberate
-#: hole in the staging access gate and should stay exactly two documents wide.
-#: The health route is pointedly not in here: nothing outside the gate needs it,
-#: so it takes the module's CUSTOM default like every other gated route.
 IDENTITY_M1_ANONYMOUS_KEYS = {
     "GET /api/auth/.well-known/jwks.json",
     "GET /api/auth/.well-known/openid-configuration",
 }
 
-#: M2's six flow keys, excluded from `identity_route_keys()` for exactly the
-#: reason M1's three are: that helper's assertions are about cut 4's shape, two
-#: `ANY` keys under `/api/v1/admin`, and these are not that.
-#:
-#: They sit under `/api/auth` for the same reason M1's do. `build_identity_router`
-#: mounts every route it declares under the issuer's path, so a key here is the
-#: served path rather than a rewrite of one.
-#:
-#: None of them is anonymous. They take the module's CUSTOM default like
-#: `GET /api/auth/health`, so `test_the_anonymous_surface_is_exactly_the_two_
-#: discovery_documents` still holds at exactly two documents: these are state
-#: changing routes, and the gate hole exists only because API Gateway fetches
-#: those two documents itself at CreateAuthorizer time.
 IDENTITY_M2_ROUTE_KEYS = {
     "POST /api/auth/register",
     "POST /api/auth/login",
@@ -620,20 +553,6 @@ IDENTITY_M2_ROUTE_KEYS = {
     "POST /api/auth/logout-all",
 }
 
-#: M3's four email keys, excluded from `identity_route_keys()` for the same
-#: reason M1's three and M2's six are.
-#:
-#: Two request routes and two confirm routes, one pair for verifying an address
-#: and one pair for resetting a password. `build_identity_router` mounts them
-#: only when it is handed both an `EmailSender` and an identity-tokens store,
-#: which `composition/identity.py` supplies whenever `IDENTITY_EMAIL_FROM` is
-#: set. The route keys are unconditional anyway: a key with no path behind it is
-#: a 404 from the function, while a path with no key is a gateway 404 that
-#: reaches no function at all, and the second is the worse failure.
-#:
-#: None of them is anonymous, for the same reason none of M2's is. Both request
-#: routes answer 200 for any address by design, which is section 5.4's
-#: enumeration rule and not a reason to put them outside the staging gate.
 IDENTITY_M3_ROUTE_KEYS = {
     "POST /api/auth/verify-email",
     "POST /api/auth/verify-email/confirm",
@@ -641,26 +560,6 @@ IDENTITY_M3_ROUTE_KEYS = {
     "POST /api/auth/reset/confirm",
 }
 
-#: M4's six MFA keys, excluded from `identity_route_keys()` for the same reason
-#: M1's three, M2's six and M3's four are.
-#:
-#: `build_identity_router` mounts them when `totp_enabled` is on and the product
-#: supplies a TOTP factor store, a recovery code store and an identity-tokens
-#: store, which `composition/identity.py` does unconditionally. The keys are
-#: unconditional too, on the same asymmetry M3's carry: a key with no path
-#: behind it is a 404 from a function that answered, while a path with no key is
-#: API Gateway's own 404 with `default_integration = null` and no request ever
-#: reaches the function.
-#:
-#: None of them is anonymous, and `POST /api/auth/login/totp` is the one where
-#: that needs saying out loud. It is outside the identity **JWT authorizer**,
-#: because the MFA ticket it carries has `aud` of `<issuer>/mfa` rather than the
-#: API audience, and a JWT authorizer configured with the API audience would
-#: reject the second leg of every MFA login. It is still inside the **staging
-#: access gate**, which is a different control: the gate is the fence around a
-#: non production environment, and somebody finishing a login in staging already
-#: got through it. The two are not the same question and this key answers them
-#: differently.
 IDENTITY_M4_ROUTE_KEYS = {
     "POST /api/auth/login/totp",
     "POST /api/auth/totp/enrol",
@@ -670,42 +569,6 @@ IDENTITY_M4_ROUTE_KEYS = {
     "POST /api/auth/step-up",
 }
 
-#: M5's seven passkey keys, excluded from `identity_route_keys()` for the same
-#: reason every milestone set above it is.
-#:
-#: These are the set whose absence this file failed to catch. The identity
-#: function mounted all seven in staging and `apigateway.tf` declared none of
-#: them, so every passkey call got API Gateway's own 404 and reached no function
-#: at all — the exact failure the module docstring above calls "a path with no
-#: key", and the one `default_integration = null` turns from a routing smell
-#: into an outage. Nothing here caught it because the identity assertions were
-#: written one milestone at a time and each new milestone needed a new set:
-#: `identity_route_keys()` subtracts the milestones it knows about, so a
-#: milestone nobody added simply was not checked in either direction.
-#:
-#: `test_every_identity_path_the_package_mounts_has_a_gateway_route_key` is the
-#: fix for that shape, and it is deliberately not written per milestone: it
-#: builds the real identity application and asserts every path it serves is
-#: matched by some key, so M7 needs no new constant to be covered.
-#:
-#: Two of the seven are unflagged and it is worth naming them here, because the
-#: split is not the one the paths suggest. `POST /api/auth/login/passkey/options`
-#: and `.../verify` are the passwordless login ceremony: the first is called by
-#: somebody with no token at all and the second carries a WebAuthn assertion
-#: rather than a bearer token, so requiring a token on either would make a
-#: passkey login unperformable. That is `POST /api/auth/login`'s reasoning, not
-#: `POST /api/auth/login/totp`'s — the TOTP leg is unflagged because the ticket
-#: it carries would be actively *rejected* by a check on the API audience, while
-#: these two are unflagged because they carry nothing to check.
-#:
-#: Eight since the 0.17.0 bump. `GET /api/auth/passkeys/availability` is the odd
-#: one and it is M6's `oauth/providers` in a different milestone's block: added
-#: by `register_passkey_availability`, it mounts in EVERY deployment including
-#: one with passkeys switched off, where it answers
-#: `{"enabled": false, "passwordless": false}`. It is kept in this set rather
-#: than in one of its own because the set's job is subtraction in
-#: `identity_route_keys()`, and a key nobody subtracts is a key three other
-#: tests here fail on.
 IDENTITY_M5_ROUTE_KEYS = {
     "GET /api/auth/passkeys/availability",
     "POST /api/auth/passkeys/register/options",
@@ -717,8 +580,6 @@ IDENTITY_M5_ROUTE_KEYS = {
     "DELETE /api/auth/passkeys/{credential_id}",
 }
 
-#: The five M5 keys that require a verified subject, which is every one of them
-#: except the two anonymous login legs.
 IDENTITY_M5_JWT_ROUTE_KEYS = {
     "POST /api/auth/passkeys/register/options",
     "POST /api/auth/passkeys/register/verify",
@@ -727,29 +588,6 @@ IDENTITY_M5_JWT_ROUTE_KEYS = {
     "DELETE /api/auth/passkeys/{credential_id}",
 }
 
-#: M6's six OAuth keys, excluded from `identity_route_keys()` on the same terms.
-#:
-#: Missing alongside M5's seven and for the same reason, and this is the set
-#: whose absence was proved from the outside: `GET /api/auth/oauth/providers`
-#: answered API Gateway's `{"message":"Not Found"}` on staging while the
-#: identity function mounted the route.
-#:
-#: Five of the six mount only when a provider has a client id configured.
-#: `GET /api/auth/oauth/providers` mounts in every deployment, including one
-#: with no OAuth at all, where it answers an empty provider list — the package
-#: mounts it unconditionally so that a frontend has one authoritative answer
-#: rather than a 404 it has to interpret. All six keys are unconditional
-#: regardless, on the asymmetry M3's comment states: a key with no path behind
-#: it is a 404 from a function that answered, and a path with no key is a
-#: gateway 404 that reaches nothing.
-#:
-#: Three are unflagged because all three are browser navigations by a caller
-#: with no token: the sign-in page reading the provider list, the `start` leg
-#: that answers 302 to the provider, and the `callback` leg the provider
-#: navigates the browser back to. A browser following a link or a redirect sends
-#: no Authorization header and there is nowhere to put one, so flagging any of
-#: them would break sign-in at that leg. Authorization on the callback is the
-#: single use state row the package spends before anything else happens.
 IDENTITY_M6_ROUTE_KEYS = {
     "GET /api/auth/oauth/providers",
     "GET /api/auth/oauth/{provider}/start",
@@ -759,8 +597,6 @@ IDENTITY_M6_ROUTE_KEYS = {
     "DELETE /api/auth/oauth/{provider}/link",
 }
 
-#: The three M6 keys that require a verified subject: the settings-page calls
-#: made over `fetch` with an Authorization header by a signed-in user.
 IDENTITY_M6_JWT_ROUTE_KEYS = {
     "POST /api/auth/oauth/{provider}/link",
     "GET /api/auth/oauth/links",
@@ -1229,32 +1065,6 @@ def test_the_identity_keys_use_any_rather_than_post():
         assert key.startswith("ANY "), key
 
 
-# ---------------------------------------------------------------------------
-# M5 and M6, and the test that would have caught their absence.
-# ---------------------------------------------------------------------------
-
-#: The identity environment that makes `build_domain_app("identity")` mount
-#: every route the package can declare, so the exhaustiveness test below sees
-#: the full surface rather than the subset a bare checkout happens to enable.
-#:
-#: `build_domain_app` guards the identity router on `IDENTITY_ISSUER` being set,
-#: and `IdentitySettings` then requires an audience and at least one signing key
-#: ARN. Beyond that each milestone has its own mount condition: M3 needs a
-#: sender address, M5 needs `passkeys_enabled`, and M6 needs at least one OAuth
-#: client id. Setting all of them is what makes the assertion below an
-#: exhaustive one, because a route the package would mount in *some* deployment
-#: still needs a gateway key in *that* deployment.
-#:
-#: None of these values is real and nothing here reaches AWS. `IdentitySettings`
-#: validates their shape and the KMS client is constructed lazily, so no call is
-#: made while the router is only being built. The ARN is a JSON array because
-#: `signing_key_arns` is a list field and pydantic-settings parses list fields
-#: as JSON.
-#:
-#: `passkeys_passwordless` is deliberately on here and deliberately off in
-#: production. This test asks what keys the *package* can require, not what the
-#: current environment switches on, because a key that only appears when a flag
-#: flips is a key somebody has to remember at exactly the wrong moment.
 IDENTITY_FULL_ENV = {
     "IDENTITY_ISSUER": "https://api.example.test/api/auth",
     "IDENTITY_AUDIENCE": "https://api.example.test",
@@ -1297,11 +1107,6 @@ def identity_package_routes(monkeypatch) -> set[tuple[str, str]]:
     for name, value in IDENTITY_FULL_ENV.items():
         monkeypatch.setenv(name, value)
 
-    # Built explicitly from the environment just set, and passed in, rather than
-    # letting `build_domain_app` call the cached `get_settings()`. The cache is
-    # cleared as well, because `Settings()` here and the module-level `settings`
-    # object are two different things and a later test reading the cache should
-    # not see one built from this test's environment.
     reset_settings_cache()
     identity_settings = Settings()
 
@@ -1340,12 +1145,6 @@ def test_every_identity_path_the_package_mounts_has_a_gateway_route_key(monkeypa
     keys = gateway_route_keys()["identity"]
     package_routes = identity_package_routes(monkeypatch)
 
-    # Load-bearing, not defensive. An empty set here would make the assertion
-    # below trivially true, which is the single way this test could silently
-    # stop doing its job: if the identity router ever fails to mount, this is
-    # what says so instead of reporting a clean run. The count is the package's
-    # full surface across M1 to M6, so a package that adds a milestone raises it
-    # and whoever bumps the dependency reads this line.
     assert len(package_routes) >= 30, sorted(package_routes)
 
     unrouted = sorted(
@@ -1494,56 +1293,10 @@ def test_the_account_management_routes_require_an_identity_token():
     )
 
 
-# ---------------------------------------------------------------------------
-# The domain admin routes: what `CurrentUser` protects against what is flagged
-# ---------------------------------------------------------------------------
-#
-# The identity cutover's last gap. The `/api/auth` routes above were flagged
-# when they were written, because the package's `require_subject` was always
-# their only caller check. The `/api/v1` admin routes are older: they verified
-# the legacy HS256 token and nothing else, so in identity mode the frontend's
-# RS256 access token reached them as a credential they could not read and every
-# admin write answered 401.
-#
-# Closing it has two halves and they have to agree. The application half is
-# `get_current_user` reading the gateway's verified claims when the legacy token
-# does not resolve. The gateway half is flagging exactly those route keys so
-# there are claims to read. This section is what keeps the halves in step, and
-# it is deliberately exhaustive in both directions:
-#
-# - **A protected route that is not flagged** carries no claims in identity
-#   mode. The application falls back, finds nothing, and answers 401. That is
-#   the original bug, reintroduced one route at a time, and it is invisible
-#   until somebody uses that route in the admin panel.
-# - **A flagged route that is not protected** is a public read the gateway now
-#   refuses without a token. That one is louder, because it breaks the
-#   anonymous site rather than the admin panel, but it is just as easy to write.
-#
-# Both sides are derived rather than listed. The application side walks the
-# FastAPI dependency tree, so adding `Depends(CurrentUser)` to a new route makes
-# this fail until `apigateway.tf` names it. The Terraform side parses
-# `local.domain_identity_jwt_route_paths`, which is the unflagged list form the
-# keys are generated from, because the generated entries carry
-# `require_identity_jwt = var.domain_jwt_enforced` rather than a literal `true`
-# and `IDENTITY_JWT_ROUTE_ENTRY` above would not see them. That difference is
-# the point of `test_the_domain_flag_is_gated_on_a_variable_rather_than_hardcoded`.
-
-# `<name> = [ ... ]` inside the domain map, one entry per domain. Written as its
-# own pattern rather than reusing COLLECTION_LIST because that one runs over the
-# whole file and would also match every other list in it; this needs only the
-# lists nested inside one block.
 DOMAIN_LIST = re.compile(r"(?P<name>\w+)\s*=\s*\[(?P<body>[^\]]*)\]", re.DOTALL)
 
-# The application's dependency name that means "this route needs an
-# administrator". Both are checked: a route can depend on `CurrentUser`
-# directly, or reach it through `require_admin`, and either one is a route that
-# cannot be served to an anonymous caller.
 CALLER_DEPENDENCIES = {"CurrentUser", "get_current_user", "require_admin"}
 
-# The domains whose `/api/v1` routes this section covers. `identity` and
-# `public` are excluded deliberately: `identity` serves only the login POST,
-# which is how a caller gets a token and must stay reachable without one, and
-# `public` serves the anonymous site.
 PROTECTED_DOMAINS = ("content", "resume")
 
 
@@ -1654,8 +1407,6 @@ def routes_requiring_a_caller(domain: str) -> set[str]:
         for method in route.methods or set():
             if method in ("HEAD", "OPTIONS"):
                 continue
-            # The served collection path carries a trailing slash that a route
-            # key may not; `matches` documents the normalisation this mirrors.
             path = route.path
             if len(path) > 1 and path.endswith("/"):
                 path = path[:-1]
@@ -1751,11 +1502,6 @@ def test_every_flagged_key_is_routed_to_the_domain_that_serves_it():
     "could this key have carried this path", which is what makes "the existing
     routing agrees" a checkable claim rather than a reading of the diff.
     """
-    # The per-domain keys are written inside `for` expressions over
-    # local.content_prefixes and local.resume_collections, so the loop variable
-    # has to be expanded before the keys name real paths. `gateway_route_keys`
-    # leaves `${prefix}` in place; `expand_for_expression_keys` is what resolves
-    # it, and the union of the two is every key the module actually receives.
     declared = {
         domain: gateway_route_keys().get(domain, set())
         | expand_for_expression_keys(domain)

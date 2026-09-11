@@ -67,16 +67,8 @@ from fastapi import FastAPI
 
 from app.composition.identity_hooks import PortfolioIdentityHooks
 
-# M1's KMS fake, issuer and audience, reused for the reason every file since M2
-# gives: they are the values `terraform/lambda_domains.tf` sets, and a second
-# copy here would be a second place for a rename to be missed.
 from .test_identity_m1 import AUDIENCE, ISSUER, KEY_ARN, FakeKms
 
-# The five M6 paths, spelled out rather than imported from the package, for the
-# same reason `MFA_PATHS` is in the M4 file: a list derived from the thing it
-# checks cannot notice that the thing moved. One test below does compare these
-# against the package's own constants, which is the deliberate opposite and is
-# what turns a rename into a failure here rather than a 404 in staging.
 OAUTH_GET_PATHS = (
     "/api/auth/oauth/{provider}/start",
     "/api/auth/oauth/callback",
@@ -85,28 +77,13 @@ OAUTH_GET_PATHS = (
 OAUTH_POST_PATHS = ("/api/auth/oauth/{provider}/link",)
 OAUTH_DELETE_PATHS = ("/api/auth/oauth/{provider}/link",)
 
-#: The one OAuth path that is mounted in every deployment, new in webbpulse
-#: 0.16.0. Kept out of `OAUTH_GET_PATHS` deliberately: that tuple is the set of
-#: routes that appear only once a client id is set, and this route's whole point
-#: is that it does not belong to it.
 OAUTH_PROVIDERS_PATH_FULL = "/api/auth/oauth/providers"
 
-#: A client id shaped like Google's. Nothing verifies its shape, and no test
-#: here reaches a provider; what matters is only that it is non-empty, because
-#: non-empty is the entire switch.
 GOOGLE_CLIENT_ID = "1234567890-abcdefghijklmnop.apps.googleusercontent.com"
 
-#: A client id shaped like GitHub's, on the same terms.
 GITHUB_CLIENT_ID = "Iv1.0123456789abcdef"
 
-#: The callback `terraform/identity.tf` renders into
-#: `IDENTITY_OAUTH_REDIRECT_URIS`, built from the same issuer this suite uses.
 REDIRECT_URI = f"{ISSUER}/oauth/callback"
-
-
-# ---------------------------------------------------------------------------
-# The two tables
-# ---------------------------------------------------------------------------
 
 
 def test_the_oauth_table_names_are_the_packages_own_constants() -> None:
@@ -262,11 +239,6 @@ def test_every_identity_table_the_package_names_is_registered_here() -> None:
     assert identity_owned <= set(TABLES)
 
 
-# ---------------------------------------------------------------------------
-# The settings the client ids and the callback arrive on
-# ---------------------------------------------------------------------------
-
-
 def test_the_client_ids_are_read_from_the_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -349,11 +321,6 @@ def test_both_providers_are_enabled_by_default(
     _identity_environment(monkeypatch)
 
     assert set(IdentitySettings().oauth_providers) == {"google", "github"}
-
-
-# ---------------------------------------------------------------------------
-# The composition root
-# ---------------------------------------------------------------------------
 
 
 def test_the_composition_root_supplies_both_oauth_stores(
@@ -547,11 +514,6 @@ def test_the_oauth_secret_keys_are_upper_case_like_every_other_secret_key() -> N
         assert provider == provider.lower(), provider
 
 
-# ---------------------------------------------------------------------------
-# The hooks protocol, and the one method M6 adds
-# ---------------------------------------------------------------------------
-
-
 def test_the_hooks_still_satisfy_the_packages_protocol() -> None:
     """M6 adds a hook, and this is the check that would have caught its absence.
 
@@ -586,11 +548,6 @@ def test_the_product_reports_no_sign_in_method_the_package_cannot_see() -> None:
 
     assert hooks.has_other_sign_in_method("1") is False
     assert hooks.has_other_sign_in_method("does-not-exist") is False
-
-
-# ---------------------------------------------------------------------------
-# The mount, which is the whole point of this file
-# ---------------------------------------------------------------------------
 
 
 def test_no_oauth_route_mounts_without_a_client_id(
@@ -694,11 +651,6 @@ def test_the_mounted_paths_are_the_packages_own_constants(
     assert f"{prefix}{OAUTH_CALLBACK_PATH}" in OAUTH_GET_PATHS
     assert f"{prefix}{OAUTH_LINKS_PATH}" in OAUTH_GET_PATHS
     assert f"{prefix}{OAUTH_LINK_PATH}" in OAUTH_POST_PATHS
-
-
-# ---------------------------------------------------------------------------
-# Provider discovery, new in webbpulse 0.16.0
-# ---------------------------------------------------------------------------
 
 
 def test_provider_discovery_mounts_with_no_client_id_set(
@@ -818,11 +770,6 @@ def test_one_provider_is_enough_to_mount_the_routes(
     assert "/api/auth/oauth/{provider}/start" in _paths_for_method(app, "GET")
 
 
-# ---------------------------------------------------------------------------
-# Fixtures and helpers
-# ---------------------------------------------------------------------------
-
-
 class _Captured(Exception):
     """Unwinds `build_router` once the call it made has been captured."""
 
@@ -861,8 +808,6 @@ def _capture_build(
     captured: dict[str, Any] = {}
 
     def capture(settings: Any, *args: Any, **kwargs: Any) -> Any:
-        # `build_router` passes hooks and stores positionally, so the bundle is
-        # the second of them, exactly as the M3 and M4 files explain.
         captured["stores"] = args[1] if len(args) > 1 else kwargs.get("stores")
         captured["kwargs"] = kwargs
         raise _Captured

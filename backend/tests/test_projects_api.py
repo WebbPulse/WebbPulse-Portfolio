@@ -63,7 +63,6 @@ class TestProjectsAPI:
     @pytest.mark.api
     def test_get_inactive_project_fails(self, client: TestClient):
         """Test that inactive projects are not accessible via public endpoint"""
-        # Create an inactive project
         from app.db.entities import projects
 
         inactive_project = projects.create(
@@ -182,7 +181,6 @@ class TestProjectsAdminAPI:
         assert response.status_code == 200
         assert "deleted successfully" in response.json()["message"]
 
-        # Verify project is no longer accessible via public endpoint
         get_response = client.get(f"/api/v1/projects/{test_project['id']}")
         assert get_response.status_code == 404
 
@@ -226,11 +224,9 @@ class TestProjectsAPIValidation:
     @pytest.mark.auth
     def test_create_project_invalid_data(self, client: TestClient, admin_auth_headers):
         """Test creating a project with invalid data"""
-        # Missing required fields
         response = client.post("/api/v1/projects/", json={}, headers=admin_auth_headers)
         assert response.status_code == 422
 
-        # Invalid URL format (should still work since it's just a string)
         project_data = {
             "title": "Test Project",
             "description": "Test description",
@@ -239,7 +235,7 @@ class TestProjectsAPIValidation:
         response = client.post(
             "/api/v1/projects/", json=project_data, headers=admin_auth_headers
         )
-        assert response.status_code == 200  # URL validation is not enforced in schema
+        assert response.status_code == 200
 
     @pytest.mark.api
     @pytest.mark.auth
@@ -256,7 +252,7 @@ class TestProjectsAPIValidation:
         data = response.json()
         assert data["title"] == project_data["title"]
         assert data["description"] == project_data["description"]
-        assert data["technologies"] == []  # Should default to empty list
+        assert data["technologies"] == []
         assert data["featured"] is False
 
 
@@ -267,7 +263,6 @@ class TestProjectsAPIPerformance:
     @pytest.mark.slow
     def test_get_projects_large_dataset(self, client: TestClient):
         """Test getting projects with a large dataset"""
-        # Create multiple test projects
         from app.db.entities import projects
 
         for i in range(25):
@@ -281,13 +276,11 @@ class TestProjectsAPIPerformance:
                 }
             )
 
-        # Test pagination with large dataset
         response = client.get("/api/v1/projects/?skip=0&limit=10")
         assert response.status_code == 200
         data = response.json()
         assert len(data) == 10
 
-        # Test getting featured projects only
         response = client.get("/api/v1/projects/?featured_only=true")
         assert response.status_code == 200
         data = response.json()

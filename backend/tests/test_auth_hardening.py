@@ -73,10 +73,6 @@ class TestTokens:
     def test_token_signed_with_other_key_rejected(
         self, client: TestClient, test_admin_user
     ):
-        # PyJWT rather than python-jose, which left with `app/core/security.py`'s
-        # own implementation. The token is the same bytes either library would
-        # produce for these claims; what is asserted is that a signature made
-        # with the wrong key is refused.
         import jwt
 
         token = jwt.encode(
@@ -415,7 +411,6 @@ class TestLimiterFailsOpen:
     @pytest.mark.auth
     def test_record_failure_allows_the_request(self, aws_tables, monkeypatch):
         limiter = self.missing_table_limiter(monkeypatch)
-        # 0 is below every threshold, so the caller treats it as "not limited".
         assert limiter.record_failure("10.0.0.6") == 0
 
     @pytest.mark.auth

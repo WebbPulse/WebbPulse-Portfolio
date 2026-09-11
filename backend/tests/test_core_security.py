@@ -24,13 +24,10 @@ class TestPasswordSecurity:
         password = "testpassword123"
         hashed = get_password_hash(password)
 
-        # Hash should not be the same as original password
         assert hashed != password
 
-        # Hash should start with bcrypt identifier
         assert hashed.startswith("$2b$")
 
-        # Should be able to verify the password
         assert verify_password(password, hashed)
         assert not verify_password("wrongpassword", hashed)
 
@@ -41,10 +38,8 @@ class TestPasswordSecurity:
         hash1 = get_password_hash(password)
         hash2 = get_password_hash(password)
 
-        # Hashes should be different due to salt
         assert hash1 != hash2
 
-        # Both should verify correctly
         assert verify_password(password, hash1)
         assert verify_password(password, hash2)
 
@@ -54,14 +49,11 @@ class TestPasswordSecurity:
         password = "testpassword"
         hashed = get_password_hash(password)
 
-        # Test with empty password
         assert not verify_password("", hashed)
 
-        # Test with None password - should raise TypeError
         with pytest.raises(TypeError):
             verify_password(None, hashed)
 
-        # Test with very long password
         long_password = "a" * 1000
         long_hashed = get_password_hash(long_password)
         assert verify_password(long_password, long_hashed)
@@ -94,11 +86,9 @@ class TestTokenSecurity:
         data = {"sub": "testuser"}
         token = create_access_token(data=data)
 
-        # Token should be a string
         assert isinstance(token, str)
         assert len(token) > 0
 
-        # Token should have three parts (header.payload.signature)
         parts = token.split(".")
         assert len(parts) == 3
 
@@ -109,7 +99,6 @@ class TestTokenSecurity:
         expires_delta = timedelta(minutes=30)
         token = create_access_token(data=data, expires_delta=expires_delta)
 
-        # Token should be valid
         assert isinstance(token, str)
         assert len(token) > 0
 
@@ -125,7 +114,6 @@ class TestTokenSecurity:
     @pytest.mark.unit
     def test_verify_token_invalid_format(self):
         """Test token verification with invalid format"""
-        # Invalid token format
         invalid_token = "invalid.token.format"
         username = verify_token(invalid_token)
         assert username is None
@@ -133,7 +121,6 @@ class TestTokenSecurity:
     @pytest.mark.unit
     def test_verify_token_missing_subject(self):
         """Test token verification with missing subject"""
-        # Create token without subject
         data = {"other_field": "value"}
         token = create_access_token(data=data)
 
@@ -143,9 +130,8 @@ class TestTokenSecurity:
     @pytest.mark.unit
     def test_verify_token_expired(self):
         """Test token verification with expired token"""
-        # Create token with past expiration
         data = {"sub": "testuser"}
-        expires_delta = timedelta(minutes=-10)  # Expired 10 minutes ago
+        expires_delta = timedelta(minutes=-10)
         token = create_access_token(data=data, expires_delta=expires_delta)
 
         username = verify_token(token)
@@ -154,8 +140,6 @@ class TestTokenSecurity:
     @pytest.mark.unit
     def test_verify_token_wrong_algorithm(self):
         """Test token verification with wrong algorithm"""
-        # This would require creating a token with different algorithm
-        # For now, we'll test with a completely invalid token
         invalid_token = (
             "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
             "eyJzdWIiOiJ0ZXN0dXNlciJ9.invalid_signature"
@@ -174,7 +158,6 @@ class TestTokenSecurity:
         }
         token = create_access_token(data=data)
 
-        # Should still extract username correctly
         username = verify_token(token)
         assert username == "testuser"
 
@@ -184,22 +167,15 @@ class TestTokenSecurity:
         data = {"sub": "testuser"}
         token = create_access_token(data=data)
 
-        # Decode token to check expiration. PyJWT now, for the same reason as
-        # in test_auth_hardening: python-jose is gone from the backend.
         import jwt
 
         decoded = jwt.decode(
             token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
         )
 
-        # Check that expiration is set
         assert "exp" in decoded
 
-        # Check that expiration timestamp is a positive number
         assert decoded["exp"] > 0
-
-        # Note: Timezone issues make it difficult to test exact timing
-        # The important thing is that the expiration field exists and is positive
 
     @pytest.mark.unit
     def test_token_round_trip(self):
@@ -207,17 +183,13 @@ class TestTokenSecurity:
         original_data = {"sub": "testuser", "email": "test@example.com"}
         token = create_access_token(data=original_data)
 
-        # Verify token
         username = verify_token(token)
         assert username == original_data["sub"]
 
-        # Create new token and verify again
         new_token = create_access_token(data=original_data)
         new_username = verify_token(new_token)
         assert new_username == original_data["sub"]
 
-        # Tokens might be the same if created very quickly, which is acceptable
-        # The important thing is that both tokens are valid
         assert verify_token(token) == original_data["sub"]
         assert verify_token(new_token) == original_data["sub"]
 
@@ -249,21 +221,16 @@ class TestSecurityIntegration:
     @pytest.mark.integration
     def test_password_and_token_integration(self):
         """Test integration between password hashing and token creation"""
-        # Create user data
         username = "testuser"
         password = "securepassword123"
 
-        # Hash password
         hashed_password = get_password_hash(password)
 
-        # Verify password
         assert verify_password(password, hashed_password)
 
-        # Create token
         token_data = {"sub": username}
         token = create_access_token(data=token_data)
 
-        # Verify token
         extracted_username = verify_token(token)
         assert extracted_username == username
 
@@ -277,14 +244,11 @@ class TestSecurityIntegration:
         ]
 
         for user in users:
-            # Hash password
             hashed = get_password_hash(user["password"])
 
-            # Verify password
             assert verify_password(user["password"], hashed)
             assert not verify_password("wrongpassword", hashed)
 
-            # Create and verify token
             token = create_access_token(data={"sub": user["username"]})
             extracted_username = verify_token(token)
             assert extracted_username == user["username"]
@@ -294,7 +258,6 @@ class TestSecurityIntegration:
         """Test security functions performance with multiple operations"""
         import time
 
-        # Test password hashing performance
         start_time = time.time()
         for i in range(10):
             password = f"password{i}"
@@ -302,11 +265,8 @@ class TestSecurityIntegration:
             assert verify_password(password, hashed)
 
         hashing_time = time.time() - start_time
-        assert (
-            hashing_time < 10
-        )  # Should complete within 10 seconds (bcrypt is intentionally slow)
+        assert hashing_time < 10
 
-        # Test token creation performance
         start_time = time.time()
         for i in range(100):
             token = create_access_token(data={"sub": f"user{i}"})
@@ -314,4 +274,4 @@ class TestSecurityIntegration:
             assert username == f"user{i}"
 
         token_time = time.time() - start_time
-        assert token_time < 1  # Should complete within 1 second
+        assert token_time < 1

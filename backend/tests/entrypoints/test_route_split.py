@@ -46,25 +46,18 @@ import pytest
 
 from app.composition.wiring import DOMAIN_NAMES, DOMAINS, build_domain_app
 
-# FastAPI serves these itself; they are not application routes and each domain
-# app declares its own copy.
 DOCUMENTATION_PATHS = {"/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json"}
 
 CONTRACT_PATH = Path(__file__).resolve().parents[1] / "fixtures" / "route_contract.json"
 CONTRACT = json.loads(CONTRACT_PATH.read_text())
 
-#: The 44 (method, path) pairs the four functions have to serve between them.
 CONTRACT_PAIRS = {(entry["method"], entry["path"]) for entry in CONTRACT["routes"]}
 
-#: The 42 documented operations, with the ids and tags generated clients key on.
-#: Two of the 44 routes are absent by design: `/sitemap.xml` and `/robots.txt`
-#: carry `include_in_schema=False`, so they are served but never documented.
 CONTRACT_OPERATIONS = {
     (entry["method"], entry["path"], entry["operationId"], tuple(entry["tags"]))
     for entry in CONTRACT["operations"]
 }
 
-# The plan's section 1 domain map.
 EXPECTED_COUNTS = CONTRACT["counts"]
 
 
@@ -121,9 +114,7 @@ def test_the_recorded_contract_is_the_shape_the_plan_describes():
     assert len(CONTRACT_PAIRS) == 44
     assert len(CONTRACT_OPERATIONS) == 42
     assert sum(EXPECTED_COUNTS.values()) == 44
-    # Every documented operation is one of the served routes.
     assert {(m, p) for m, p, _, _ in CONTRACT_OPERATIONS} <= CONTRACT_PAIRS
-    # The two that are served but deliberately undocumented.
     assert CONTRACT_PAIRS - {(m, p) for m, p, _, _ in CONTRACT_OPERATIONS} == {
         ("GET", "/sitemap.xml"),
         ("GET", "/robots.txt"),
@@ -143,8 +134,6 @@ def test_a_domain_documents_the_same_operations_as_the_contract(name):
     change even when every path is untouched.
     """
     documented = _operations(build_domain_app(name))
-    # The shared `/health` carries `include_in_schema=False`, so nothing from it
-    # reaches the document; `public`'s own `/health` does and is in the contract.
     assert documented - CONTRACT_OPERATIONS == set()
 
 
@@ -194,8 +183,6 @@ def test_root_a_serves_the_same_surface_as_the_four_together():
     union = set()
     for name in DOMAIN_NAMES:
         union |= _domain_pairs(name)
-    # Root A sets `include_health=False` and takes `public`'s database-reading
-    # `/health`, so its route set needs no liveness adjustment.
     assert _route_pairs(build_app()) == union == CONTRACT_PAIRS
 
 

@@ -54,18 +54,8 @@ from fastapi import FastAPI
 
 from app.composition.identity_hooks import PortfolioIdentityHooks
 
-# M1's KMS fake, issuer and audience, reused for the reason the M2 and M3 files
-# give: they are the values `terraform/lambda_domains.tf` sets, and a second
-# copy here would be a second place for a rename to be missed.
 from .test_identity_m1 import AUDIENCE, ISSUER, KEY_ARN, FakeKms
 
-# The six M4 paths, spelled out rather than imported from the package, for the
-# same reason `EMAIL_PATHS` is in the M3 file: a list derived from the thing it
-# checks cannot notice that the thing moved. One test below does compare this
-# tuple against the package's own constants, which is the deliberate opposite
-# and is what turns a rename into a failure here rather than a 404 in staging.
-# `terraform/apigateway.tf` carries the same six as route keys and
-# `tests/entrypoints/test_gateway_routes.py` pins those.
 MFA_PATHS = (
     "/api/auth/login/totp",
     "/api/auth/totp/enrol",
@@ -75,17 +65,9 @@ MFA_PATHS = (
     "/api/auth/step-up",
 )
 
-#: The envelope key ARN the fixture sets. Not the real one: the module derives
-#: that from the KMS key it creates and passes it in as `IDENTITY_DATA_KEY_ARN`.
-#: What matters here is only that the settings pick the value up under that name.
 DATA_KEY_ARN = (
     "arn:aws:kms:us-west-2:621554169154:key/99999999-8888-7777-6666-555555555555"
 )
-
-
-# ---------------------------------------------------------------------------
-# The two tables
-# ---------------------------------------------------------------------------
 
 
 def test_the_mfa_table_names_are_the_packages_own_constants() -> None:
@@ -218,11 +200,6 @@ def test_the_identity_tables_are_the_six_the_module_is_passed() -> None:
     assert identity_owned <= set(TABLES)
 
 
-# ---------------------------------------------------------------------------
-# The envelope key setting
-# ---------------------------------------------------------------------------
-
-
 def test_the_data_key_arn_is_read_from_the_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -279,11 +256,6 @@ def test_totp_is_enabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     assert IdentitySettings().totp_enabled is True
 
 
-# ---------------------------------------------------------------------------
-# The composition root
-# ---------------------------------------------------------------------------
-
-
 def test_the_composition_root_supplies_both_mfa_stores(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -315,8 +287,6 @@ def test_the_composition_root_supplies_both_mfa_stores(
     captured: dict[str, Any] = {}
 
     def capture(settings: Any, *args: Any, **kwargs: Any) -> Any:
-        # `build_router` passes hooks and stores positionally, so the bundle is
-        # the second of them, exactly as the M3 file's copy of this explains.
         captured["stores"] = args[1] if len(args) > 1 else kwargs.get("stores")
         raise _Captured
 
@@ -381,11 +351,6 @@ class _Captured(Exception):
     """Unwinds `build_router` once the bundle it built has been captured."""
 
 
-# ---------------------------------------------------------------------------
-# The hooks protocol
-# ---------------------------------------------------------------------------
-
-
 def test_the_hooks_still_satisfy_the_packages_protocol() -> None:
     """M4 adds no hook method, and this is what says so out loud.
 
@@ -397,11 +362,6 @@ def test_the_hooks_still_satisfy_the_packages_protocol() -> None:
     from webbpulse.identity import IdentityHooks
 
     assert isinstance(PortfolioIdentityHooks(), IdentityHooks)
-
-
-# ---------------------------------------------------------------------------
-# The mount
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="module")
@@ -588,37 +548,7 @@ def test_the_routes_do_not_mount_without_the_factor_store(
     for path in MFA_PATHS:
         assert path not in paths
 
-    # And the earlier milestones are still there, which is the point: a missing
-    # store takes the six routes and nothing else.
     assert "/api/auth/login" in paths
-
-
-# ---------------------------------------------------------------------------
-# The 0.13.0 body on the two destructive routes
-# ---------------------------------------------------------------------------
-#
-# These are route contract tests, not re-tests of the package's MFA mechanism.
-# The distinction is the one this module's docstring draws, and it is worth
-# restating because the line is fine here.
-#
-# The package's own suite proves that `verify_challenge` accepts a TOTP code
-# inside its window, that a recovery code is single use, and that a refusal
-# raises `MfaRejected`. None of that is re-asserted below.
-#
-# What is asserted is the shape of the two requests this product's frontend has
-# to send, because 0.13.0 changed it: both routes took no body at all through
-# 0.12.1 and both now require `{"code": "..."}`. A frontend still sending the
-# old empty body gets a 422, and the failure is a user unable to turn off their
-# own second factor. `terraform/apigateway.tf` carries the route keys and
-# `tests/entrypoints/test_gateway_routes.py` pins those, but a route key encodes
-# a method and a path and can say nothing about a body, so this is the only
-# place the new contract is pinned on this side.
-#
-# The app under test is built from the package's in-memory stores rather than
-# the composition root's Dynamo ones, and a real factor is enrolled through the
-# package's own service, so the codes below are real codes and the consumption
-# assertion observes a real deletion. Using a fake here would make the test a
-# restatement of its own setup.
 
 
 class _EnvelopeKms:
@@ -720,12 +650,6 @@ def _enrolled_app(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> tuple[An
         version=VERSION,
     )
 
-    # Built through `create_app` with this product's own `ERROR_ENVELOPE_OPTIONS`
-    # rather than a bare `FastAPI()`, because the 422 below is rendered by the
-    # shared validation handler that `create_app` installs and `error_codes`
-    # turns on. A bare app would answer 422 with FastAPI's default body, and the
-    # `error_code` assertion would be testing the fixture rather than the
-    # product. `app/composition/app.py` and `wiring.py` pass the same dict.
     from webbpulse.http import create_app
 
     from app.composition.wiring import ERROR_ENVELOPE_OPTIONS
@@ -739,8 +663,6 @@ def _enrolled_app(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> tuple[An
     )
     app.include_router(router)
 
-    # Enrol for real, through the package's own service, so the codes below are
-    # codes the router will actually accept.
     from webbpulse.identity.mfa import MfaService
     from webbpulse.identity.service import TokenService
     from webbpulse.identity.totp import current_step, generate_code
@@ -854,8 +776,6 @@ def test_a_recovery_code_disables_the_factor_and_is_spent(
     assert response.status_code == 200, response.text
     assert response.json() == {"disabled": True}
     assert mfa.factors_for(user_id) == []
-    # Disabling clears the whole set, so the spent code cannot be counted against
-    # `before - 1`. What is checked is that it is gone, which is the replay bar.
     assert mfa.remaining_recovery_codes(user_id) < before
 
 
@@ -873,8 +793,6 @@ def test_a_current_totp_code_regenerates_the_recovery_codes(
 
     app, mfa, user_id, access, codes, secret = _enrolled_app(private_key, monkeypatch)
 
-    # A step ahead of enrolment's, because the package's replay watermark
-    # refuses a code already spent to confirm the enrolment.
     code = generate_code(secret, step=current_step() + 1)
     response = TestClient(app).post(
         "/api/auth/recovery-codes", json={"code": code}, headers=_auth(access)

@@ -103,7 +103,6 @@ class TestSiteContentAdminAPI:
         assert response.status_code == 200
         data = response.json()
         assert data["hero_title"] == "Updated Title"
-        # Untouched fields preserved
         assert data["hero_subtitle"] == "Test Subtitle"
 
     @pytest.mark.api

@@ -34,7 +34,6 @@ class TestCertificationsAPI:
         response = client.get("/api/v1/certifications/")
         assert response.status_code == 200
         data = response.json()
-        # order asc, then issued_date desc
         assert [c["name"] for c in data] == ["B", "C", "A"]
 
     @pytest.mark.api

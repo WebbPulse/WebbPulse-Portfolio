@@ -89,10 +89,7 @@ class TestTheHappyPath:
 
         assert summary["cleared"] == 1
         refreshed = reload(user)
-        # REMOVE, not `""`. A row cleared this way is shaped exactly like one
-        # created by the identity registration flow, which never sets it.
         assert "hashed_password" not in refreshed
-        # And nothing else on the row moved.
         assert refreshed["username"] == user["username"]
         assert refreshed["email"] == user["email"]
         assert refreshed["is_admin"] is True
@@ -227,7 +224,6 @@ class TestTheExitCodeAndTheOutput:
             store.get(str(bad["id"]), PASSWORD_CREDENTIAL_TYPE).secret,
         ):
             assert secret not in output
-        # Not even a fragment: the salt alone identifies the hash.
         assert "$2b$" not in output
 
     def test_the_prefix_flag_reaches_the_users_repository(self, script, monkeypatch):

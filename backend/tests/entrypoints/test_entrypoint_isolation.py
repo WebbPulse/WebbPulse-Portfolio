@@ -31,9 +31,6 @@ from app.composition.wiring import DOMAIN_NAMES
 
 BACKEND = Path(__file__).resolve().parents[2]
 
-# Build the application, then report which domain packages ended up imported and
-# how many routes it serves. Printed as JSON on the last line so an import-time
-# warning on stderr cannot corrupt the result.
 PROBE = """
 import json, sys
 from app.entrypoints import {domain} as entrypoint
@@ -62,8 +59,6 @@ def _probe(domain, env=None):
     environment = {
         "PATH": "/usr/bin:/bin",
         "PYTHONPATH": str(BACKEND),
-        # Otherwise a `.pyc` write into a read-only tree is a hard failure, and
-        # the Lambda filesystem is read-only outside `/tmp`.
         "PYTHONDONTWRITEBYTECODE": "1",
     }
     environment.update(env or {})

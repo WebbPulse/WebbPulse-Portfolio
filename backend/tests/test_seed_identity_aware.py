@@ -172,8 +172,6 @@ class TestMissingCredentialIsCreatedOnce:
         user = entities.users.find_by_unique("username", settings.ADMIN_USERNAME)
         assert user["is_admin"] is True and user["is_active"] is True
         assert user["email"] == settings.ADMIN_EMAIL
-        # The row is created without the legacy column at all, on the same rule
-        # `create_user` in `app/composition/identity_hooks.py` follows.
         assert LEGACY_HASH_FIELD not in user
         credential = store.get(str(user["id"]), PASSWORD_CREDENTIAL_TYPE)
         assert verify_password(settings.ADMIN_PASSWORD, credential.secret)
@@ -196,9 +194,6 @@ class TestMissingCredentialIsCreatedOnce:
         seed_admin_user(store)
 
         after = store.get(str(user["id"]), PASSWORD_CREDENTIAL_TYPE)
-        # Byte identical, which is stronger than "still verifies": bcrypt salts
-        # per call, so a second `put` would produce a different secret and the
-        # next migration run would report a conflict.
         assert after.secret == first.secret
         assert entities.users.count() == 1
 
@@ -233,7 +228,6 @@ class TestTheStoreResolution:
         try:
             resolved = middleware._admin_credential_store()
             assert resolved is not None
-            # Same class the running service and both scripts construct.
             from webbpulse.identity import DynamoCredentialStore
 
             assert isinstance(resolved, DynamoCredentialStore)

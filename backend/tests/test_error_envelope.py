@@ -35,12 +35,6 @@ from starlette.testclient import TestClient
 from app.composition.app import build_app
 from app.composition.wiring import DOMAINS, ERROR_ENVELOPE_OPTIONS, build_domain_app
 
-# The messages the envelope carried before the options were turned on. Every one
-# of them is read somewhere else: the first four by `tests/test_auth_api.py` and
-# `tests/test_posts_api.py` through `error_message`, the routing pair by the
-# shared package's own rewrite of Starlette's wording. They are repeated here as
-# literals on purpose, so this module fails if a message changes even when the
-# test that reads it changes with it.
 UNAUTHORIZED_MESSAGE = "Invalid authentication credentials"
 LOGIN_FAILED_MESSAGE = "Incorrect username or password"
 NOT_FOUND_MESSAGE = "The requested resource was not found."
@@ -59,9 +53,6 @@ def envelope(response):
     assert body["status"] == response.status_code, body
     assert body["request_id"], body
     return body
-
-
-# --- error_code, per status ---------------------------------------------------
 
 
 @pytest.mark.api
@@ -117,7 +108,6 @@ def test_a_missing_item_carries_not_found(client: TestClient):
     assert response.status_code == 404
     body = envelope(response)
     assert body["error_code"] == "NOT_FOUND"
-    # The route's own wording, not the shared package's routing message.
     assert body["message"] != NOT_FOUND_MESSAGE
     assert body["message"]
 
@@ -153,13 +143,8 @@ def test_an_unhandled_exception_carries_internal_error():
     assert response.status_code == 500
     body = envelope(response)
     assert body["error_code"] == "INTERNAL_ERROR"
-    # Deliberately generic: the detail belongs in CloudWatch, joined to this
-    # response by its request id, rather than in a body a caller can read.
     assert body["message"] == INTERNAL_MESSAGE
     assert "deliberate" not in response.text
-
-
-# --- The messages are unchanged -----------------------------------------------
 
 
 @pytest.mark.api
@@ -207,9 +192,6 @@ def test_the_base_fields_keep_their_order(client: TestClient):
     response = client.get("/api/v1/no-such-route")
 
     assert list(response.json())[:4] == ["success", "status", "message", "request_id"]
-
-
-# --- validation_details -------------------------------------------------------
 
 
 @pytest.mark.api
@@ -262,9 +244,6 @@ def test_a_non_validation_error_carries_no_details(client: TestClient):
     body = envelope(client.get("/api/v1/no-such-route"))
 
     assert "details" not in body
-
-
-# --- One switch, both composition roots ---------------------------------------
 
 
 @pytest.mark.unit

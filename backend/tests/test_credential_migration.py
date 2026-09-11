@@ -86,7 +86,6 @@ def test_apply_writes_the_credential_in_the_packages_shape(script, store):
     assert credential.user_id == str(user["id"])
     assert credential.credential_type == PASSWORD_CREDENTIAL_TYPE
     assert credential.secret == user["hashed_password"]
-    # The store fills both timestamps in when the record leaves them empty.
     assert credential.created_at
     assert credential.updated_at
 

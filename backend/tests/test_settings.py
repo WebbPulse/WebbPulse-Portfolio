@@ -198,7 +198,6 @@ def test_values_are_cached_per_execution_environment():
     boto3.client("secretsmanager", region_name="us-west-2").put_secret_value(
         SecretId=arn, SecretString=json.dumps({"SECRET_KEY": "second"})
     )
-    # Still the cached value: a warm invocation makes no further call.
     assert app_secrets.load_app_secrets(arn)["SECRET_KEY"] == "first"
 
     app_secrets.reset_cache()
@@ -218,12 +217,6 @@ def test_cors_origins_include_localhost(monkeypatch):
     )
 
 
-# `ENVIRONMENT=development` used to raise a Literal validation error rather than
-# mapping to "local". `BaseServiceSettings` is case-insensitive, so its
-# `environment` field and Portfolio's `ENVIRONMENT` are the same variable, and
-# the base's Literal was validated against Portfolio's free-text value before
-# the alias map could translate it. Only leaving the variable unset worked, even
-# though "development" is the documented default.
 @pytest.mark.unit
 @pytest.mark.parametrize(
     ("raw", "expected"),
@@ -241,10 +234,7 @@ def test_cors_origins_include_localhost(monkeypatch):
 def test_environment_aliases_map_to_the_base_literal(monkeypatch, raw, expected):
     monkeypatch.setenv("ENVIRONMENT", raw)
     settings = Settings(_env_file=None)
-    # Portfolio's own field keeps the value exactly as it was set, so the
-    # environment variable Terraform writes is still readable as written.
     assert settings.ENVIRONMENT == raw
-    # The base class's field holds the translation, so it satisfies the Literal.
     assert settings.environment == expected
 
 

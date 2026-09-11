@@ -45,17 +45,8 @@ from app.composition.identity_hooks import (
 )
 from app.db import entities
 
-# The KMS fake, the issuer and the audience are M1's and are reused rather than
-# re-declared: they are the values `terraform/lambda_domains.tf` sets, and a
-# second copy of them here would be a second place for a rename to be missed.
-# moto is not usable for the signing key, for the reason `test_identity_m1.py`
-# gives at length: its asymmetric `get_public_key` returns a null `KeySpec`.
 from .test_identity_m1 import AUDIENCE, ISSUER, KEY_ARN, FakeKms
 
-# The six flow paths, spelled out rather than imported from the package. The
-# point of this list is to notice a path that moved, and a list derived from the
-# thing it is checking cannot do that. `terraform/apigateway.tf` carries the same
-# six as route keys and `tests/entrypoints/test_gateway_routes.py` pins those.
 FLOW_PATHS = (
     "/api/auth/register",
     "/api/auth/login",
@@ -64,11 +55,6 @@ FLOW_PATHS = (
     "/api/auth/logout",
     "/api/auth/logout-all",
 )
-
-
-# ---------------------------------------------------------------------------
-# The hooks
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -335,11 +321,6 @@ def test_user_repository_is_this_products_users_repository(
     assert hooks.user_repository() is entities.users
 
 
-# ---------------------------------------------------------------------------
-# The table declarations
-# ---------------------------------------------------------------------------
-
-
 def test_the_table_names_are_the_packages_own_constants() -> None:
     """Copied names, checked against the source they were copied from."""
     from webbpulse.identity import (
@@ -446,11 +427,6 @@ def test_every_registered_table_is_actually_created_by_the_suite() -> None:
     live = set(boto3.client("dynamodb").list_tables()["TableNames"])
     for name, _ in ALL_TABLES:
         assert f"{settings.DYNAMODB_TABLE_PREFIX}-{name}" in live
-
-
-# ---------------------------------------------------------------------------
-# The mount
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="module")
@@ -582,7 +558,7 @@ def test_the_flows_do_not_mount_without_hooks_and_a_credential_store(
 
     from app.version import VERSION
 
-    del identity_app  # Only here for the environment its fixture sets up.
+    del identity_app
 
     documents_only = FastAPI()
     documents_only.include_router(

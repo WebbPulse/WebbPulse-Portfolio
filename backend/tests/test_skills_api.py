@@ -147,7 +147,6 @@ class TestSkillsAdminAPI:
         data = response.json()
         assert data["name"] == "Renamed"
         assert data["tier"] == "core"
-        # Untouched field preserved
         assert data["category"] == "frontend"
 
     @pytest.mark.api
@@ -183,7 +182,6 @@ class TestSkillsAdminAPI:
         assert response.status_code == 200
         assert "deleted successfully" in response.json()["message"]
 
-        # Soft delete: GET returns 404
         get_response = client.get(f"/api/v1/skills/{test_skill['id']}")
         assert get_response.status_code == 404
 
@@ -229,6 +227,6 @@ class TestSkillsAPIValidation:
         assert response.status_code == 200
         data = response.json()
         assert data["name"] == "Minimal"
-        assert data["tier"] == "working"  # default
-        assert data["order"] == 0  # default
+        assert data["tier"] == "working"
+        assert data["order"] == 0
         assert data["icon"] is None

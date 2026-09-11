@@ -50,16 +50,8 @@ from fastapi import FastAPI
 from app.composition.identity_hooks import PortfolioIdentityHooks
 from app.db import entities
 
-# M1's KMS fake, issuer and audience, reused for the reason `test_identity_m2.py`
-# gives: they are the values `terraform/lambda_domains.tf` sets, and a second
-# copy here would be a second place for a rename to be missed.
 from .test_identity_m1 import AUDIENCE, ISSUER, KEY_ARN, FakeKms
 
-# The four M3 paths, spelled out rather than imported from the package, for the
-# same reason `FLOW_PATHS` is in the M2 file: a list derived from the thing it
-# checks cannot notice that the thing moved. `terraform/apigateway.tf` carries
-# the same four as route keys and `tests/entrypoints/test_gateway_routes.py`
-# pins those.
 EMAIL_PATHS = (
     "/api/auth/verify-email",
     "/api/auth/verify-email/confirm",
@@ -67,16 +59,8 @@ EMAIL_PATHS = (
     "/api/auth/reset/confirm",
 )
 
-# The from address and configuration set the fixture sets. Not the real ones:
-# `terraform/identity.tf` derives those from `local.domain`, and what matters
-# here is only that a non-empty from address turns the sender on.
 FROM_ADDRESS = "no-reply@staging.webbpulse.com"
 CONFIGURATION_SET = "webbpulse-staging-identity"
-
-
-# ---------------------------------------------------------------------------
-# mark_email_verified
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -262,11 +246,6 @@ def test_may_authenticate_deliberately_ignores_email_verified(
     assert hooks.may_authenticate(unverified) is None
 
 
-# ---------------------------------------------------------------------------
-# The identity-tokens table
-# ---------------------------------------------------------------------------
-
-
 def test_the_token_table_name_is_the_packages_own_constant() -> None:
     """A copied name, checked against the source it was copied from."""
     from webbpulse.identity import IDENTITY_TOKENS_TABLE
@@ -367,10 +346,6 @@ def test_the_composition_root_supplies_a_token_store(
     captured: dict[str, Any] = {}
 
     def capture(settings: Any, *args: Any, **kwargs: Any) -> Any:
-        # `build_router` passes hooks and stores positionally, so the bundle is
-        # the second of them. `build_identity_router` is imported inside
-        # `build_router`, which is why the patch lands on the package module
-        # rather than on the composition module.
         captured["stores"] = args[1] if len(args) > 1 else kwargs.get("stores")
         raise _Captured
 
@@ -385,11 +360,6 @@ def test_the_composition_root_supplies_a_token_store(
 
 class _Captured(Exception):
     """Unwinds `build_router` once the bundle it built has been captured."""
-
-
-# ---------------------------------------------------------------------------
-# The mount
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="module")
@@ -584,11 +554,6 @@ def test_a_from_address_builds_an_ses_sender_carrying_the_configuration_set(
     sender = build_email_sender(IdentitySettings())  # pyright: ignore[reportCallIssue]
 
     assert isinstance(sender, SesV2EmailSender)
-
-
-# ---------------------------------------------------------------------------
-# The recording sender
-# ---------------------------------------------------------------------------
 
 
 def test_the_recording_sender_stands_in_for_ses_without_an_aws_call() -> None:

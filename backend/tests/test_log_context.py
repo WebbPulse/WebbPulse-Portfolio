@@ -88,8 +88,6 @@ def test_incoming_request_id_reaches_a_log_line_and_the_response(client, json_li
     logged = [line for line in json_lines if line["message"] == "handled a request"]
     assert len(logged) == 1
     assert logged[0]["request_id"] == incoming
-    # The rest of the shape CarModPicker also emits, since both products format
-    # through the same class. A saved Logs Insights query reads both log groups.
     assert logged[0]["level"] == "INFO"
     assert logged[0]["service"] == "webbpulse-portfolio"
     assert logged[0]["environment"] == "test"
@@ -113,7 +111,6 @@ def test_a_generated_request_id_is_used_when_the_caller_sends_none(client, json_
     response = client.get("/_test/generated")
 
     echoed = response.headers[REQUEST_ID_HEADER]
-    # A UUID4, not the `"-"` placeholder and not an empty string.
     assert uuid.UUID(echoed).version == 4
 
     logged = [line for line in json_lines if line["message"] == "generated id"]

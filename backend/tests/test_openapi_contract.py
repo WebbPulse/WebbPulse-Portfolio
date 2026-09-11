@@ -32,7 +32,6 @@ from app.composition.app import build_app
 
 app = build_app()
 
-# (method, path, operationId, tags): the 42 operations the API publishes.
 EXPECTED_OPERATIONS = [
     ("GET", "/api/v1/posts/", "get_posts_api_v1_posts__get", ["posts"]),
     ("GET", "/api/v1/posts/admin", "get_all_posts_api_v1_posts_admin_get", ["posts"]),
@@ -218,8 +217,6 @@ EXPECTED_OPERATIONS = [
     ("GET", "/health", "health_check_health_get", []),
 ]
 
-# The two SEO routes carry include_in_schema=False, so the documented surface
-# is two smaller than the route table.
 UNDOCUMENTED_ROUTES = [("GET", "/sitemap.xml"), ("GET", "/robots.txt")]
 
 
@@ -243,7 +240,6 @@ def test_openapi_operations_are_unchanged():
         (method, path, operation_id, tuple(tags))
         for method, path, operation_id, tags in EXPECTED_OPERATIONS
     }
-    # No duplicates hiding inside the set comparison.
     assert len(documented) == len(hashable) == len(EXPECTED_OPERATIONS) == 42
 
 
@@ -286,8 +282,6 @@ def test_the_whole_surface_orders_paths_by_domain():
             return "resume"
         return "public"
 
-    # Each domain's paths form one contiguous run, so no domain is interleaved
-    # with another the way `content` and `resume` were in the monolith.
     runs = []
     for path in paths:
         domain = domain_of(path)
@@ -296,8 +290,6 @@ def test_the_whole_surface_orders_paths_by_domain():
     assert len(runs) == len(set(runs)) == 4, runs
     assert runs == ["content", "resume", "identity", "public"]
 
-    # And within a domain, the order is the one that domain's own document
-    # publishes, which is the order a client can actually observe.
     from app.composition.wiring import build_domain_app
 
     for name in ("content", "resume", "identity", "public"):
@@ -363,7 +355,7 @@ def test_route_count_matches_the_domain_map():
         "public": len([1 for _, p in application if not p.startswith("/api/v1/")]),
     }
     assert counts == {"content": 14, "resume": 25, "identity": 1, "public": 4}
-    assert content  # the prefixes above actually matched something
+    assert content
 
 
 def test_the_split_serves_this_exact_contract():

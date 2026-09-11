@@ -28,10 +28,6 @@ from webbpulse.otel import SAMPLE_RATIO_ENV, instrument_fastapi, resolve_sample_
 
 from app.composition.wiring import DOMAIN_NAMES, build_domain_app
 
-# The private sentinel `_wrap_with_flush` sets. Reading a private name is the point:
-# the wrapper is installed outside the middleware stack, so there is no public
-# surface that reports it, and asserting on the observable behaviour instead would
-# mean starting a server and exporting a span.
 FLUSH_WRAPPED_ATTR = "_webbpulse_flush_wrapped"
 
 
@@ -43,20 +39,13 @@ def test_instrumenting_a_domain_app_installs_the_flush_wrapper_once(domain):
         "build_domain_app should not instrument; the entrypoint's main does that"
     )
 
-    # `flush_per_request` explicitly rather than relying on auto-detection, which
-    # keys on AWS_LAMBDA_FUNCTION_NAME and would make this test depend on whether
-    # the suite happens to run inside Lambda.
     instrument_fastapi(app, flush_per_request=True)
     assert getattr(app, FLUSH_WRAPPED_ATTR, False)
 
     stack = app.build_middleware_stack()
     assert type(stack).__name__ == "_FlushTracingASGIMiddleware"
-    # The wrapper is outermost, so exactly one layer of it: the thing it wraps must
-    # not be another one.
     assert type(stack.app).__name__ != "_FlushTracingASGIMiddleware"
 
-    # Idempotent. Two calls on the same app would otherwise nest two flush layers
-    # and flush twice per request.
     instrument_fastapi(app, flush_per_request=True)
     restack = app.build_middleware_stack()
     assert type(restack).__name__ == "_FlushTracingASGIMiddleware"

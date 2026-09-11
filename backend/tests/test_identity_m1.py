@@ -49,11 +49,8 @@ from cryptography.hazmat.primitives.asymmetric import (  # noqa: E402
 
 KEY_ARN = "arn:aws:kms:us-west-2:621554169154:key/11111111-2222-3333-4444-555555555555"
 
-#: The issuer exactly as `local.identity_issuer` renders it for staging. The
-#: `/api/auth` path is the standard's shape and the host is `local.api_host`.
 ISSUER = "https://api.staging.webbpulse.com/api/auth"
 
-#: `local.identity_audience`, which is `webbpulse-portfolio-<env>-api`.
 AUDIENCE = "webbpulse-portfolio-staging-api"
 
 

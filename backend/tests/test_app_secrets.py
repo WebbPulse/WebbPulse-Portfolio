@@ -76,8 +76,6 @@ def run_probe(source, env=None):
         "PYTHONPATH": os.pathsep.join(
             [str(BACKEND), *(p for p in sys.path if p and Path(p).is_dir())]
         ),
-        # A `.pyc` write into a read-only tree is a hard failure, and the Lambda
-        # filesystem is read-only outside `/tmp`.
         "PYTHONDONTWRITEBYTECODE": "1",
     }
     environment.update(env or {})
@@ -90,8 +88,6 @@ def run_probe(source, env=None):
         timeout=180,
     )
 
-
-# --- Importing reads no secret ------------------------------------------------
 
 IMPORT_PROBE = """
 import json, sys
@@ -146,9 +142,6 @@ def test_importing_config_with_no_aws_environment_at_all():
 
     assert result.returncode == 0, result.stderr
     assert "ok" in result.stdout
-
-
-# --- Lazy resolution ----------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -216,9 +209,6 @@ def test_env_var_short_circuits_the_fetch(clear_secret_env, monkeypatch):
     assert Settings(_env_file=None).SECRET_KEY == "from-env"
 
 
-# --- require_secrets ----------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_require_secrets_names_every_missing_field(clear_secret_env, monkeypatch):
     arn = create_app_secret("webbpulse-msg/app", {"SECRET_KEY": "k"})
@@ -231,7 +221,6 @@ def test_require_secrets_names_every_missing_field(clear_secret_env, monkeypatch
 
     message = str(excinfo.value)
     assert "ADMIN_USERNAME" in message and "ADMIN_EMAIL" in message
-    # The one that resolved is not reported as missing.
     assert "SECRET_KEY" not in message
     assert "APP_SECRETS_ARN" in message
 
@@ -248,9 +237,6 @@ def test_cache_reset_makes_a_rotated_secret_visible():
 
     app_secrets.reset_cache()
     assert app_secrets.load_app_secrets(arn)["SECRET_KEY"] == "second"
-
-
-# --- check_required_secrets ---------------------------------------------------
 
 
 @pytest.mark.unit
@@ -292,8 +278,6 @@ def test_public_never_asks_for_a_secret(clear_secret_env, monkeypatch, environme
     settings = Settings(_env_file=None)
 
     with warnings.catch_warnings():
-        # Only ours. Promoting every warning would also catch a dependency's
-        # unrelated DeprecationWarning, which says nothing about this code.
         warnings.simplefilter("error", UserWarning)
         check_required_secrets([DOMAINS["public"]], settings=settings)
 
@@ -308,8 +292,6 @@ def test_a_deployed_environment_passes_when_the_secret_resolves(
     settings = Settings(_env_file=None)
 
     with warnings.catch_warnings():
-        # Only ours. Promoting every warning would also catch a dependency's
-        # unrelated DeprecationWarning, which says nothing about this code.
         warnings.simplefilter("error", UserWarning)
         check_required_secrets([DOMAINS["resume"]], settings=settings)
 
@@ -354,9 +336,6 @@ def test_the_declared_secrets_per_domain(domain, expected):
     which is why its function holds no `secretsmanager` action at all.
     """
     assert DOMAINS[domain].requires_secrets == expected
-
-
-# --- Seeding is scoped to the domain that owns the table ----------------------
 
 
 @pytest.mark.unit

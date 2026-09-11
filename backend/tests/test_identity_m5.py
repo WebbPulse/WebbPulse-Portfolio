@@ -75,7 +75,6 @@ from fastapi import FastAPI
 
 from .test_identity_m1 import AUDIENCE, ISSUER, KEY_ARN, FakeKms
 
-#: The five management routes, behind the authorizer.
 PASSKEY_MANAGEMENT_POST_PATHS = (
     "/api/auth/passkeys/register/options",
     "/api/auth/passkeys/register/verify",
@@ -84,13 +83,11 @@ PASSKEY_MANAGEMENT_GET_PATHS = ("/api/auth/passkeys",)
 PASSKEY_MANAGEMENT_PATCH_PATHS = ("/api/auth/passkeys/{credential_id}",)
 PASSKEY_MANAGEMENT_DELETE_PATHS = ("/api/auth/passkeys/{credential_id}",)
 
-#: The two login legs, anonymous, and the pair `passkeys_passwordless` governs.
 PASSKEY_LOGIN_POST_PATHS = (
     "/api/auth/login/passkey/options",
     "/api/auth/login/passkey/verify",
 )
 
-#: Every path M5 adds, which is what "no passkey route mounts" has to mean.
 ALL_PASSKEY_PATHS = frozenset(
     PASSKEY_MANAGEMENT_POST_PATHS
     + PASSKEY_MANAGEMENT_GET_PATHS
@@ -99,17 +96,9 @@ ALL_PASSKEY_PATHS = frozenset(
     + PASSKEY_LOGIN_POST_PATHS
 )
 
-#: The registrable domain the module renders as IDENTITY_RP_ID, and the origin
-#: built from the same domain. Staging's values, because the fixtures below build
-#: the staging environment.
 RP_ID = "staging.webbpulse.com"
 RP_NAME = "WebbPulse Portfolio"
 WEBAUTHN_ORIGIN = "https://staging.webbpulse.com"
-
-
-# ---------------------------------------------------------------------------
-# The two tables
-# ---------------------------------------------------------------------------
 
 
 def test_the_passkey_table_names_are_the_packages_own_constants() -> None:
@@ -201,11 +190,6 @@ def test_both_passkey_tables_are_created_by_the_suite(aws_tables: Any) -> None:
     assert {"passkeys", "webauthn-challenges"} <= names
 
 
-# ---------------------------------------------------------------------------
-# The two flags, and the inversion that makes them worth asserting
-# ---------------------------------------------------------------------------
-
-
 def test_the_package_defaults_both_passkey_flags_on(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -265,11 +249,6 @@ def test_the_shipping_values_turn_both_flags_off(
 
     assert settings.passkeys_enabled is False
     assert settings.passkeys_passwordless is False
-
-
-# ---------------------------------------------------------------------------
-# The RP id, the RP name and the origins
-# ---------------------------------------------------------------------------
 
 
 def test_the_webauthn_origins_are_read_as_a_json_array(
@@ -357,11 +336,6 @@ def test_the_rp_name_is_the_product_name_a_browser_shows(
     assert settings.rp_name == RP_NAME
 
 
-# ---------------------------------------------------------------------------
-# The composition root
-# ---------------------------------------------------------------------------
-
-
 def test_the_composition_root_supplies_both_passkey_stores(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -428,11 +402,6 @@ def test_the_hooks_still_satisfy_the_packages_protocol() -> None:
     from app.composition.identity_hooks import PortfolioIdentityHooks
 
     assert isinstance(PortfolioIdentityHooks(), IdentityHooks)
-
-
-# ---------------------------------------------------------------------------
-# The mount, which is the point of this file
-# ---------------------------------------------------------------------------
 
 
 def test_no_passkey_route_mounts_with_the_flag_off(
@@ -547,11 +516,6 @@ def test_passwordless_off_is_what_the_enabled_app_still_ships(
     assert settings.passkeys_passwordless is False
 
 
-# ---------------------------------------------------------------------------
-# One round trip, against the in-memory stores
-# ---------------------------------------------------------------------------
-
-
 def test_registration_options_round_trip_against_the_in_memory_stores(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -602,11 +566,9 @@ def test_registration_options_round_trip_against_the_in_memory_stores(
         "user-1", user_name="owner@webbpulse.com", display_name="Owner"
     )
 
-    # The challenge is a row, and it is in the store that was handed over.
     assert challenge.challenge_id
     assert challenges.consume(challenge.challenge_id) is not None
 
-    # The options are WebAuthn JSON, camelCase, passed straight to the browser.
     options = challenge.options
     assert options["rp"]["id"] == RP_ID
     assert options["rp"]["name"] == RP_NAME
@@ -691,11 +653,6 @@ def test_the_configured_origins_reach_the_ceremony(
     assert service.rp_id == RP_ID
 
 
-# ---------------------------------------------------------------------------
-# Fixtures and helpers, mirroring the M6 file's
-# ---------------------------------------------------------------------------
-
-
 class _Captured(Exception):
     """Unwinds `build_router` once the call it made has been captured."""
 
@@ -717,8 +674,6 @@ def _capture_build(
     captured: dict[str, Any] = {}
 
     def capture(settings: Any, *args: Any, **kwargs: Any) -> Any:
-        # `build_router` passes hooks and stores positionally, so the bundle is
-        # the second of them, exactly as the M3, M4 and M6 files explain.
         captured["stores"] = args[1] if len(args) > 1 else kwargs.get("stores")
         captured["kwargs"] = kwargs
         raise _Captured
@@ -748,7 +703,6 @@ def _identity_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("IDENTITY_PASSKEYS_ENABLED", "false")
     monkeypatch.setenv("IDENTITY_PASSKEYS_PASSWORDLESS", "false")
     monkeypatch.setenv("IDENTITY_WEBAUTHN_ORIGINS", json.dumps([WEBAUTHN_ORIGIN]))
-    # No OAuth provider, so the M6 routes stay out of the path sets above.
     monkeypatch.delenv("IDENTITY_GOOGLE_CLIENT_ID", raising=False)
     monkeypatch.delenv("IDENTITY_GITHUB_CLIENT_ID", raising=False)
 
