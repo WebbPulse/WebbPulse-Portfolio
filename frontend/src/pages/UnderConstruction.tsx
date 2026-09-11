@@ -1,3 +1,4 @@
+/** The holding page shown when the site is switched off. */
 export function UnderConstruction() {
   return (
     <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center px-6 text-center">

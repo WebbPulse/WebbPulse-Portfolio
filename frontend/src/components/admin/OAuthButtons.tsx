@@ -7,33 +7,9 @@ import type { OAuthProvider } from '../../services/oauthAvailability';
 /**
  * The "Sign in with ..." row under the password form.
  *
- * ## Links rather than buttons
- *
- * `GET /api/auth/oauth/{provider}/start` answers `302` to the provider, which
- * is a browser navigation and not something a `fetch` can follow. The package
- * says as much by handing back a URL from `oauthStartUrl` rather than a
- * promise. An anchor is the right element for that: it is announced as a link,
- * it is middle-clickable, and it needs no click handler to work. `startOAuth`
- * exists for a caller that wants the navigation without the anchor, and this
- * is not that caller.
- *
- * ## Which providers appear
- *
- * Whatever the caller passes, which is the list `useOAuthProviders` fetched
- * from `GET /api/auth/oauth/providers`. This component renders nothing for an
- * empty list rather than an empty divider, so a deployment with no OAuth
- * configured shows a login page identical to the one before this feature
- * existed.
- *
- * ## Where the labels come from
- *
- * The backend's `display_name`, rendered as given. There is no lookup table
- * here and deliberately none: the deployment that decides a provider is
- * offered is the same one that names it, so a provider added in a future
- * package release gets a correctly labelled button with no change to this file.
- * The icon map below is the one thing that still has to know a provider by
- * name, and a provider missing from it renders a label with no mark rather
- * than nothing at all.
+ * Anchors rather than buttons, because a start is a 302 a fetch cannot follow.
+ * Renders nothing for an empty list, and labels come from the backend's
+ * `display_name` so a new provider needs no change here.
  */
 
 /** The mark for each provider, keyed by the package's own constants. */
@@ -48,15 +24,14 @@ interface OAuthButtonsProps {
   /**
    * Builds the start URL for one provider.
    *
-   * `AuthClient.oauthStartUrl` bound with whatever `returnTo` the caller wants
-   * the callback to land on. Passed in rather than taking the client, so this
-   * component needs no knowledge of the auth package beyond the two provider
-   * names it draws icons for.
+   * `oauthStartUrl` bound with the caller's `returnTo`, passed in so this component
+   * needs no knowledge of the auth package.
    */
   startUrl: (provider: string) => string;
   className?: string;
 }
 
+/** Renders one sign in link per configured provider. */
 export const OAuthButtons: React.FC<OAuthButtonsProps> = ({
   providers,
   startUrl,

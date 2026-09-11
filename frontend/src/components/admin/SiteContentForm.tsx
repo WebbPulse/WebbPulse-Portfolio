@@ -14,6 +14,7 @@ const inputClass =
 const labelClass =
   'block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1';
 
+/** Edit form for the singleton site content record. */
 export const SiteContentForm: React.FC<SiteContentFormProps> = ({
   form,
   setForm,
@@ -69,7 +70,6 @@ export const SiteContentForm: React.FC<SiteContentFormProps> = ({
 
   return (
     <form onSubmit={e => void onSubmit(e)} className="space-y-8">
-      {/* Hero */}
       <section className="bg-gray-50 dark:bg-gray-700 rounded-lg p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           Hero
@@ -114,7 +114,6 @@ export const SiteContentForm: React.FC<SiteContentFormProps> = ({
         </div>
       </section>
 
-      {/* About */}
       <section className="bg-gray-50 dark:bg-gray-700 rounded-lg p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           About — Paragraphs
@@ -194,7 +193,6 @@ export const SiteContentForm: React.FC<SiteContentFormProps> = ({
         </div>
       </section>
 
-      {/* Profile + URLs */}
       <section className="bg-gray-50 dark:bg-gray-700 rounded-lg p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           Profile & Links

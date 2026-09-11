@@ -6,6 +6,7 @@ interface HeaderProps {
   navigationItems?: NavigationItem[];
 }
 
+/** The sticky site header, with in-page navigation. */
 const Header: React.FC<HeaderProps> = ({ navigationItems = [] }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -62,7 +63,6 @@ const Header: React.FC<HeaderProps> = ({ navigationItems = [] }) => {
     >
       <div className="max-w-7xl mx-auto px-6 sm:px-8">
         <div className="flex justify-between items-center h-16">
-          {/* Logo */}
           <Link
             to="/"
             className="font-display text-lg font-bold text-surface-50 hover:opacity-80 transition-opacity"
@@ -70,7 +70,6 @@ const Header: React.FC<HeaderProps> = ({ navigationItems = [] }) => {
             Tyler <span className="text-gradient">Webb</span>
           </Link>
 
-          {/* Desktop nav */}
           <nav className="hidden md:flex items-center gap-7">
             {navigationItems.map(item => renderNavigationItem(item))}
             {import.meta.env.DEV && (
@@ -83,7 +82,6 @@ const Header: React.FC<HeaderProps> = ({ navigationItems = [] }) => {
             )}
           </nav>
 
-          {/* Mobile toggle */}
           <button
             type="button"
             onClick={() => setIsMobileMenuOpen(prev => !prev)}
@@ -116,7 +114,6 @@ const Header: React.FC<HeaderProps> = ({ navigationItems = [] }) => {
           </button>
         </div>
 
-        {/* Mobile menu */}
         {isMobileMenuOpen && (
           <div className="md:hidden pb-4">
             <div className="space-y-1 pt-2 border-t border-surface-800/60">

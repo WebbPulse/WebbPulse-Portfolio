@@ -12,6 +12,7 @@ const FALLBACK = {
   hero_description: 'Software engineer building privacy-conscious systems.',
 };
 
+/** The landing hero, over site content with a static fallback. */
 const Hero: React.FC = () => {
   const { data, loading } = useSiteContent();
   const parallaxFast = useScrollParallax(0.35);
@@ -25,13 +26,11 @@ const Hero: React.FC = () => {
       id="hero"
       className="relative min-h-[100svh] flex items-center justify-center overflow-hidden bg-surface-950"
     >
-      {/* Layered gradient mesh background */}
       <div
         className="absolute inset-0 bg-mesh-1 pointer-events-none"
         aria-hidden="true"
       />
 
-      {/* Animated orbs */}
       <AnimatedOrb
         gradient="from-accent-cyan-500 to-accent-cyan-400"
         size="w-[32rem] h-[32rem]"
@@ -57,7 +56,6 @@ const Hero: React.FC = () => {
         opacity="opacity-20"
       />
 
-      {/* Content */}
       <div
         ref={ref}
         className={`relative z-10 max-w-5xl mx-auto px-6 sm:px-8 text-center ${isInView ? 'animate-fade-in-up' : 'opacity-0'}`}
@@ -116,7 +114,6 @@ const Hero: React.FC = () => {
         </div>
       </div>
 
-      {/* Scroll indicator */}
       <button
         type="button"
         onClick={() =>

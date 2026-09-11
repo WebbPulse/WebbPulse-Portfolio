@@ -129,6 +129,7 @@ const TABS: { id: AdminTab; label: string }[] = [
   { id: 'security', label: 'Security' },
 ];
 
+/** The admin panel: sign in, then the content and security tabs. */
 export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
   const [activeTab, setActiveTab] = useState<AdminTab>('site-content');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -145,33 +146,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
   /**
    * The identity client, which is null in bearer mode.
    *
-   * Null is what gates the Security tab: the five MFA routes are identity's,
-   * and the bearer login route has no second factor to manage. Read on every
-   * render rather than held in state because it is fixed for the life of the
-   * bundle, chosen by `VITE_AUTH_MODE` at build time.
+   * Null gates the Security tab. Read on every render because it is fixed for the
+   * life of the bundle.
    */
   const identityClient = apiService.getIdentityClient();
 
   /**
-   * The providers this deployment configured, probed once per page load.
+   * The providers this deployment configured, fetched once per page load.
    *
-   * Passed to the Security tab so the "Connect ..." buttons appear only for
-   * providers that exist. The list of what is already linked comes from the
-   * route and is a separate question. See `services/oauthAvailability.ts`.
+   * Passed to the Security tab so Connect buttons appear only for real providers.
    */
   const oauthProviders = useOAuthProviders(
     identityClient,
     identityOriginFrom(API_BASE_URL)
   );
 
-  // Projects
   const [projects, setProjects] = useState<Project[]>([]);
   const [showProjectForm, setShowProjectForm] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [projectForm, setProjectForm] =
     useState<ProjectFormData>(EMPTY_PROJECT);
 
-  // Experience
   const [experience, setExperience] = useState<Experience[]>([]);
   const [showExperienceForm, setShowExperienceForm] = useState(false);
   const [editingExperience, setEditingExperience] = useState<Experience | null>(
@@ -180,27 +175,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
   const [experienceForm, setExperienceForm] =
     useState<ExperienceFormData>(EMPTY_EXPERIENCE);
 
-  // Blog
   const [blogPosts, setBlogPosts] = useState<BlogPost[]>([]);
   const [showBlogPostForm, setShowBlogPostForm] = useState(false);
   const [editingPost, setEditingPost] = useState<BlogPost | null>(null);
   const [blogPostForm, setBlogPostForm] =
     useState<BlogPostFormData>(EMPTY_BLOG);
 
-  // Categories
   const [categories, setCategories] = useState<Category[]>([]);
   const [showCategoryForm, setShowCategoryForm] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [categoryForm, setCategoryForm] =
     useState<CategoryFormData>(EMPTY_CATEGORY);
 
-  // Skills
   const [skills, setSkills] = useState<Skill[]>([]);
   const [showSkillForm, setShowSkillForm] = useState(false);
   const [editingSkill, setEditingSkill] = useState<Skill | null>(null);
   const [skillForm, setSkillForm] = useState<SkillFormData>(EMPTY_SKILL);
 
-  // Education
   const [education, setEducation] = useState<Education[]>([]);
   const [showEducationForm, setShowEducationForm] = useState(false);
   const [editingEducation, setEditingEducation] = useState<Education | null>(
@@ -209,45 +200,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
   const [educationForm, setEducationForm] =
     useState<EducationFormData>(EMPTY_EDUCATION);
 
-  // Certifications
   const [certifications, setCertifications] = useState<Certification[]>([]);
   const [showCertForm, setShowCertForm] = useState(false);
   const [editingCert, setEditingCert] = useState<Certification | null>(null);
   const [certForm, setCertForm] =
     useState<CertificationFormData>(EMPTY_CERTIFICATION);
 
-  // Site Content
   const [siteContentForm, setSiteContentForm] =
     useState<SiteContentFormData>(EMPTY_SITE_CONTENT);
 
   /**
    * Bumped whenever a link callback lands, to make the Security tab reload.
    *
-   * `ConnectedAccounts` loads its own list on mount and there is no route that
-   * pushes at it, so a `?oauth_linked=1` return has to tell it to look again.
-   * A counter through `key` remounts the component, which is the smallest
-   * thing that reliably re-runs the load without lifting the whole list into
-   * this file.
+   * Remounting through `key` is the smallest thing that re-runs the list load.
    */
   const [linksEpoch, setLinksEpoch] = useState(0);
 
   /**
    * Reads whatever the OAuth callback left in the address bar.
    *
-   * Exactly one of four parameters is present, and `readOAuthCallback` narrows
-   * them with a fixed precedence: an error outranks a ticket, which outranks a
-   * link, which outranks a sign-in. That order matters because a `return_to`
-   * carrying a stale `?oauth=1` of its own must not let a successful-looking
-   * parameter mask a live refusal.
-   *
-   * The parameters are stripped immediately, before any await. The MFA ticket
-   * is a live single-use bearer value and leaving it in the address bar leaves
-   * it in the browser history and in the `Referer` of the next navigation. The
-   * strip also stops a reload re-running this against a callback that was
-   * already handled.
-   *
-   * Runs once, on mount, and only in identity mode: bearer mode has no OAuth
-   * routes and nothing can have redirected here from one.
+   * Parameters are stripped before any await, so a live MFA ticket does not reach
+   * the history or the next `Referer`. Runs once on mount, identity mode only.
    */
   useEffect(() => {
     if (identityClient === null) {
@@ -266,8 +239,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
 
     switch (result?.kind) {
       case 'signed-in':
-        // The refresh cookie is already set. `initialize` spends it and puts
-        // the access token in memory, which is the same thing a reload does.
         setLoading(true);
         void identityClient
           .initialize()
@@ -282,8 +253,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
           });
         return;
       case 'mfa-required':
-        // The same second leg the password path reaches, and the same screen.
-        // The ticket is posted to the same route by `completeTotp`.
         setMfaTicket(result.ticket);
         return;
       case 'linked':
@@ -297,7 +266,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
       default:
         setIsAuthenticated(apiService.isAuthenticated());
     }
-    // Runs once. `identityClient` is fixed for the life of the bundle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -317,7 +285,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
   const handleApiError = (label: string, msg: string) =>
     setError(`Failed to ${label}: ${msg}`);
 
-  // Loaders
   const loadProjects = async () => {
     const r = await apiService.getProjects();
     if (r.error) handleApiError('load projects', r.error);
@@ -399,18 +366,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
   /**
    * Settles a sign-in that came from a passkey rather than a password.
    *
-   * The same two landings the password path has, reached by the same states,
-   * which is the point: `LoginForm` runs the ceremony because the ceremony
-   * needs a user gesture, and hands back the outcome because only this file
-   * owns the session and the MFA ticket.
-   *
-   * A user-verified passkey is two factors in one gesture and arrives already
-   * signed in. One from an authenticator that did not verify the user, on an
-   * account with TOTP, arrives with a ticket for the same code step and the
-   * same route the password path uses.
-   *
-   * Refusals never reach here. `LoginForm` renders them, and swallows a
-   * dismissed prompt entirely.
+   * A user-verified passkey arrives signed in; one without user verification on a
+   * TOTP account arrives with a ticket. Refusals are rendered by `LoginForm`.
    */
   const handlePasskeySignIn = (outcome: PasskeySignInOutcome) => {
     if (!outcome.ok) return;
@@ -425,9 +382,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
   /**
    * Finishes a login that asked for a second factor.
    *
-   * Clearing the ticket on success matters as much as setting the session:
-   * the ticket is single use, so leaving it in state would show the code step
-   * again on the next sign out with a value the server has already spent.
+   * The ticket is single use, so it is cleared on success as well as set.
    */
   const handleTotp = async (code: string) => {
     if (mfaTicket === null) return;
@@ -450,7 +405,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
     }
   };
 
-  // Project CRUD
   const handleProjectSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -490,7 +444,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
     setLoading(false);
   };
 
-  // Experience CRUD
   const handleExperienceSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -531,7 +484,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
     setLoading(false);
   };
 
-  // Blog CRUD
   const handleBlogPostSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -577,7 +529,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
     setLoading(false);
   };
 
-  // Category CRUD
   const handleCategorySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -612,7 +563,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
     setLoading(false);
   };
 
-  // Skill CRUD
   const handleSkillSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -649,14 +599,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
     setLoading(false);
   };
 
-  // Education CRUD
   const handleEducationSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    // Convert empty strings to nulls. These fields are `string | null` on the
-    // wire, and null is what clears them; omitting the key would leave the
-    // stored value untouched.
     const payload = {
       ...educationForm,
       end_date: educationForm.end_date || null,
@@ -697,7 +643,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
     setLoading(false);
   };
 
-  // Certification CRUD
   const handleCertSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -738,7 +683,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
     setLoading(false);
   };
 
-  // Site Content
   const handleSiteContentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -840,7 +784,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
           )}
 
           <div className="p-6">
-            {/* Site Content */}
             {activeTab === 'site-content' && (
               <div>
                 <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-6">
@@ -859,7 +802,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
               </div>
             )}
 
-            {/* Projects */}
             {activeTab === 'projects' && (
               <div>
                 <div className="flex items-center justify-between mb-6">
@@ -949,7 +891,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
               </div>
             )}
 
-            {/* Experience */}
             {activeTab === 'experience' && (
               <div>
                 <div className="flex items-center justify-between mb-6">
@@ -1033,7 +974,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
               </div>
             )}
 
-            {/* Skills */}
             {activeTab === 'skills' && (
               <div>
                 <div className="flex items-center justify-between mb-6">
@@ -1115,7 +1055,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
               </div>
             )}
 
-            {/* Education */}
             {activeTab === 'education' && (
               <div>
                 <div className="flex items-center justify-between mb-6">
@@ -1198,7 +1137,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
               </div>
             )}
 
-            {/* Certifications */}
             {activeTab === 'certifications' && (
               <div>
                 <div className="flex items-center justify-between mb-6">
@@ -1283,7 +1221,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
               </div>
             )}
 
-            {/* Blog */}
             {activeTab === 'blog' && (
               <div>
                 <div className="flex items-center justify-between mb-6">
@@ -1381,7 +1318,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
               </div>
             )}
 
-            {/* Categories */}
             {activeTab === 'categories' && (
               <div>
                 <div className="flex items-center justify-between mb-6">
@@ -1463,7 +1399,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
               </div>
             )}
 
-            {/* Security */}
             {activeTab === 'security' && (
               <div>
                 {identityClient === null ? (

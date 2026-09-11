@@ -16,10 +16,8 @@ import { usePasskeySignIn } from '../../hooks/usePasskeySignIn';
 /**
  * The one sentence the reset request ever shows, whatever happened.
  *
- * Section 5.4 makes the request route answer identically for an address with
- * an account, one without, and one that just asked. Rendering a local sentence
- * that varied would hand back the distinction the route spends effort hiding,
- * so success and every refusal that is not a rate limit land here.
+ * The route answers identically for every address, so a varying local sentence
+ * would hand back the distinction it hides.
  */
 const RESET_REQUESTED_MESSAGE =
   'If that address has an account, we sent a link to it.';
@@ -29,14 +27,8 @@ interface LoginFormProps {
   /**
    * Hands a finished passkey ceremony back to whoever owns the session.
    *
-   * The outcome rather than a boolean, because a passkey sign-in has the same
-   * two success shapes a password sign-in has: signed in outright, or an MFA
-   * ticket to finish with. A user-verified passkey is two factors in one
-   * gesture and lands on the first; one from an authenticator that did not
-   * verify the user, on an account with TOTP, lands on the second. Only the
-   * caller holds the ticket state, so only the caller can act on it.
-   *
-   * Absent in bearer mode, where there is no passkey affordance to press.
+   * The outcome rather than a boolean, since a passkey sign-in can land signed in
+   * or on an MFA ticket. Absent in bearer mode.
    */
   onPasskeySignIn?: (outcome: PasskeySignInOutcome) => void;
   loading: boolean;
@@ -44,6 +36,7 @@ interface LoginFormProps {
   className?: string;
 }
 
+/** The sign in form, with the OAuth and passkey affordances when offered. */
 export const LoginForm: React.FC<LoginFormProps> = ({
   onLogin,
   onPasskeySignIn,
@@ -57,22 +50,16 @@ export const LoginForm: React.FC<LoginFormProps> = ({
   /**
    * The identity client, or null in bearer mode.
    *
-   * Read once at render rather than through a mode string, so the forgot
-   * password affordance and the client that serves it cannot disagree: the
-   * control appears exactly when there is something behind it.
+   * Read at render so the forgot password control appears exactly when something
+   * is behind it.
    */
   const identity = apiService.getIdentityClient();
 
   /**
    * The providers this deployment configured, or an empty list.
    *
-   * Empty in bearer mode, empty while the request is in flight, and empty on a
-   * deployment that has no OAuth configured. `OAuthButtons` renders nothing for
-   * an empty list, so all three cases produce the login page as it was.
-   *
-   * Takes the identity origin for the same reason `usePasskeySignIn` below
-   * does: the discovery route is a sibling of `API_BASE_URL` at the origin
-   * rather than a child of its `/api/v1` path.
+   * Empty in bearer mode, in flight, and with no OAuth configured; `OAuthButtons`
+   * renders nothing for all three.
    */
   const providers = useOAuthProviders(
     identity,
@@ -80,11 +67,10 @@ export const LoginForm: React.FC<LoginFormProps> = ({
   );
 
   /**
-   * Whether a passkey button belongs on this page, and whether this browser
-   * can offer one through autofill.
+   * Whether a passkey button belongs on this page, and whether this browser can
+   * offer one through autofill.
    *
-   * Both false in bearer mode, in a browser without WebAuthn, and on a backend
-   * with passwordless sign-in switched off. See `hooks/usePasskeySignIn.ts`.
+   * Both false in bearer mode, without WebAuthn, or with passwordless switched off.
    */
   const passkeys = usePasskeySignIn(identity, identityOriginFrom(API_BASE_URL));
 
@@ -94,12 +80,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
   /**
    * The controller for a conditional ceremony waiting in the background.
    *
-   * A conditional sign-in is a promise that sits unresolved until the user
-   * picks a passkey out of the autofill dropdown, which may be never. It has
-   * to be torn down when the user does something else instead, and the only
-   * way to tear one down is the `AbortSignal` it was started with. A ref
-   * rather than state, because aborting must not wait for a render and nothing
-   * on screen depends on it.
+   * A ref rather than state, because aborting must not wait for a render.
    */
   const conditionalAbort = useRef<AbortController | null>(null);
 
@@ -112,12 +93,8 @@ export const LoginForm: React.FC<LoginFormProps> = ({
   /**
    * Settles one finished ceremony.
    *
-   * A cancellation is deliberately silent. The package reports a dismissed
-   * browser prompt as `reason: 'cancelled'`, which is the same gesture as
-   * pressing Cancel on an OAuth consent screen: the user changed their mind,
-   * and rendering a red banner for that is telling them off for using the UI
-   * correctly. Every other refusal renders the server's own sentence, for the
-   * reason `SecuritySection` gives.
+   * A cancellation is silent, since a dismissed prompt is the user changing their
+   * mind. Every other refusal renders the server's own sentence.
    */
   const settle = useCallback(
     (outcome: PasskeySignInOutcome) => {
@@ -129,10 +106,6 @@ export const LoginForm: React.FC<LoginFormProps> = ({
         return;
       }
       if (outcome.reason === 'unavailable') {
-        // The availability route said the capability was on and the ceremony
-        // says it is not, which is a deployment that changed under the page.
-        // Nothing the user can act on, so the affordance goes quiet rather
-        // than shouting.
         return;
       }
       setPasskeyError(
@@ -147,10 +120,8 @@ export const LoginForm: React.FC<LoginFormProps> = ({
   /**
    * The explicit button press.
    *
-   * Discoverable: no email is sent, so the authenticator offers whatever it
-   * holds for this site. Any conditional ceremony is torn down first, because
-   * two ceremonies cannot be outstanding at once and the modal one is what the
-   * user just asked for.
+   * Discoverable, and any conditional ceremony is torn down first because two
+   * cannot be outstanding at once.
    */
   const handlePasskeySignIn = useCallback(async () => {
     if (identity === null) return;
@@ -160,10 +131,6 @@ export const LoginForm: React.FC<LoginFormProps> = ({
     try {
       settle(await identity.signInWithPasskey());
     } catch {
-      // The package turns every refusal and the browser's own cancellation
-      // into an outcome, so a throw here is a network failure, a 500, or a
-      // session error. None of those is something a user can act on beyond
-      // retrying.
       setPasskeyError('That sign-in could not be completed. Try again.');
     } finally {
       setPasskeyBusy(false);
@@ -173,15 +140,8 @@ export const LoginForm: React.FC<LoginFormProps> = ({
   /**
    * The autofill ceremony, started once when the browser supports it.
    *
-   * `mediation: 'conditional'` puts the passkey in the same dropdown as a
-   * saved username rather than a modal prompt, which is why the username input
-   * below carries `autocomplete="username webauthn"`: without that token the
-   * browser has nowhere to draw it.
-   *
-   * The cleanup aborts, which covers unmounting and the effect re-running.
-   * Submitting the password form aborts too, in `handleSubmit`: leaving a
-   * conditional ceremony outstanding while a password login completes is how a
-   * page ends up with two sign-ins racing for the same session.
+   * `mediation: 'conditional'` needs the username input's `webauthn` token. The
+   * cleanup aborts, as does submitting the password form.
    */
   useEffect(() => {
     if (identity === null || !passkeys.offered || !passkeys.conditional) {
@@ -199,10 +159,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
         if (controller.signal.aborted) return;
         settle(outcome);
       })
-      .catch(() => {
-        // Same reasoning as the button handler, and quieter still: nothing
-        // here was asked for out loud, so a background failure says nothing.
-      });
+      .catch(() => {});
 
     return () => {
       controller.abort();
@@ -225,16 +182,12 @@ export const LoginForm: React.FC<LoginFormProps> = ({
       const outcome = await identity.requestPasswordReset({
         email: resetEmail.trim(),
       });
-      // A rate limit is the one case worth saying out loud: the neutral
-      // sentence would promise a mail that is not coming.
       setResetNotice(
         !outcome.ok && outcome.reason === 'rate-limited'
           ? 'Too many requests. Please wait a while and try again.'
           : RESET_REQUESTED_MESSAGE
       );
     } catch {
-      // A network failure or a 500. Still neutral: an error that only appeared
-      // for addresses with accounts would be the same disclosure.
       setResetNotice(RESET_REQUESTED_MESSAGE);
     } finally {
       setResetBusy(false);
@@ -243,10 +196,6 @@ export const LoginForm: React.FC<LoginFormProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // The user chose the password instead. A conditional ceremony left running
-    // would resolve later against a session that already exists, so it is torn
-    // down before the password leaves. The abort surfaces as an `AbortError`,
-    // which the package classifies as a cancellation and swallows.
     abortConditional();
     setPasskeyError(null);
     await onLogin(username, password);
@@ -287,11 +236,6 @@ export const LoginForm: React.FC<LoginFormProps> = ({
                 id="username"
                 value={username}
                 onChange={e => setUsername(e.target.value)}
-                // The `webauthn` token is what lets a conditional ceremony
-                // draw a passkey into this field's autofill dropdown. Without
-                // it the browser has nowhere to put one and the conditional
-                // sign-in never becomes visible. Harmless when no ceremony is
-                // running, and harmless in a browser that does not know it.
                 autoComplete={
                   passkeys.conditional ? 'username webauthn' : 'username'
                 }
@@ -403,7 +347,6 @@ export const LoginForm: React.FC<LoginFormProps> = ({
             </div>
           )}
 
-          {/* Back to Home */}
           <div className="mt-6 text-center">
             <Link to="/">
               <Button variant="outline">← Back to Home</Button>

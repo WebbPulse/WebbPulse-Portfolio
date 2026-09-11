@@ -38,9 +38,6 @@ describe('TotpForm', () => {
   });
 
   it('tells the user a recovery code goes in the same field', () => {
-    // The server shape tests this input: six digits is tried as TOTP and
-    // anything else as a recovery code, on this one route. A user locked out
-    // of their app has no other way to learn that.
     render(
       <TotpForm
         onSubmit={vi.fn()}
@@ -53,7 +50,6 @@ describe('TotpForm', () => {
     expect(
       screen.getByText(/recovery codes here instead/i)
     ).toBeInTheDocument();
-    // A numeric keypad would make a base32 recovery code untypable on a phone.
     expect(screen.getByLabelText(/authentication code/i)).toHaveAttribute(
       'inputmode',
       'text'

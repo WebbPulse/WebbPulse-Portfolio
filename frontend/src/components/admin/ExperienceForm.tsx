@@ -11,6 +11,7 @@ interface ExperienceFormProps {
   loading: boolean;
 }
 
+/** Create and edit form for a work history entry. */
 export const ExperienceForm: React.FC<ExperienceFormProps> = ({
   form,
   setForm,

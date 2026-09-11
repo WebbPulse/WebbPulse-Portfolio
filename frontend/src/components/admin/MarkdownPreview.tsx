@@ -6,6 +6,7 @@ interface MarkdownPreviewProps {
   className?: string;
 }
 
+/** Renders markdown as the sanitised HTML the site will show. */
 export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
   content,
   className = '',

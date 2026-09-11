@@ -8,15 +8,6 @@ import { apiService } from '../../services/api';
 import { resetAvailabilityCache } from '../../services/availabilityCache';
 import { resetPasskeyAvailabilityCache } from '../../services/passkeyAvailability';
 
-// The subject here is the gate and the ceremony, not the transport.
-// `@webbpulse/auth` already tests turning a response into an outcome, so the
-// client is stubbed and what is pinned down is the three questions that have
-// to all answer yes before a button appears, and what the form does with each
-// outcome the ceremony can produce.
-//
-// jsdom has no `PublicKeyCredential`, which is exactly what `passkeysSupported`
-// reads, so the unsupported case is the default and support is stubbed in.
-
 /** Puts a `PublicKeyCredential` on the global, as a real browser has. */
 function supportWebAuthn(conditional = false): void {
   vi.stubGlobal('PublicKeyCredential', {
@@ -27,13 +18,8 @@ function supportWebAuthn(conditional = false): void {
 /**
  * A fetch that answers the passkey availability route with `status`.
  *
- * The OAuth gate reads its own discovery route through the same global on this
- * page, so every helper that counts calls filters by URL rather than by total:
- * some of the calls in any render belong to `useOAuthProviders` and say nothing
- * about passkeys.
- *
- * A fresh `Response` per call rather than one shared instance, because a body
- * can only be read once and more than one of these renders asks twice.
+ * Helpers filter by URL because the OAuth gate shares this global. A fresh
+ * `Response` per call, since a body can only be read once.
  */
 function availabilityFetch(
   status: number,
@@ -96,9 +82,6 @@ describe('LoginForm passkeys', () => {
   });
 
   it('hides the button when the browser cannot do WebAuthn', async () => {
-    // No `PublicKeyCredential` on the global, which is jsdom and is also a
-    // browser served over plain HTTP: WebAuthn is a secure-context API. A
-    // button that throws when pressed is worse than no button.
     const fetchMock = availabilityFetch(200);
     vi.stubGlobal('fetch', fetchMock);
     vi.spyOn(apiService, 'getIdentityClient').mockReturnValue(stubIdentity());
@@ -108,15 +91,10 @@ describe('LoginForm passkeys', () => {
     await waitFor(() => {
       expect(screen.queryByTestId('passkey-sign-in')).not.toBeInTheDocument();
     });
-    // The route is not even asked: there is nothing to ask for.
     expect(passkeyProbeCount(fetchMock)).toBe(0);
   });
 
   it('hides the button when the availability route answers 404', async () => {
-    // A backend older than webbpulse-python 0.17.0, which is the one case a
-    // 404 can still mean now that the route mounts in every deployment. The
-    // button is hidden rather than an error rendered, and it is hidden because
-    // nothing was learned rather than because a 404 was read as "off".
     supportWebAuthn();
     const fetchMock = availabilityFetch(404);
     vi.stubGlobal('fetch', fetchMock);
@@ -131,11 +109,6 @@ describe('LoginForm passkeys', () => {
   });
 
   it('hides the button where passkeys are on but not a way in', async () => {
-    // `enabled` true and `passwordless` false: a passkey is a managed
-    // credential and a second factor here, so the settings panel offers to add
-    // one and this button must not appear. The old probe could see this only as
-    // a `PASSKEY_LOGIN_DISABLED` refusal; the route states it as a field, and
-    // this test is what stops the sign-in page reading the wrong one.
     supportWebAuthn();
     const fetchMock = availabilityFetch(200, {
       enabled: true,
@@ -187,15 +160,10 @@ describe('LoginForm passkeys', () => {
     await waitFor(() => {
       expect(onPasskeySignIn).toHaveBeenCalledWith(outcome);
     });
-    // Discoverable: no email is sent, so the authenticator offers whatever it
-    // holds for this site.
     expect(signInWithPasskey).toHaveBeenCalledWith();
   });
 
   it('hands back an mfa-required outcome rather than signing in', async () => {
-    // An authenticator that did not verify the user is one factor, so an
-    // account with TOTP still needs the code step. The form does not decide
-    // that; it hands the ticket to whoever owns the session.
     supportWebAuthn();
     vi.stubGlobal('fetch', availabilityFetch(200));
     const outcome: PasskeySignInOutcome = {
@@ -218,9 +186,6 @@ describe('LoginForm passkeys', () => {
   });
 
   it('says nothing at all when the user dismisses the prompt', async () => {
-    // The package reports a dismissed browser prompt as `cancelled`, which is
-    // the same gesture as closing an OAuth consent screen. A red banner for it
-    // would be telling the user off for changing their mind.
     supportWebAuthn();
     vi.stubGlobal('fetch', availabilityFetch(200));
     vi.spyOn(apiService, 'getIdentityClient').mockReturnValue(
@@ -287,8 +252,6 @@ describe('LoginForm passkeys', () => {
     };
     expect(input.mediation).toBe('conditional');
     expect(input.signal).toBeInstanceOf(AbortSignal);
-    // Without the `webauthn` token the browser has nowhere to draw the passkey
-    // and the conditional ceremony never becomes visible.
     expect(screen.getByLabelText('Username')).toHaveAttribute(
       'autocomplete',
       'username webauthn'
@@ -296,8 +259,6 @@ describe('LoginForm passkeys', () => {
   });
 
   it('aborts the conditional ceremony when the password form is submitted', async () => {
-    // Leaving one outstanding while a password login completes is how a page
-    // ends up with two sign-ins racing for the same session.
     supportWebAuthn(true);
     vi.stubGlobal('fetch', availabilityFetch(200));
     const signInWithPasskey = vi.fn().mockReturnValue(new Promise(() => {}));
@@ -338,7 +299,6 @@ describe('LoginForm passkeys', () => {
 
     renderForm();
 
-    // The button still appears; only the autofill ceremony is skipped.
     expect(await screen.findByTestId('passkey-sign-in')).toBeInTheDocument();
     expect(signInWithPasskey).not.toHaveBeenCalled();
     expect(screen.getByLabelText('Username')).toHaveAttribute(

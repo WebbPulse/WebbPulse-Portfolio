@@ -7,6 +7,7 @@ interface GradientTextProps {
   children: React.ReactNode;
 }
 
+/** Text filled with the site's gradient. */
 const GradientText: React.FC<GradientTextProps> = ({
   as: Tag = 'span',
   className = '',

@@ -65,6 +65,7 @@ const ValueCard: React.FC<{
   );
 };
 
+/** The About section, over site content with a static fallback. */
 export const About: React.FC = () => {
   const { data: site } = useSiteContent();
   const { data: experience } = useExperience();
@@ -101,10 +102,8 @@ export const About: React.FC = () => {
         </div>
 
         <div className="grid lg:grid-cols-5 gap-12 items-start">
-          {/* Profile column */}
           <div className="lg:col-span-2 flex flex-col items-center lg:items-start">
             <div className="relative">
-              {/* Animated gradient ring */}
               <div className="absolute inset-0 rounded-full bg-gradient-conic from-accent-cyan-500 via-accent-violet-500 via-accent-fuchsia-500 to-accent-cyan-500 animate-slow-spin blur-md opacity-70" />
               <div className="relative w-64 h-64 sm:w-72 sm:h-72 rounded-full p-[3px] bg-gradient-conic from-accent-cyan-400 via-accent-violet-400 via-accent-fuchsia-400 to-accent-cyan-400">
                 <img
@@ -129,7 +128,6 @@ export const About: React.FC = () => {
             </div>
           </div>
 
-          {/* Bio column */}
           <div className="lg:col-span-3 space-y-5">
             {paragraphs.length > 0 ? (
               paragraphs.map((p, i) => (
@@ -147,7 +145,6 @@ export const About: React.FC = () => {
           </div>
         </div>
 
-        {/* Values */}
         {values.length > 0 && (
           <div className="mt-24">
             <div className="text-center mb-10">

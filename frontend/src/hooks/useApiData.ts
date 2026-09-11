@@ -19,7 +19,7 @@ interface UseApiDataReturn<T> extends UseApiDataState<T> {
   refetch: () => Promise<void>;
 }
 
-// Hook for fetching projects
+/** The projects to show, optionally only the featured ones. */
 export function useProjects(
   featuredOnly: boolean = false
 ): UseApiDataReturn<Project[]> {
@@ -59,7 +59,7 @@ export function useProjects(
   };
 }
 
-// Hook for fetching experience
+/** The work history entries. */
 export function useExperience(): UseApiDataReturn<Experience[]> {
   const [state, setState] = useState<UseApiDataState<Experience[]>>({
     data: null,
@@ -97,7 +97,7 @@ export function useExperience(): UseApiDataReturn<Experience[]> {
   };
 }
 
-// Hook for fetching a single project
+/** One project by id. */
 export function useProject(id: number): UseApiDataReturn<Project> {
   const [state, setState] = useState<UseApiDataState<Project>>({
     data: null,
@@ -137,7 +137,7 @@ export function useProject(id: number): UseApiDataReturn<Project> {
   };
 }
 
-// Hook for fetching skills
+/** The skills. */
 export function useSkills(): UseApiDataReturn<Skill[]> {
   const [state, setState] = useState<UseApiDataState<Skill[]>>({
     data: null,
@@ -162,7 +162,7 @@ export function useSkills(): UseApiDataReturn<Skill[]> {
   return { ...state, refetch: fetchSkills };
 }
 
-// Hook for fetching education
+/** The education entries. */
 export function useEducation(): UseApiDataReturn<Education[]> {
   const [state, setState] = useState<UseApiDataState<Education[]>>({
     data: null,
@@ -187,7 +187,7 @@ export function useEducation(): UseApiDataReturn<Education[]> {
   return { ...state, refetch: fetchEducation };
 }
 
-// Hook for fetching certifications
+/** The certifications. */
 export function useCertifications(): UseApiDataReturn<Certification[]> {
   const [state, setState] = useState<UseApiDataState<Certification[]>>({
     data: null,
@@ -212,7 +212,7 @@ export function useCertifications(): UseApiDataReturn<Certification[]> {
   return { ...state, refetch: fetchCerts };
 }
 
-// Hook for fetching site content (singleton)
+/** The singleton site content record. */
 export function useSiteContent(): UseApiDataReturn<SiteContent> {
   const [state, setState] = useState<UseApiDataState<SiteContent>>({
     data: null,
@@ -237,7 +237,7 @@ export function useSiteContent(): UseApiDataReturn<SiteContent> {
   return { ...state, refetch: fetchSiteContent };
 }
 
-// Hook for fetching a single experience entry
+/** One work history entry by id. */
 export function useExperienceEntry(id: number): UseApiDataReturn<Experience> {
   const [state, setState] = useState<UseApiDataState<Experience>>({
     data: null,

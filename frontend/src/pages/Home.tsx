@@ -11,6 +11,7 @@ import {
 } from '../components/sections';
 import type { NavigationItem } from '../types';
 
+/** The public single page site, section by section. */
 const Home: React.FC = () => {
   const navigationItems: NavigationItem[] = [
     { label: 'About', href: '#about' },

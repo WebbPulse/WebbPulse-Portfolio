@@ -25,13 +25,11 @@ const ExperienceCard: React.FC<{ item: ExperienceType; index: number }> = ({
     <div
       className={`relative flex flex-col md:flex-row ${isEven ? 'md:flex-row' : 'md:flex-row-reverse'}`}
     >
-      {/* Timeline node */}
       <div className="absolute left-4 md:left-1/2 -translate-x-1/2 z-10 flex items-center justify-center">
         <span className="absolute w-4 h-4 rounded-full bg-accent-violet-500 animate-glow-pulse" />
         <span className="relative w-3 h-3 rounded-full bg-gradient-to-br from-accent-cyan-400 to-accent-fuchsia-500 border-2 border-surface-950" />
       </div>
 
-      {/* Card */}
       <div
         ref={ref}
         className={`ml-14 md:ml-0 md:w-[calc(50%-2rem)] ${isEven ? 'md:mr-auto md:pr-12 md:text-right' : 'md:ml-auto md:pl-12'} ${isInView ? 'animate-fade-in-up' : 'opacity-0'}`}
@@ -185,6 +183,7 @@ const SkeletonCard: React.FC = () => (
   </div>
 );
 
+/** The work history timeline, with education and certifications. */
 export const Experience: React.FC = () => {
   const {
     data: experience,
@@ -238,7 +237,6 @@ export const Experience: React.FC = () => {
           )}
         </div>
 
-        {/* Education */}
         <div className="mt-24">
           <div className="text-center mb-10">
             <span className="inline-block text-xs uppercase tracking-[0.2em] text-accent-violet-400 mb-3">
@@ -263,7 +261,6 @@ export const Experience: React.FC = () => {
           )}
         </div>
 
-        {/* Certifications */}
         <div className="mt-20">
           <div className="text-center mb-10">
             <span className="inline-block text-xs uppercase tracking-[0.2em] text-accent-cyan-400 mb-3">

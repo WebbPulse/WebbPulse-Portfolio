@@ -15,25 +15,9 @@ import {
 /**
  * The provider links on this account, with the link and unlink actions.
  *
- * ## Why the list is loaded and the availability is passed in
- *
- * These are two different questions. `listOAuthLinks` answers "what is
- * attached to this account", which is a route and a fetch. "Which providers
- * could be attached" has no route at all in webbpulse-python 0.14.0, so it is
- * probed once per page load and handed down. Keeping them apart matters for
- * one case: a provider that is linked but no longer configured still appears
- * in the list, and it must, because the user has to be able to unlink it.
- * Only the *attach* affordance is gated on availability.
- *
- * ## The refusal that needs its own sentence
- *
- * `last-sign-in-method` is the one refusal in the package whose remedy is a
- * specific instruction rather than "try again". The server counts what would
- * be left, and refuses when nothing would be, because an account with no way
- * in is not recoverable through any path this design has. Its own sentence is
- * rendered, and a fallback is written here for a server that sends an empty
- * message, because a generic failure toast would leave the user pressing the
- * same button.
+ * The linked list is fetched; which providers could be attached is passed in, so
+ * a linked but unconfigured provider can still be unlinked. `last-sign-in-method`
+ * gets its own sentence because its remedy is an instruction.
  */
 
 /** The subset of `AuthClient` this component calls. */
@@ -51,15 +35,8 @@ interface ConnectedAccountsProps {
   /**
    * The providers this deployment has configured, in backend order.
    *
-   * Gates the attach buttons only. See the note above for why unlinking is not
-   * gated on it.
-   *
-   * Carries a `display_name` per provider since webbpulse-python 0.16.0, so a
-   * "Connect ..." button is labelled with the backend's own name for the
-   * provider. The linked rows above still go through `providerLabel`, because
-   * `GET /api/auth/oauth/links` returns provider ids and no display names, and
-   * an account can be linked to a provider the deployment has since switched
-   * off and which therefore appears in no list here.
+   * Gates the attach buttons only, and carries a `display_name` to label them.
+   * Linked rows go through `providerLabel`, since the links route sends only ids.
    */
   availableProviders: readonly OAuthProvider[];
   /** Where the link callback should land. Defaults to the current path. */
@@ -154,6 +131,7 @@ const LinkRow: React.FC<{
   );
 };
 
+/** Renders the linked providers and the link and unlink controls. */
 export const ConnectedAccounts: React.FC<ConnectedAccountsProps> = ({
   client,
   availableProviders,
@@ -183,10 +161,6 @@ export const ConnectedAccounts: React.FC<ConnectedAccountsProps> = ({
       setLinks([]);
       setError(refusalMessage(outcome));
     } catch {
-      // A network failure, a 500, or a 401 the transport could not repair. The
-      // last of those is the session ending, which `onSessionEnded` handles
-      // elsewhere; there is nothing useful to say here beyond that the list is
-      // not showing.
       setLinks([]);
       setError('Connected accounts could not be loaded. Try again.');
     }
@@ -206,8 +180,6 @@ export const ConnectedAccounts: React.FC<ConnectedAccountsProps> = ({
           returnTo: returnTo ?? window.location.pathname,
         });
         if (outcome.ok) {
-          // The page is leaving. No state is cleared first, because nothing
-          // here survives the navigation.
           (navigate ?? ((url: string) => window.location.assign(url)))(
             outcome.authorizationUrl
           );
@@ -237,8 +209,6 @@ export const ConnectedAccounts: React.FC<ConnectedAccountsProps> = ({
         }
         setError(refusalMessage(outcome));
         if (outcome.reason === 'not-linked') {
-          // A stale list: it was removed in another tab, or the button was
-          // pressed twice. Reloading is the remedy the package names.
           await reload();
         }
       } catch {

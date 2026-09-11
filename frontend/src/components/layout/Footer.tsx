@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { SocialIcon } from '../../utils';
 import { useSiteContent } from '../../hooks';
 
+/** The site footer, with the social links and tagline from site content. */
 const Footer: React.FC = () => {
   const { data } = useSiteContent();
   const currentYear = new Date().getFullYear();
@@ -21,7 +22,6 @@ const Footer: React.FC = () => {
 
   return (
     <footer className="relative bg-surface-950 border-t border-surface-800">
-      {/* Gradient divider line */}
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-accent-violet-500/60 to-transparent" />
 
       <div className="max-w-7xl mx-auto px-6 sm:px-8 py-12">

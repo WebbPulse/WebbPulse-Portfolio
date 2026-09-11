@@ -15,31 +15,9 @@ import { PasskeysPanel, type PasskeysClient } from './PasskeysPanel';
 /**
  * The admin panel's second factor management, in identity mode.
  *
- * ## Why enrolment state is local
- *
- * There is no route that answers "does this account have TOTP on". The five
- * MFA routes are all commands, `AuthState` carries `status`, `user`,
- * `hasAccessToken`, `error` and `pendingMfa` and nothing about factors, and the
- * access token's claims are not read by this application. The server's silence
- * is deliberate rather than an oversight: `verify_challenge` answers with one
- * refusal for every reason so that the second leg of login cannot be used to
- * discover which accounts have a factor.
- *
- * So this component tracks what it has seen in this session. It starts at
- * `unknown`, moves to `enabled` when an activation succeeds and to `disabled`
- * when a disable succeeds, and says out loud that a reload cannot tell the
- * difference. An `already-enabled` refusal from an enrol attempt is also a
- * true answer about the account, so that moves the state to `enabled` too,
- * which is the one case where a failed call teaches this component something.
- *
- * ## The two secrets, and the confirmations around them
- *
- * The seed comes back once from `enrolTotp` and the recovery codes come back
- * once from `activateTotp`. Neither can be read again. Recovery codes
- * therefore sit behind an explicit "I have saved these" confirmation rather
- * than a dismissable panel, because a stray click on a close button is the
- * whole difference between a user who can recover an account and one who
- * cannot.
+ * No route reports whether TOTP is on, so enrolment state is tracked per session
+ * and starts `unknown`. The seed and the recovery codes are each shown once,
+ * so the codes sit behind an explicit confirmation.
  */
 
 /** What this session knows about the account's factor. See the note above. */
@@ -54,11 +32,8 @@ type EnrolStep =
 /**
  * The subset of `AuthClient` this component calls.
  *
- * Declared as function properties rather than method shorthand. The four are
- * always invoked through the object, never detached, and the property form is
- * what says so: method shorthand is bivariant in its parameters and carries an
- * implicit `this`, which makes every reference to one of these in a test an
- * `unbound-method` finding for a risk that does not exist here.
+ * Function properties rather than method shorthand, so a reference in a test is
+ * not an `unbound-method` finding.
  */
 export interface SecurityClient {
   enrolTotp: () => Promise<TotpEnrolmentOutcome>;
@@ -74,13 +49,8 @@ interface SecuritySectionProps {
   /**
    * The three OAuth link routes, or null where they are not offered.
    *
-   * Separate from `client` rather than folded into it because the two are
-   * gated on different things. The MFA routes exist wherever identity mode
-   * does; the OAuth ones exist only when the deployment configured a provider,
-   * which is read from the discovery route. Null renders no "Connected accounts"
-   * block at all, which is the right answer for a backend with no OAuth
-   * routes mounted: an empty block would suggest the feature exists and is
-   * merely unused.
+   * Separate from `client` because OAuth needs a configured provider while MFA
+   * does not. Null renders no Connected accounts block at all.
    */
   oauthClient?: OAuthLinksClient | null;
   /** The providers that deployment has configured. See `oauthClient`. */
@@ -88,12 +58,8 @@ interface SecuritySectionProps {
   /**
    * The four passkey management routes, or null where they are not offered.
    *
-   * Separate from `client` for the reason `oauthClient` is: the MFA routes
-   * exist wherever identity mode does, and the passkey ones exist only when the
-   * deployment configured the capability. Unlike the OAuth block this needs no
-   * availability list passed alongside it, because every passkey route reports
-   * the capability being off as an `unavailable` outcome and the panel renders
-   * that as a sentence of its own.
+   * Separate from `client` for the reason `oauthClient` is. Needs no availability
+   * list, since every passkey route reports the capability as `unavailable`.
    */
   passkeysClient?: PasskeysClient | null;
   className?: string;
@@ -102,12 +68,8 @@ interface SecuritySectionProps {
 /**
  * A sentence for each refusal reason the five routes can answer with.
  *
- * The server sends its own `message` and the outcomes carry it, which is what
- * gets rendered: a sentence written here would drift from the one the API
- * documents. These are the fallback for a refusal that arrives with an empty
- * message, and they exist per reason rather than as one string because the
- * remedy differs: a wrong code is retyped, a stale enrolment is restarted, and
- * a rate limit is waited out.
+ * Fallbacks only: the server's own message is preferred. They differ per reason
+ * because the remedy does.
  */
 const REASON_FALLBACKS: Record<string, string> = {
   'invalid-code': 'That code is not valid. Check the app and try again.',
@@ -141,9 +103,6 @@ async function copyText(value: string): Promise<boolean> {
     await navigator.clipboard.writeText(value);
     return true;
   } catch {
-    // Clipboard access is denied outside a secure context and in some
-    // embedded browsers. The value is on screen either way, so this is a
-    // failed convenience and not a failed operation.
     return false;
   }
 }
@@ -178,10 +137,6 @@ const ProvisioningQr: React.FC<{ uri: string; secret: string }> = ({
   uri,
   secret,
 }) => {
-  // Encoding throws only when the URI is longer than a version 10 symbol
-  // holds, which no issuer and label pair this service produces reaches. It is
-  // still caught, because a thrown error here would take the whole enrolment
-  // screen down and the seed below is enough to finish without the code.
   let drawing: { path: string; viewBox: string } | null = null;
   try {
     drawing = qrCodeSvgPath(uri);
@@ -342,6 +297,7 @@ const CodePrompt: React.FC<{
   );
 };
 
+/** Renders the TOTP, connected account and passkey management blocks. */
 export const SecuritySection: React.FC<SecuritySectionProps> = ({
   client,
   oauthClient = null,
@@ -367,9 +323,6 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
       try {
         return await call();
       } catch {
-        // A network failure or a 500. The outcome union covers every refusal
-        // that is a normal thing for a user to hit, so anything thrown here is
-        // not something the user can act on beyond retrying.
         setError('That request could not be completed. Try again.');
         return null;
       } finally {
@@ -390,8 +343,6 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
       });
       return;
     }
-    // An `already-enabled` refusal is the one refusal that reports the
-    // account's real state, so it is recorded rather than only shown.
     if (outcome.reason === 'already-enabled') {
       setFactor('enabled');
     }

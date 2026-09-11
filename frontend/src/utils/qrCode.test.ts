@@ -2,12 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import { encodeQrCode, qrCodeSvgPath } from './qrCode';
 
-// What is worth pinning down here is that the symbol is structurally a QR
-// code, because the failure mode of an encoder is not an exception: it is a
-// picture that looks like a QR code and does not scan, which no unit test
-// catches by reading the output. So these assert the parts of ISO/IEC 18004 a
-// reader locks onto, and then decode the data region back to the input.
-
 /** Reads the modules back out of the zigzag, undoing the mask. */
 function readCodewords(
   modules: boolean[][],
@@ -120,8 +114,6 @@ function reservedFor(size: number, version: number): boolean[][] {
     reserved[size - 1 - i]![8] = true;
   }
   reserved[size - 8]![8] = true;
-  // Versions 7 and up carry the 18 bit version block in two places, and those
-  // modules are not data.
   if (version >= 7) {
     for (let i = 0; i < 18; i += 1) {
       const row = Math.floor(i / 3);
@@ -136,11 +128,8 @@ function reservedFor(size: number, version: number): boolean[][] {
 /**
  * Undoes the block interleaving, returning the data codewords in order.
  *
- * Every version above 3 at level M has more than one block, so a decoder that
- * skipped this would read the right bits in the wrong order and produce
- * plausible looking garbage. That is exactly the bug this test exists to
- * catch, so the de-interleaving is spelled out here rather than shared with
- * the encoder.
+ * Spelled out here rather than shared with the encoder, so a wrong order in the
+ * encoder cannot be cancelled out by the same mistake in the check.
  */
 function deinterleave(stream: number[], version: number): number[] {
   const specs: readonly (readonly [number, number, number, number])[] = [
@@ -178,8 +167,6 @@ function decodePayload(matrix: { size: number; modules: boolean[][] }): string {
   const { size, modules } = matrix;
   const version = (size - 17) / 4;
 
-  // Read the first format copy back and undo the standard's 0x5412 mask. The
-  // low three bits of the 5 bit data field are the mask number.
   let raw = 0;
   for (let i = 0; i < 15; i += 1) {
     let dark: boolean;
@@ -193,13 +180,10 @@ function decodePayload(matrix: { size: number; modules: boolean[][] }): string {
 
   const interleaved = readCodewords(modules, reservedFor(size, version), mask);
   const codewords = deinterleave(interleaved, version);
-  // Mode indicator in the top nibble of the first codeword, then the length.
   const mode = (codewords[0]! >>> 4) & 0b1111;
   expect(mode).toBe(0b0100);
   const countBits = version <= 9 ? 8 : 16;
 
-  // Re-read as a bit stream so a 16 bit count is not assumed to be byte
-  // aligned relative to the 4 bit mode indicator.
   const bits: number[] = [];
   for (const byte of codewords) {
     for (let i = 7; i >= 0; i -= 1) bits.push((byte >>> i) & 1);
@@ -236,7 +220,6 @@ describe('encodeQrCode', () => {
       [0, size - 7],
       [size - 7, 0],
     ] as const) {
-      // The 7x7 ring, its light gap, and the solid 3x3 core.
       expect(modules[row]![col]).toBe(true);
       expect(modules[row + 1]![col + 1]).toBe(false);
       expect(modules[row + 3]![col + 3]).toBe(true);
@@ -274,8 +257,6 @@ describe('qrCodeSvgPath', () => {
     expect(size).toBe(matrix.size + 8);
     expect(viewBox).toBe(`0 0 ${size} ${size}`);
     expect(path.startsWith('M')).toBe(true);
-    // One box per dark module, and the quiet zone offsets every coordinate, so
-    // nothing is drawn at the origin.
     const dark = matrix.modules.flat().filter(Boolean).length;
     expect(path.match(/M/g)?.length).toBe(dark);
     expect(path).not.toContain('M0 0h');

@@ -4,7 +4,6 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Deep navy/black surface palette - dark mode is default
         surface: {
           50: '#f8fafc',
           100: '#e2e8f0',
@@ -19,7 +18,6 @@ export default {
           900: '#070b18',
           950: '#03060f',
         },
-        // Cyan accent
         accent: {
           cyan: {
             300: '#67e8f9',

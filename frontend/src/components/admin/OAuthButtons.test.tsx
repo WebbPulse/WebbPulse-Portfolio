@@ -9,12 +9,6 @@ import {
   resetProviderCache,
 } from '../../services/oauthAvailability';
 
-// The gate is the subject: a button must never appear for a provider the
-// backend cannot sign a user in with. Since webbpulse-python 0.16.0 that is
-// read from `GET /api/auth/oauth/providers` in one request rather than inferred
-// from a probe of each provider's start route, so what these tests drive is one
-// fetch and the list it returns.
-
 const ORIGIN = 'https://api.example.test';
 const START = `${ORIGIN}/api/auth/oauth`;
 const PROVIDERS_URL = `${ORIGIN}/api/auth/oauth/providers`;
@@ -33,9 +27,6 @@ describe('OAuthButtons', () => {
   });
 
   it('renders a real link per provider, not a button', () => {
-    // The start route answers 302 to a cross-origin provider, which script
-    // cannot follow, so an anchor is the element that actually works. It is
-    // also middle-clickable and announced as a link.
     render(
       <OAuthButtons
         providers={[GOOGLE, GITHUB]}
@@ -65,10 +56,6 @@ describe('OAuthButtons', () => {
   });
 
   it('renders a provider this build has never heard of', () => {
-    // The point of rendering `display_name` rather than looking a name up: a
-    // provider added in a future package release gets a correctly labelled
-    // button with no change to this repository. It has no icon, and that is the
-    // only thing it is missing.
     render(
       <OAuthButtons
         providers={[{ id: 'gitlab', display_name: 'GitLab' }]}
@@ -139,8 +126,6 @@ describe('useOAuthProviders', () => {
   });
 
   it('offers exactly the providers the backend listed, in one request', async () => {
-    // One fetch for the whole list, where the old gate made one per provider
-    // and spent the start route's own rate limit budget doing it.
     const fetchMock = vi
       .fn()
       .mockResolvedValue(jsonResponse({ providers: [GOOGLE] }));
@@ -155,8 +140,6 @@ describe('useOAuthProviders', () => {
   });
 
   it('offers nothing when the deployment has no OAuth configured', async () => {
-    // The deployed state of this repository today, and a real answer: the route
-    // mounts in every deployment so that "none" can be said out loud.
     const fetchMock = vi
       .fn()
       .mockResolvedValue(jsonResponse({ providers: [] }));
@@ -172,8 +155,6 @@ describe('useOAuthProviders', () => {
   });
 
   it('offers nothing against a backend older than 0.16.0', async () => {
-    // No discovery route, so nothing to render. Reached by there being no list
-    // rather than by reading a 404 as an empty one.
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}, 404));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -186,8 +167,6 @@ describe('useOAuthProviders', () => {
   });
 
   it('offers nothing when the request could not be made', async () => {
-    // A failed request is not evidence a provider is off, but rendering a
-    // button that might not work is worse than rendering none.
     const fetchMock = vi.fn().mockRejectedValue(new TypeError('failed'));
     vi.stubGlobal('fetch', fetchMock);
 

@@ -72,6 +72,7 @@ const BlogPostCard: React.FC<{ post: BlogPost; index: number }> = ({
   );
 };
 
+/** The full blog index at its own route. */
 export const BlogList: React.FC = () => {
   const [blogPosts, setBlogPosts] = useState<BlogPost[]>([]);
   const [loading, setLoading] = useState(true);
