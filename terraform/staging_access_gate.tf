@@ -14,12 +14,20 @@ module "staging_access_gate" {
 
   source = "app.terraform.io/WebbPulse/platform-modules/aws//modules/staging-access-gate"
 
-  # 2.9 for identity_jwt and identity_jwt_route_keys, which is how a gated
-  # environment enforces the identity access token at all. The release is
-  # additive: the module merges the new environment variables rather than
-  # setting them empty, so the bump alone changes nothing and what changes
-  # anything is the two inputs below being non-empty.
-  version = "~> 2.9"
+  # 2.9 added identity_jwt and identity_jwt_route_keys, which is how a gated
+  # environment enforces the identity access token at all. 2.11 is what makes
+  # that usable at scale: under 2.9 the enforced route key list travelled to the
+  # authorizer Lambda in an environment variable, and a Lambda's whole
+  # environment is capped at 4096 bytes, measured only at
+  # UpdateFunctionConfiguration. CarModPicker staging hit that cap at 95 route
+  # keys with a green plan and a failed apply. 2.11.0 renders the list and the
+  # signing public key into the authorizer's deployment package instead, so the
+  # environment no longer grows with the number of enforced routes.
+  #
+  # The inputs below are unchanged; how they reach the function was never part
+  # of the module's interface. The bump plans one in-place update of the
+  # authorizer function and nothing else.
+  version = "~> 2.11"
 
   name             = local.prefix
   cookie_domain    = local.domain
