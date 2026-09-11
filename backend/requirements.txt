@@ -20,11 +20,12 @@
 # `tests/test_security_compat.py` pins both against fixtures minted by the old
 # code path.
 #
-# `identity` is new in 0.6.0 and brings PyJWT[crypto] and fastapi, for
+# `identity` arrived in 0.6.0 and brings PyJWT[crypto] and fastapi, for
 # `webbpulse.identity`: the KMS signer, the JWK encoding and the `.well-known`
-# router that the identity standard's M0 spike serves. It is deliberately not a
-# dev-only extra even though the spike is throwaway, because the code that
-# imports it runs in the deployed identity function.
+# router. It serves the permanent identity application, which is the deployed
+# identity function's whole reason to exist, so it is a runtime extra rather
+# than a dev-only one. The M0 spike that first exercised it was retired in
+# PR 176; M1 through M6 are the implementation that remains.
 #
 # It does not bring boto3. The module takes a KMS client rather than
 # constructing one, so the caller owns that dependency, and boto3 is already

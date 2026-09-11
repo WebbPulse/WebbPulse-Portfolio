@@ -18,12 +18,12 @@ be undone by changing one variable and redeploying.
   paths are written and typed; selecting one is a build time decision, not a
   code change.
 
-## What this PR adds
+## The two scripts
 
-`backend/scripts/migrate_credentials_to_identity.py`, which copies each user's
-bcrypt hash from the `users` table into the identity `credentials` table, and
-`backend/scripts/clear_legacy_credentials.py`, which removes that column once
-the copy is confirmed.
+`backend/scripts/migrate_credentials_to_identity.py` copies each user's bcrypt
+hash from the `users` table into the identity `credentials` table, and
+`backend/scripts/clear_legacy_credentials.py` removes that column once the copy
+is confirmed (PR 174).
 
 Alongside them, the admin seeder became identity aware. That pairing is not
 incidental: the seeder used to rewrite `hashed_password` on the first request of
@@ -42,14 +42,27 @@ password reset is needed as part of this cutover.
 
 ## Where each environment stands today
 
-**Staging is flipped and migrated.** `AUTH_MODE` was set to `identity` on
-2026-09-11 at 02:25Z and the credential migration has applied, so sign-in there
-already runs through the identity path. What has not run is step 3: the legacy
-column is still populated in staging, and clearing it happens once this PR
-deploys.
+**Staging is flipped, migrated and cleared.** `AUTH_MODE` was set to `identity`
+on 2026-09-11 at 02:25Z, the credential migration applied, and after the
+identity sign-in was verified the legacy `hashed_password` column was cleared
+from the staging users table with `backend/scripts/clear_legacy_credentials.py`
+(PR 174). Steps 1 to 4 are done there.
+
+**Rollback from staging is fix-forward from here.** Step 3 has run, so the
+column no longer holds a password the legacy login could verify. Setting
+`AUTH_MODE` back to `bearer` in staging would produce a sign-in page nobody can
+get past. See "Rolling back" below for what that means in practice.
+
+**Gateway JWT enforcement is live in staging** in `gate` mode (PR 175,
+platform-modules 2.9.1), so the staging access gate's Lambda checks the identity
+access token as well as the gate's own cookies on the seven routes marked
+`require_identity_jwt`. PR 180 added the M5 passkey and M6 OAuth route keys to
+the gateway. Production is `off` until the identity stack is promoted there,
+because `CreateAuthorizer` fetches the discovery document synchronously and
+would fail the apply against an issuer that does not answer yet.
 
 **Production is untouched.** It still runs on `bearer` and repeats the whole
-sequence from step 1 only after staging has been confirmed clear.
+sequence from step 1.
 
 ## Order of operations, per environment
 
@@ -143,7 +156,8 @@ back" below.
 
 ### 4. Flip `VITE_AUTH_MODE` to `identity`
 
-Not done in this PR. See "The flip" below for the exact change.
+Done in staging on 2026-09-11 at 02:25Z; production still has this ahead of it.
+See "The flip" below for the exact change.
 
 Deploy the frontend and sign in. The one time cost the user has already
 accepted: **every existing session is signed out once.** The legacy bearer token
@@ -290,9 +304,18 @@ is set up to call.
 of the project that owns the sign in, create an **OAuth client ID** of type
 **Web application**. Give it the authorised redirect URI for the environment from
 the table below, and nothing else. It needs no scopes configured in the console:
-the package asks for `openid email profile` at authorisation time. The consent
-screen has to exist first, and while it is in testing mode only accounts on its
-test user list can sign in, which is a reasonable place to leave staging.
+the package asks for `openid email profile` at authorisation time.
+
+The consent screen has to exist first, and it requires a reachable privacy
+policy URL. That is what `/privacy` serves (PRs 177 and 178): a public,
+unauthenticated page on the frontend, linked from the footer. The consent
+screens are published, so staging is no longer limited to accounts on a test
+user list.
+
+| Environment | Privacy policy URL |
+|---|---|
+| staging | `https://staging.webbpulse.com/privacy` |
+| production | `https://webbpulse.com/privacy` |
 
 **GitHub.** Under **Settings, Developer settings, OAuth Apps**, create a **New
 OAuth App**. The **Authorization callback URL** is the same redirect URI from the
@@ -365,39 +388,50 @@ M5 adds seven routes under `/api/auth` and needs no new table: `passkeys` and
 `webauthn-challenges` were created by the M6 apply, ahead of the code that reads
 them, so adopting M5 is a backend change with no apply in front of it.
 
-**None of the seven routes mount until `passkeys_enabled` is true.** With it
-false, which is how this PR ships in both environments, the identity function
-serves exactly the routes it served under 0.14.0 and the OpenAPI document
-contains no `/api/auth/passkeys` path at all. That is asserted by
-`backend/tests/test_identity_m5.py`, so applying this PR changes no behaviour
-that anybody can reach.
+**None of the seven routes mount until `passkeys_enabled` is true.** Where it
+resolves false, the identity function serves exactly the routes it served under
+0.14.0 and the OpenAPI document contains no `/api/auth/passkeys` path at all.
+That is asserted by `backend/tests/test_identity_m5.py`.
 
-**The package's own default for both passkey flags is true, and this product
-ships both false.** That inversion is the one thing about this milestone worth
-reading twice, because it means an omitted Terraform variable is not a no-op:
-it would mount seven routes. Both are set explicitly in
-`terraform/lambda_domains.tf` for that reason, and a test pins the package
-default so a future release that flips it turns the now-redundant line into a
-failing test rather than a line nobody can explain.
+**Both flags are derived from `var.environment` since PR 173, not set in HCP.**
+Each is a nullable Terraform variable declared in `terraform/identity.tf` with a
+null default, and null means "use the environment's answer": true in staging,
+false in production. Two locals resolve them to the explicit bools
+`terraform/lambda_domains.tf` renders, so the value that reaches the Lambda
+environment is always an explicit bool rather than an omitted one. That matters
+because the package's own default for both flags is true, which is the opposite
+of what production ships.
+
+The split lives in code rather than in a pair of typed HCP values because every
+other per environment decision in this configuration is already a
+`var.environment` conditional, and the failure worth guarding against is the
+silent one: a promotion to production carrying a staging value nobody remembered
+was set. Derived, the environment split is reviewable in the diff and cannot
+drift between the two workspaces.
+
+**Setting either variable on a workspace still overrides the derived answer.**
+That is what keeps the rollback below a one variable change with no code deploy.
 
 ### 1. The two switches are separate, and they are not turned on together
 
-| Variable | Default | What true means |
-|---|---|---|
-| `passkeys_enabled` | `false` | The five management routes mount. A user can enrol, list, rename and delete a passkey, and use one as a second factor. |
-| `passkeys_passwordless` | `false` | The two `/api/auth/login/passkey/*` routes stop refusing. A passkey becomes a way into the account with no password at all. |
+| Variable | Default | Resolves to | What true means |
+|---|---|---|---|
+| `passkeys_enabled` | `null` | true in staging, false in production | The five management routes mount. A user can enrol, list, rename and delete a passkey, and use one as a second factor. |
+| `passkeys_passwordless` | `null` | true in staging, false in production | The two `/api/auth/login/passkey/*` routes stop refusing. A passkey becomes a way into the account with no password at all. |
 
-`passkeys_enabled` is a rollout step and waits on the frontend.
-`@webbpulse/auth` 0.8.0 is what calls `navigator.credentials.create`, and until
-it ships a mounted route is a route nothing calls, and one a curious client
-could enrol a credential against under an RP id that is immutable for that
-credential's life.
+`passkeys_enabled` was a rollout step that waited on the frontend, and that
+precondition is now met: `@webbpulse/auth` 0.8.0 shipped and PR 172 landed the
+admin panel code that calls `navigator.credentials.create`, so a mounted route
+in staging is a route the frontend actually drives. Production stays off until
+the owner promotes it.
 
 `passkeys_passwordless` is a policy decision rather than a rollout step, and it
-**stays off until the owner decides**. Turning it on is not required to use
-passkeys: with it off a passkey is a managed credential and a second factor,
-which is the whole of what the frontend work needs. The package makes
-passwordless safe rather than right, and the difference matters here.
+**stays off in production until the owner decides**. Staging derives it true so
+the passwordless path can be exercised against a real authenticator before that
+decision is made. Turning it on is not required to use passkeys: with it off a
+passkey is a managed credential and a second factor, which is the whole of what
+the frontend work needs. The package makes passwordless safe rather than right,
+and the difference matters here.
 `POST /api/auth/login/passkey/options` answers any input, including an unknown
 address, returning a challenge and an empty `allowCredentials` so an anonymous
 route cannot become an account oracle. Whether a single administrator product
@@ -406,20 +440,25 @@ this PR presumes on the answer.
 
 ### 2. Turning passkeys on, per environment
 
-Both are HCP Terraform workspace variables, Terraform kind, on the workspace for
-the environment: `WebbPulse-Portfolio-staging` for staging and
+**Staging needs nothing set.** Since PR 173 both flags derive true there, so the
+routes are already mounted and no workspace variable is involved.
+
+Promoting to production is a code change rather than an HCP one, because the
+derived answer is a `var.environment` conditional in `terraform/identity.tf`.
+Leave it there long enough to enrol a passkey and sign in with it on a real
+authenticator first, because the failure modes below are the kind that only
+appear against a real browser.
+
+To override the derived answer for one environment, set the variable on that
+workspace, Terraform kind: `WebbPulse-Portfolio-staging` for staging and
 `WebbPulse-Portfolio` for production.
 
 ```
 passkeys_enabled = true
 ```
 
-Set it, queue a plan, and apply. The plan is a Lambda environment update on the
-identity function and nothing else. The routes mount on the next cold start.
-
-Staging first, and leave it there long enough to enrol a passkey and sign in
-with it on a real authenticator, because the failure modes below are the kind
-that only appear against a real browser.
+Queue a plan and apply. The plan is a Lambda environment update on the identity
+function and nothing else. The routes mount on the next cold start.
 
 ### 3. What the RP id and the origins have to agree about
 
@@ -552,11 +591,15 @@ rather than a control that throws when pressed.
 
 ### 6. Rolling passkeys back
 
-Set the variable back and apply:
+Set the variable on the environment's workspace, which overrides the derived
+answer, and apply:
 
 ```
 passkeys_enabled = false
 ```
+
+That is the rollback for staging, where the derived answer is true: one HCP
+variable, no code deploy.
 
 The seven routes stop being declared on the next cold start. Nothing needs
 undoing in the data: enrolled credentials stay in `passkeys` and become
