@@ -34,6 +34,7 @@ const ContactTile: React.FC<{
   </a>
 );
 
+/** The Contact section, with the links from site content. */
 export const Contact: React.FC = () => {
   const { data } = useSiteContent();
   const { ref, isInView } = useInViewReveal<HTMLDivElement>({ threshold: 0.1 });

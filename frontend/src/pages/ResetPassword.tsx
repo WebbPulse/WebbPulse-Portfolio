@@ -7,20 +7,9 @@ import { apiService } from '../services/api';
 /**
  * The page a password reset link from the backend lands on.
  *
- * The mailed URL is `<frontend base>/reset-password?token=...`, and
- * `RESET_PASSWORD_PATH` is the literal both sides agree on. Note that this is
- * the SPA page, not the API route: the API confirms at
- * `/api/auth/reset/confirm`, which this page calls once the user has chosen a
- * password.
- *
- * Unlike verification, nothing happens on mount. The token is read up front so
- * a broken link fails immediately rather than after the user has typed a
- * password, but it is only spent when the form is submitted.
- *
- * On success every session for the account is gone, this browser's included,
- * which is why the end of the flow is the sign in form rather than the admin
- * panel: the reset is the remedy for a compromise, so the backend revokes
- * every refresh family and the user signs in again with the new password.
+ * Nothing happens on mount: the token is read up front so a broken link fails
+ * early, and spent only on submit. Success revokes every session, so the flow
+ * ends at the sign in form.
  */
 
 /** How long the success notice sits before the page moves to sign in. */
@@ -32,9 +21,6 @@ function describeRefusal(reason: string, message: string): string {
     case 'invalid-link':
       return 'This link is no longer valid. It may have expired or already been used. Request a new one from the sign in page.';
     case 'password-rejected':
-      // The server names what was wrong with the password, and its own
-      // sentence is more useful than a generic one. The link is spent either
-      // way, so the remedy is a new link and a different password.
       return `${message} This link is now used, so request a new one and choose a different password.`;
     case 'rate-limited':
       return 'Too many attempts. Please wait a while and try again.';
@@ -45,12 +31,11 @@ function describeRefusal(reason: string, message: string): string {
   }
 }
 
+/** Renders the reset form and confirms the token on submit. */
 export const ResetPassword: React.FC = () => {
   const navigate = useNavigate();
   const identity = apiService.getIdentityClient();
 
-  // Read once at first render. `expectedPath` keeps a verification token that
-  // was pasted here from being presented to the reset endpoint.
   const [token] = useState<string | null>(() =>
     identity === null
       ? null
@@ -67,8 +52,6 @@ export const ResetPassword: React.FC = () => {
     e.preventDefault();
     if (identity === null || token === null) return;
 
-    // Checked here rather than by the server, which never sees the second
-    // field: a mistyped confirmation must not spend the single use token.
     if (password !== confirmation) {
       setError('The two passwords do not match.');
       return;

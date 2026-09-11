@@ -4,15 +4,6 @@ import { MemoryRouter } from 'react-router-dom';
 import { VerifyEmail } from './VerifyEmail';
 import { apiService } from '../services/api';
 
-// What is worth pinning down here is the mapping from the four outcomes the
-// confirm route can answer with onto what the user is told, and the two guards
-// that keep a single use token from being wasted: the strict mode double
-// effect, and a token belonging to the other flow.
-//
-// The identity client is stubbed rather than the transport, because the
-// package's own tests already cover turning a response into an outcome. This
-// file's subject is the page's reaction to each one.
-
 /** A stub standing in for the parts of `AuthClient` this page touches. */
 function stubIdentity(confirm: ReturnType<typeof vi.fn>) {
   vi.spyOn(apiService, 'getIdentityClient').mockReturnValue({
@@ -21,8 +12,6 @@ function stubIdentity(confirm: ReturnType<typeof vi.fn>) {
 }
 
 function renderAt(url: string) {
-  // The page reads the token off the real location rather than the router, so
-  // the address bar is what has to carry it.
   window.history.replaceState({}, '', url);
   return render(
     <MemoryRouter>

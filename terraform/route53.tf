@@ -1,10 +1,3 @@
-# Registry DS records without Route53 hosted-zone DNSSEC signing cause
-# validating resolvers to SERVFAIL (breaking TXT, e.g. DKIM). Enable signing
-# in the zone before associating delegation signers at the registrar.
-
-# The staging child zone and its NS delegation in the parent zone. Production
-# serves the apex from a zone the management account owns, so the module is a
-# no-op there.
 module "staging_dns" {
   source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/staging-dns"
   version = "~> 1.3"
@@ -19,8 +12,6 @@ module "staging_dns" {
   parent_zone_id = var.route53_zone_id
 }
 
-# The api record stays here rather than inside http-api: production writes it
-# cross-account through aws.dns, and a module has one aws provider.
 resource "aws_route53_record" "www" {
   count    = local.custom_domain_count
   provider = aws.dns

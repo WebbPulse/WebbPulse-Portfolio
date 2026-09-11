@@ -1,14 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiService, identityOriginFrom } from './api';
 
-// These tests cover the contract this service exposes: @webbpulse/api-client
-// rejects on a non 2xx, and every call site in this application reads a
-// `{ data, error }` envelope instead. The conversion is now the package's
-// `createEnvelopeClient` rather than a helper in this file, so what is worth
-// pinning down here is that wiring it up preserved the shapes those call sites
-// depend on. The transport and the envelope conversion are tested in the
-// package itself; these are the application's end of the contract.
-
 const BASE = 'https://api.example.test/api/v1';
 
 /**
@@ -71,16 +63,10 @@ describe('ApiService', () => {
     const response = await service.getProject(99);
 
     expect(response.data).toBeNull();
-    // formatApiErrorMessage unpacks the FastAPI detail field.
     expect(response.error).toBe('Project not found');
   });
 
   it('reads the message out of the WebbPulse error envelope', async () => {
-    // The shape every WebbPulse backend renders, built by `error_body` in the
-    // shared Python package. `message` is the field written for a caller to
-    // read, so it is the one that has to reach the UI.
-    // The backend writes the id into both the body and the X-Request-ID
-    // header, from the same middleware value, so the fixture carries both.
     fetchMock.mockResolvedValue(
       jsonResponse(
         {
@@ -104,21 +90,12 @@ describe('ApiService', () => {
 
     expect(response.data).toBeNull();
     expect(response.error).toBe('Blog post not found.');
-    // The envelope carries these alongside the message now. The hand rolled
-    // adapter dropped both, so a failure could not be joined to its trace.
-    // Note the envelope's own requestId is read from the response header, not
-    // from the body: getWebbPulseError is what prefers the body's request_id,
-    // which is why the log line above still has an id for a body that crossed
-    // a proxy that dropped the header.
     expect(response.status).toBe(404);
     expect(response.requestId).toBe('0199a1f2-0000-7000-8000-000000000001');
   });
 
   it('logs the request id and status from the envelope on a failure', async () => {
     const consoleError = vi.spyOn(console, 'error');
-    // A 500 on a GET is retried by the client, and a Response body can only be
-    // read once, so the mock builds a fresh one per attempt rather than
-    // handing back the same object.
     fetchMock.mockImplementation(() =>
       Promise.resolve(
         jsonResponse(
@@ -136,8 +113,6 @@ describe('ApiService', () => {
 
     await service.getSiteContent();
 
-    // getWebbPulseError flattens the snake cased body, so the log line carries
-    // the id that joins it to CloudWatch without this file parsing the body.
     expect(consoleError).toHaveBeenCalledWith('API request failed:', {
       message: 'Internal server error.',
       status: 500,
@@ -146,9 +121,6 @@ describe('ApiService', () => {
   });
 
   it('reports an error_code when the backend sends one', async () => {
-    // Portfolio's backend has not opted into `error_codes` yet, so this pins
-    // the branch that will start firing when it does, rather than leaving the
-    // first consumer of a code to discover the plumbing was never wired.
     const consoleError = vi.spyOn(console, 'error');
     fetchMock.mockResolvedValue(
       jsonResponse(
@@ -176,9 +148,6 @@ describe('ApiService', () => {
   });
 
   it('converts a network failure into the error field', async () => {
-    // fetch rejecting is what a browser does when the request never reached the
-    // server. There is no envelope to read, so the envelope has no status and
-    // the message is whatever the client raised.
     fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
     const service = new ApiService(BASE);
 
@@ -247,8 +216,6 @@ describe('ApiService', () => {
 
     await service.getProjects(true);
 
-    // The previous implementation built `/projects?featured_only=true/`, which
-    // put the trailing slash inside the query string.
     expect(callArgs().url).toBe(`${BASE}/projects/?featured_only=true`);
   });
 
@@ -272,11 +239,6 @@ describe('ApiService', () => {
     expect(callArgs().init.credentials).toBe('include');
   });
 
-  // The identity mode, which is written and typed today and switched on by
-  // configuration once the backend serves the routes it calls. These tests are
-  // what make it a real path rather than an untested branch: the wiring is
-  // exercised against a stubbed fetch, so a change that breaks it fails here
-  // and not on the day of the cutover.
   describe('identity mode', () => {
     /** The token response the standard's login and refresh routes answer. */
     function tokenResponse(token: string, expiresIn = 900): Response {
@@ -294,8 +256,6 @@ describe('ApiService', () => {
 
       expect(response.status).toBe('authenticated');
       expect(service.isAuthenticated()).toBe(true);
-      // The point of section 7.1: nothing a script can read back after a
-      // reload.
       expect(localStorage.getItem('authToken')).toBeNull();
       expect(localStorage.length).toBe(0);
     });
@@ -336,13 +296,10 @@ describe('ApiService', () => {
       await service.login({ username: 'admin', password: 'secret' });
 
       fetchMock
-        // The original request, with an expired token.
         .mockResolvedValueOnce(
           jsonResponse({ detail: 'expired' }, { status: 401 })
         )
-        // The refresh, which rotates the cookie and issues a new token.
         .mockResolvedValueOnce(tokenResponse('second-token'))
-        // The single replay.
         .mockResolvedValueOnce(jsonResponse({ id: 1 }));
 
       const response = await service.getSiteContent();
@@ -351,7 +308,6 @@ describe('ApiService', () => {
       expect(response.data).toEqual({ id: 1 });
       const urls = fetchMock.mock.calls.map(call => (call as [string])[0]);
       expect(urls[2]).toBe(`${ORIGIN}/api/auth/refresh`);
-      // Exactly one refresh, and the replay carries the new token.
       expect(
         urls.filter(url => url.endsWith('/api/auth/refresh'))
       ).toHaveLength(1);
@@ -394,7 +350,6 @@ describe('ApiService', () => {
       });
 
       expect(response).toEqual({ status: 'mfa-required', ticket: 't' });
-      // A challenge is not a session: the first leg carries no access token.
       expect(service.isAuthenticated()).toBe(false);
     });
 
@@ -408,10 +363,6 @@ describe('ApiService', () => {
       expect(service.getIdentityClient()).toBeNull();
     });
 
-    // Identity mounts at the issuer's path on the origin, `/api/auth`, while
-    // this application's own routes are under `/api/v1`. `joinUrl` in the
-    // client concatenates rather than resolving, so passing the API base
-    // through unchanged would request `/api/v1/api/auth/login`.
     it('calls the identity routes on the origin rather than under /api/v1', async () => {
       fetchMock.mockResolvedValue(tokenResponse('memory-token'));
       const service = new ApiService(BASE, 'identity');
@@ -448,8 +399,6 @@ describe('ApiService', () => {
 
       const totpCall = fetchMock.mock.calls[1] as [string, RequestInit];
       expect(totpCall[0]).toBe('https://api.example.test/api/auth/login/totp');
-      // The client always sends a JSON string body, which `BodyInit` does not
-      // narrow to on its own.
       expect(JSON.parse(totpCall[1].body as string)).toEqual({
         mfa_ticket: 't1',
         code: '123456',
@@ -462,6 +411,94 @@ describe('ApiService', () => {
       const result = await service.completeTotp({ ticket: 't', code: '1' });
 
       expect(result.status).toBe('failed');
+    });
+
+    it('restores a session from the refresh cookie on load', async () => {
+      fetchMock.mockResolvedValueOnce(tokenResponse('restored-token'));
+      const service = new ApiService(BASE, 'identity');
+
+      const restored = await service.restoreSession();
+
+      expect(restored).toBe(true);
+      expect(service.isAuthenticated()).toBe(true);
+      expect(callArgs().url).toBe(`${ORIGIN}/api/auth/refresh`);
+    });
+
+    it('reports no session when the refresh cookie is missing or spent', async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({ message: 'Unauthorized' }, { status: 401 })
+      );
+      const service = new ApiService(BASE, 'identity');
+
+      const restored = await service.restoreSession();
+
+      expect(restored).toBe(false);
+      expect(service.isAuthenticated()).toBe(false);
+    });
+
+    it('sends the restored token as a bearer header on the next request', async () => {
+      fetchMock.mockResolvedValueOnce(tokenResponse('restored-token'));
+      const service = new ApiService(BASE, 'identity');
+      await service.restoreSession();
+
+      fetchMock.mockResolvedValueOnce(jsonResponse({ id: 1 }));
+      await service.getSiteContent();
+
+      const call = fetchMock.mock.calls[1] as [string, RequestInit];
+      expect((call[1].headers as Headers).get('authorization')).toBe(
+        'Bearer restored-token'
+      );
+    });
+
+    it('notifies session-ended subscribers when a refresh on a 401 is refused', async () => {
+      fetchMock.mockResolvedValueOnce(tokenResponse('memory-token'));
+      const service = new ApiService(BASE, 'identity');
+      await service.login({ username: 'admin', password: 'secret' });
+
+      const ended = vi.fn();
+      service.onSessionEnded(ended);
+
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({ message: 'Unauthorized' }, { status: 401 })
+      );
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({ message: 'Unauthorized' }, { status: 401 })
+      );
+
+      const response = await service.getSiteContent();
+
+      expect(response.error).not.toBeNull();
+      expect(ended).toHaveBeenCalledTimes(1);
+      expect(service.isAuthenticated()).toBe(false);
+    });
+
+    it('stops notifying a session-ended subscriber once it unsubscribes', async () => {
+      fetchMock.mockResolvedValueOnce(tokenResponse('memory-token'));
+      const service = new ApiService(BASE, 'identity');
+      await service.login({ username: 'admin', password: 'secret' });
+
+      const ended = vi.fn();
+      service.onSessionEnded(ended)();
+
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({ message: 'Unauthorized' }, { status: 401 })
+      );
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({ message: 'Unauthorized' }, { status: 401 })
+      );
+      await service.getSiteContent();
+
+      expect(ended).not.toHaveBeenCalled();
+    });
+
+    it('reports the stored token rather than refreshing in bearer mode', async () => {
+      localStorage.setItem('authToken', 'stored-token');
+      const service = new ApiService(BASE, 'bearer');
+
+      const restored = await service.restoreSession();
+
+      expect(restored).toBe(true);
+      expect(fetchMock).not.toHaveBeenCalled();
     });
   });
 

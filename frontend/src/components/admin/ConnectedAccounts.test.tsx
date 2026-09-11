@@ -3,13 +3,6 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { ConnectedAccounts, type OAuthLinksClient } from './ConnectedAccounts';
 
-// The identity client is stubbed rather than the transport, for the reason
-// `SecuritySection.test.tsx` gives: `@webbpulse/auth` already tests turning a
-// response into an outcome, and this file's subject is the reaction. What is
-// worth pinning down is the `last-sign-in-method` refusal, which is the one
-// refusal whose remedy is a specific instruction rather than "try again", and
-// the split between what is linked and what can be linked.
-
 function stubClient(
   overrides: Partial<OAuthLinksClient> = {}
 ): OAuthLinksClient {
@@ -38,10 +31,6 @@ function refusal(reason: string, message = '') {
   return { ok: false as const, reason, message, code: undefined };
 }
 
-// The shape `GET /api/auth/oauth/providers` answers with since
-// webbpulse-python 0.16.0. The display name is the backend's and is what a
-// "Connect ..." button is labelled with; the linked rows above still go through
-// `providerLabel`, because the links route carries ids and no names.
 const GOOGLE = { id: 'google', display_name: 'Google' };
 const GITHUB = { id: 'github', display_name: 'GitHub' };
 
@@ -82,7 +71,6 @@ describe('ConnectedAccounts', () => {
     );
 
     await screen.findByTestId('oauth-link-google');
-    // Google is already linked, so only GitHub is offered.
     expect(
       screen.getByRole('button', { name: /connect github/i })
     ).toBeInTheDocument();
@@ -92,8 +80,6 @@ describe('ConnectedAccounts', () => {
   });
 
   it('still lists a linked provider that is no longer configured', async () => {
-    // The user must be able to unlink it even though it cannot be linked
-    // again, which is why availability gates only the attach affordance.
     const client = stubClient({
       listOAuthLinks: vi
         .fn()
@@ -137,8 +123,6 @@ describe('ConnectedAccounts', () => {
   });
 
   it('renders the server sentence for a last-sign-in-method refusal', async () => {
-    // The remedy is "set a password first", which no generic failure toast
-    // says, and the server's own sentence is the one to show.
     const message =
       'This is the only way to sign in to this account. Set a password first.';
     const client = stubClient({

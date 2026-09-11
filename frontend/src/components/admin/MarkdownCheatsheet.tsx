@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 
+/** A short reference for the markdown the post editor accepts. */
 export const MarkdownCheatsheet: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -67,7 +68,6 @@ export const MarkdownCheatsheet: React.FC = () => {
   const copyToClipboard = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      // You could add a toast notification here
     } catch (err) {
       console.error('Failed to copy text: ', err);
     }

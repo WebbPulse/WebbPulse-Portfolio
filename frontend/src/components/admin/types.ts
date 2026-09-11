@@ -1,7 +1,3 @@
-// The entity shapes come from the API service, which is the single definition
-// of what the backend returns. They used to be copied here verbatim, which let
-// the two drift: the copy of BlogPost had already diverged from the form type
-// that feeds it. Only the admin form and view models are declared below.
 import type { SkillCategory, SkillTier } from '../../services/api';
 
 export type {
@@ -16,10 +12,12 @@ export type {
   SkillTier,
 } from '../../services/api';
 
+/** Props for the admin panel root. */
 export interface AdminPanelProps {
   className?: string;
 }
 
+/** Editable fields of a project in the admin form. */
 export interface ProjectFormData {
   title: string;
   description: string;
@@ -31,6 +29,7 @@ export interface ProjectFormData {
   display_order: number;
 }
 
+/** Editable fields of an experience entry in the admin form. */
 export interface ExperienceFormData {
   title: string;
   company: string;
@@ -43,6 +42,7 @@ export interface ExperienceFormData {
   achievements: string[];
 }
 
+/** Editable fields of a blog post; `published_at` is undefined for a draft. */
 export interface BlogPostFormData {
   title: string;
   slug: string;
@@ -53,12 +53,14 @@ export interface BlogPostFormData {
   published_at: string | undefined;
 }
 
+/** Editable fields of a blog category. */
 export interface CategoryFormData {
   name: string;
   slug: string;
   description: string;
 }
 
+/** Editable fields of a skill entry. */
 export interface SkillFormData {
   name: string;
   category: SkillCategory;
@@ -67,6 +69,7 @@ export interface SkillFormData {
   order: number;
 }
 
+/** Editable fields of an education entry. */
 export interface EducationFormData {
   degree: string;
   school: string;
@@ -78,6 +81,7 @@ export interface EducationFormData {
   order: number;
 }
 
+/** Editable fields of a certification entry. */
 export interface CertificationFormData {
   name: string;
   issuer: string;
@@ -86,13 +90,14 @@ export interface CertificationFormData {
   order: number;
 }
 
-// Site Content
+/** One of the value cards shown in the About section. */
 export interface AboutValueFormData {
   title: string;
   description: string;
   icon: string;
 }
 
+/** Editable fields of the singleton site content record. */
 export interface SiteContentFormData {
   hero_title: string;
   hero_subtitle: string;
@@ -108,6 +113,7 @@ export interface SiteContentFormData {
   project_sort_mode: string;
 }
 
+/** Identifies which section the admin panel is showing. */
 export type AdminTab =
   | 'projects'
   | 'experience'

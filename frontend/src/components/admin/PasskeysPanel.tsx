@@ -13,45 +13,9 @@ import { defaultPasskeyName } from '../../services/passkeyNames';
 /**
  * The passkeys on this account, with enrol, rename and remove.
  *
- * ## Why the list is a route and the capability is not
- *
- * `GET /api/auth/passkeys` answers what is enrolled, so the list is a fetch
- * like any other. Whether the deployment has passkeys switched on is a separate
- * question, and since webbpulse-python 0.17.0 it has its own route:
- * `GET /api/auth/passkeys/availability` reports it as `enabled`, which is what
- * `services/passkeyAvailability.ts` reads for the sign-in page.
- *
- * This panel still does not ask it, and that is deliberate rather than a
- * leftover. It learns the same thing from any call it already makes, because
- * the package folds `PASSKEYS_DISABLED` into an `unavailable` outcome on all
- * five methods, so the list fetch this panel cannot avoid carries the answer.
- * Adding a second request to learn what the first one reports would be one more
- * round trip on a settings page for nothing. An `unavailable` list is rendered
- * as a sentence rather than an empty panel, so a backend without the capability
- * does not look like an account without passkeys.
- *
- * The sign-in page is the one that needs the route, because it has no
- * equivalent call: everything it could ask costs something, which is exactly
- * why it used to probe.
- *
- * ## The refusal with a remedy
- *
- * `last-credential` is the one refusal here whose answer is an instruction
- * rather than "try again": this is the only passkey and the account has no
- * password, so removing it would strand the user outside their own account.
- * The server counts what would be left and refuses, and the package names the
- * case so a settings page can say "set a password first" rather than showing a
- * generic failure. When it lands, the row's Remove control is left disabled
- * with the explanation beside it, so the button stops offering something that
- * cannot work.
- *
- * ## Why removal asks twice
- *
- * A passkey cannot be recovered once removed: the credential lives in the
- * authenticator and deleting the server's record of it is final. That is worth
- * one confirmation step, which is an inline "Remove" then "Confirm" rather
- * than a `window.confirm` so it renders in the page's own idiom and is
- * reachable in a test.
+ * Capability is read off any call's `unavailable` outcome rather than a second
+ * request. Removal asks twice because a removed credential cannot be recovered,
+ * and `last-credential` disables the control with its remedy beside it.
  */
 
 /** The subset of `AuthClient` this component calls. */
@@ -75,9 +39,8 @@ interface PasskeysPanelProps {
 /**
  * A sentence per refusal reason, used when the server sends an empty message.
  *
- * The server's own sentence is preferred everywhere, for the reason the rest
- * of this panel's siblings give: one written here would drift from the one the
- * API documents. These differ per reason because the remedy differs.
+ * The server's own sentence is preferred; these differ per reason because the
+ * remedy does.
  */
 const REASON_FALLBACKS: Record<string, string> = {
   'last-credential':
@@ -238,9 +201,6 @@ const PasskeyRow: React.FC<{
                 variant="outline"
                 size="sm"
                 onClick={() => setConfirming(true)}
-                // The `last-credential` refusal is the account's real state
-                // rather than a transient failure, so the control stops
-                // offering something that cannot work until a password exists.
                 disabled={busy || blockedReason !== null}
               >
                 Remove
@@ -253,6 +213,7 @@ const PasskeyRow: React.FC<{
   );
 };
 
+/** Renders the enrolled passkeys and the enrol, rename and remove controls. */
 export const PasskeysPanel: React.FC<PasskeysPanelProps> = ({
   client,
   className = '',
@@ -268,10 +229,8 @@ export const PasskeysPanel: React.FC<PasskeysPanelProps> = ({
   /**
    * The credential the server refused to remove, and why.
    *
-   * Held per credential rather than as one flag, because an account can reach
-   * the refusal on one passkey and not another the moment a second is
-   * enrolled. Cleared on every reload, so enrolling a second passkey re-enables
-   * the first one's Remove without a page refresh.
+   * Held per credential rather than as one flag, and cleared on every reload, so
+   * enrolling a second passkey re-enables the first one's Remove.
    */
   const [blocked, setBlocked] = useState<Record<string, string>>({});
 
@@ -287,9 +246,6 @@ export const PasskeysPanel: React.FC<PasskeysPanelProps> = ({
       setPasskeys([]);
       setUnavailable(true);
     } catch {
-      // A network failure, a 500, or a 401 the transport could not repair. The
-      // last of those is the session ending, which is handled elsewhere; there
-      // is nothing useful to say here beyond that the list is not showing.
       setPasskeys([]);
       setError('Your passkeys could not be loaded. Try again.');
     }
@@ -314,9 +270,6 @@ export const PasskeysPanel: React.FC<PasskeysPanelProps> = ({
           await reload();
           return;
         }
-        // A dismissed browser prompt is not a failure. It is the same gesture
-        // as closing an OAuth consent screen, and a banner for it would be
-        // telling the user off for changing their mind.
         if (outcome.reason === 'cancelled') {
           setNaming(false);
           return;
@@ -339,8 +292,6 @@ export const PasskeysPanel: React.FC<PasskeysPanelProps> = ({
       try {
         const outcome = await client.renamePasskey(credentialId, name);
         if (outcome.ok) {
-          // The route answers with the credential as it now stands, so the row
-          // is patched from the response rather than refetching the list.
           setPasskeys(current =>
             (current ?? []).map(entry =>
               entry.credentialId === credentialId ? outcome.passkey : entry
@@ -351,8 +302,6 @@ export const PasskeysPanel: React.FC<PasskeysPanelProps> = ({
         }
         setError(refusalMessage(outcome));
         if (outcome.reason === 'not-found') {
-          // A stale list: it was removed in another tab, or from the
-          // authenticator. Reloading is the remedy the package names.
           await reload();
         }
       } catch {
@@ -379,8 +328,6 @@ export const PasskeysPanel: React.FC<PasskeysPanelProps> = ({
         const message = refusalMessage(outcome);
         setError(message);
         if (outcome.reason === 'last-credential') {
-          // Recorded against the credential as well as shown, so the control
-          // that cannot work stops offering itself.
           setBlocked(current => ({ ...current, [credentialId]: message }));
         }
         if (outcome.reason === 'not-found') {

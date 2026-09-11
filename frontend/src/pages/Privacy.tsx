@@ -32,10 +32,8 @@ const Section: React.FC<{ title: string; children: React.ReactNode }> = ({
 /**
  * The public privacy policy.
  *
- * Google's OAuth consent screen requires a reachable privacy policy URL, which
- * is why this page exists as a plain public route rather than living behind the
- * admin panel. The wording describes what this site actually does, so it needs
- * updating whenever the data handling changes.
+ * A plain public route because Google's OAuth consent screen requires a reachable
+ * policy URL. Update the wording whenever the data handling changes.
  */
 export const Privacy: React.FC = () => {
   const { data } = useSiteContent();

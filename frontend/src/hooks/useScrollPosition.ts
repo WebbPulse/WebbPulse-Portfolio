@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 
+/** The current vertical scroll offset. */
 export const useScrollPosition = () => {
   const [scrollPosition, setScrollPosition] = useState(0);
 

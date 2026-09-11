@@ -22,7 +22,6 @@ const FeaturedCard: React.FC<{ post: BlogPost }> = ({ post }) => {
       ref={ref as React.Ref<HTMLAnchorElement>}
       className={`gradient-border group relative grid md:grid-cols-2 rounded-3xl bg-surface-900/70 backdrop-blur-xl overflow-hidden hover:shadow-glow-soft transition-shadow duration-500 ${isInView ? 'animate-fade-in-up' : 'opacity-0'}`}
     >
-      {/* Visual */}
       <div className="relative aspect-[4/3] md:aspect-auto md:min-h-[20rem] overflow-hidden">
         <div className="absolute inset-0 bg-mesh-1" />
         <AnimatedOrb
@@ -43,7 +42,6 @@ const FeaturedCard: React.FC<{ post: BlogPost }> = ({ post }) => {
           <span className="text-6xl">📝</span>
         </div>
       </div>
-      {/* Content */}
       <div className="p-8 sm:p-10 flex flex-col">
         <div className="flex items-center gap-3 mb-4">
           {post.category && (
@@ -124,6 +122,7 @@ const BlogPostCard: React.FC<{ post: BlogPost; index: number }> = ({
   );
 };
 
+/** The recent posts teaser on the single page site. */
 export const Blog: React.FC = () => {
   const [posts, setPosts] = useState<BlogPost[]>([]);
   const [loading, setLoading] = useState(true);

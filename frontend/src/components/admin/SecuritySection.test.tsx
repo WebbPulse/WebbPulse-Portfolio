@@ -3,12 +3,6 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 
 import { SecuritySection, type SecurityClient } from './SecuritySection';
 
-// What is worth pinning down here is the enrolment sequence, which is three
-// screens and two secrets that the server shows exactly once, and the mapping
-// from each refusal reason onto what the user is told. The identity client is
-// stubbed rather than the transport, because `@webbpulse/auth` already tests
-// turning a response into an outcome; this file's subject is the reaction.
-
 function stubClient(overrides: Partial<SecurityClient> = {}): SecurityClient {
   return {
     enrolTotp: vi.fn(),
@@ -57,8 +51,6 @@ function submitCode(code: string, buttonName: RegExp) {
 }
 
 describe('SecuritySection', () => {
-  // Held here rather than read back off `navigator` at the assertion, which
-  // would be a detached method reference.
   let writeText: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
@@ -81,8 +73,6 @@ describe('SecuritySection', () => {
 
       await startEnrolment(client);
 
-      // The seed in both the forms a user can act on: the QR code drawn from
-      // the provisioning URI, and the key typed by hand.
       expect(screen.getByTestId('totp-secret')).toHaveTextContent(
         'JBSWY3DPEHPK3PXP'
       );
@@ -100,7 +90,6 @@ describe('SecuritySection', () => {
       for (const code of CODES) {
         expect(screen.getByTestId('recovery-codes')).toHaveTextContent(code);
       }
-      // The state the account is now in, which nothing else reports.
       expect(screen.getByTestId('factor-status')).toHaveTextContent(
         /an authenticator app is set up/i
       );
@@ -118,7 +107,6 @@ describe('SecuritySection', () => {
       submitCode('123456', /turn on/i);
       await screen.findByTestId('recovery-codes');
 
-      // The confirmation gates dismissal, because these cannot be shown again.
       const done = screen.getByRole('button', { name: /^done$/i });
       expect(done).toBeDisabled();
 
@@ -173,7 +161,6 @@ describe('SecuritySection', () => {
       });
       render(<SecuritySection client={client} />);
 
-      // Nothing is sent until a code is collected.
       fireEvent.click(
         screen.getByRole('button', { name: /turn off the authenticator app/i })
       );
@@ -234,8 +221,6 @@ describe('SecuritySection', () => {
       expect(await screen.findByRole('alert')).toHaveTextContent(
         'That code is not valid.'
       );
-      // Still on the activation step, so the user can retype without
-      // restarting and burning the seed they already scanned.
       expect(screen.getByTestId('totp-secret')).toBeInTheDocument();
     });
 
@@ -249,8 +234,6 @@ describe('SecuritySection', () => {
         screen.getByRole('button', { name: /set up an authenticator app/i })
       );
 
-      // The one refusal that reports the account's real state, so it updates
-      // the status line as well as showing an error.
       expect(await screen.findByRole('alert')).toHaveTextContent(
         /already has an authenticator app/i
       );
@@ -304,8 +287,6 @@ describe('SecuritySection', () => {
       expect(await screen.findByRole('alert')).toHaveTextContent(
         /not available on this deployment/i
       );
-      // A deployment fault says nothing about the account, so the status line
-      // stays at what this session actually knows.
       expect(screen.getByTestId('factor-status')).toHaveTextContent(
         /has no route that reports it/i
       );

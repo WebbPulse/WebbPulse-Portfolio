@@ -11,6 +11,7 @@ interface CategoryFormProps {
   loading: boolean;
 }
 
+/** Create and edit form for a blog category. */
 export const CategoryForm: React.FC<CategoryFormProps> = ({
   form,
   setForm,

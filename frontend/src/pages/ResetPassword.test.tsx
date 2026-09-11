@@ -4,11 +4,6 @@ import { MemoryRouter } from 'react-router-dom';
 import { ResetPassword } from './ResetPassword';
 import { apiService } from '../services/api';
 
-// The properties worth holding here are the ones a careless rewrite would
-// lose: the token is spent only on submit and only when the two fields agree,
-// each refusal gets its own remedy, and a success ends at the sign in form
-// rather than in the panel, because the reset revoked every session.
-
 function stubIdentity(confirm: ReturnType<typeof vi.fn>) {
   vi.spyOn(apiService, 'getIdentityClient').mockReturnValue({
     confirmPasswordReset: confirm,
@@ -27,9 +22,8 @@ function renderAt(url: string) {
 /**
  * Fills both fields and submits.
  *
- * `fireEvent` rather than `user-event`, which this repository does not depend
- * on. A controlled input only needs its change event for the value to land in
- * state, and the assertions here are about what the page did with that value.
+ * `fireEvent` because this repository does not depend on `user-event`; a change
+ * event is all a controlled input needs.
  */
 function submit(password: string, confirmation: string) {
   fireEvent.change(screen.getByLabelText(/^new password$/i), {

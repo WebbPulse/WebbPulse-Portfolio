@@ -16,6 +16,7 @@ const inputClass =
 const labelClass =
   'block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1';
 
+/** Create and edit form for a skill. */
 export const SkillForm: React.FC<SkillFormProps> = ({
   form,
   setForm,

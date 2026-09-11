@@ -1,14 +1,3 @@
-# ---------------------------------------------------------------------------
-# ACM certificates from the shared acm-certificate module. The CloudFront one
-# must live in us-east-1, CloudFront accepts no other region; the API Gateway
-# one lives in the deployment region.
-#
-# The module takes two providers: aws decides where the certificate is issued,
-# aws.records decides where the DNS validation records are written. Production
-# writes those records cross-account through aws.dns, which is why the split
-# exists.
-# ---------------------------------------------------------------------------
-
 module "www_certificate" {
   source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/acm-certificate"
   version = "~> 1.6"

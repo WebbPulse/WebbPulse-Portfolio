@@ -10,12 +10,6 @@ import {
 import { PasskeysPanel, type PasskeysClient } from './PasskeysPanel';
 import { defaultPasskeyName } from '../../services/passkeyNames';
 
-// The identity client is stubbed rather than the transport, for the reason
-// `ConnectedAccounts.test.tsx` gives: `@webbpulse/auth` already tests turning a
-// response into an outcome, and this file's subject is the reaction. What is
-// worth pinning down is `last-credential`, the one refusal whose remedy is a
-// specific instruction, and the cancellation that must not read as a failure.
-
 function stubClient(overrides: Partial<PasskeysClient> = {}): PasskeysClient {
   return {
     listPasskeys: vi.fn().mockResolvedValue({ ok: true, passkeys: [] }),
@@ -84,7 +78,6 @@ describe('PasskeysPanel', () => {
   });
 
   it('renders a sentence rather than an empty panel when the capability is off', async () => {
-    // A backend without passkeys must not look like an account without them.
     const client = stubClient({
       listPasskeys: vi.fn().mockResolvedValue(refusal('unavailable')),
     });
@@ -122,8 +115,6 @@ describe('PasskeysPanel', () => {
     await waitFor(() => {
       expect(registerPasskey).toHaveBeenCalledWith({ name: 'Yubikey' });
     });
-    // The list is reloaded rather than patched, because enrolment is the one
-    // call that can change another row's `last-credential` standing.
     expect(await screen.findByTestId('passkey-cred-1')).toBeInTheDocument();
   });
 
@@ -137,7 +128,6 @@ describe('PasskeysPanel', () => {
     expect(defaultPasskeyName('Mozilla/5.0 (Windows NT 10.0; Win64)')).toBe(
       'Windows Hello'
     );
-    // A user agent this build has never seen still gets something typeable.
     expect(defaultPasskeyName('Something/1.0')).toBe('Passkey');
   });
 
@@ -206,10 +196,7 @@ describe('PasskeysPanel', () => {
     render(<PasskeysPanel client={client} />);
 
     const row = await screen.findByTestId('passkey-cred-1');
-    // Scoped to the row under test: with two enrolled there are two Remove
-    // controls, and the assertion below is about this one.
     fireEvent.click(within(row).getByRole('button', { name: 'Remove' }));
-    // The first press only asks. A passkey cannot be recovered once removed.
     expect(deletePasskey).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: /confirm removal/i }));
@@ -223,9 +210,6 @@ describe('PasskeysPanel', () => {
   });
 
   it('disables the removal and explains when it is the last way in', async () => {
-    // `last-credential` is the refusal with a remedy: the account has no
-    // password, so removing this would strand the user outside it. The control
-    // stops offering something that cannot work, and says why.
     const client = stubClient({
       listPasskeys: vi
         .fn()
@@ -253,8 +237,6 @@ describe('PasskeysPanel', () => {
   });
 
   it('writes its own sentence for last-credential when the server sends none', async () => {
-    // The remedy is a specific instruction and no generic toast knows to say
-    // it, so the fallback names the password step.
     const client = stubClient({
       listPasskeys: vi
         .fn()
