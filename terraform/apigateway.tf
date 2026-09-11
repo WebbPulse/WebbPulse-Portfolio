@@ -599,6 +599,218 @@ module "api" {
       }
     },
 
+    # The identity standard's M5 passkey flows: the seven routes
+    # `build_identity_router` mounts when `passkeys_enabled` is on and the
+    # product supplies both a `passkeys` store and a `webauthn_challenges`
+    # store. `terraform/identity.tf` creates the two tables and sets
+    # `IDENTITY_PASSKEYS_ENABLED` true in staging;
+    # `app/composition/identity.py` supplies the stores unconditionally.
+    #
+    # THESE KEYS WERE MISSING AND THAT WAS AN OUTAGE, not a latent gap. Section
+    # 6 set `default_integration = null`, so there is no `$default` to fall
+    # through to: a served path with no key is API Gateway's own 404 and reaches
+    # no function at all. The identity function was mounting all seven of these
+    # routes in staging while the gateway answered `{"message":"Not Found"}` to
+    # every one of them, which is the exact failure
+    # `backend/tests/entrypoints/test_gateway_routes.py` exists to catch and did
+    # not, because its identity assertions were written per milestone and no
+    # milestone set covered M5. The `_PACKAGE_*` sets added there now derive the
+    # expected keys from the package's own path constants, so the next milestone
+    # to mount routes without keys fails a test rather than shipping a 404.
+    #
+    # **The same authorizer treatment as M2, M3 and M4**, which means
+    # `authorization_type` omitted on all seven and the module's CUSTOM default
+    # taken: the staging access gate in staging, and NONE in production where no
+    # gate authorizer exists. The anonymous surface stays exactly the two
+    # discovery documents, and a test asserts it does.
+    #
+    # THE SPLIT ON require_identity_jwt IS FIVE AND TWO, and the package's own
+    # module docstring draws it in the same place. The two `/login/passkey/`
+    # routes are the passwordless login ceremony and their caller is by
+    # definition not signed in yet: `options` is fetched by somebody with no
+    # token at all, and `verify` carries a WebAuthn assertion rather than a
+    # bearer token. Flagging either would make a passkey login unperformable,
+    # which is `POST /api/auth/login` and `POST /api/auth/login/totp`'s
+    # reasoning applied to a third way into an account. Both are rate limited
+    # per IP by the package instead, at 30 per 15 minutes, which is the
+    # substitute for an authorizer on an anonymous route.
+    #
+    # It is worth being precise about why these two differ from
+    # `POST /api/auth/login/totp` even though all three are unflagged. The TOTP
+    # leg carries an MFA ticket whose `aud` is `<issuer>/mfa`, so a check
+    # configured with local.identity_audience actively REFUSES a valid ticket.
+    # The passkey login legs carry no token of any kind, so the flag would
+    # refuse them for having nothing to present. Different mechanisms, same
+    # conclusion: neither can sit behind the identity JWT authorizer.
+    #
+    # The other five are account management and every one of them calls
+    # `require_subject` in `webbpulse.identity.passkey_routes`, which reads the
+    # subject from the verified claims and raises NOT_AUTHENTICATED without one.
+    # Marking them states at the gateway what the application already refuses
+    # without, one hop earlier, exactly as `totp/enrol` does. It matters as much
+    # here as it does there: a `user_id` in a registration body would let
+    # anybody enrol a passkey on anybody's account, and a credential is harder
+    # to notice and harder to revoke than a password change.
+    #
+    # `PATCH` and `DELETE /api/auth/passkeys/{credential_id}` are the file's
+    # first route keys carrying a path variable, and that is a supported route
+    # key shape rather than a novelty: an HTTP API route key may contain a
+    # `{name}` segment, and modules/http-api passes `var.routes` keys through to
+    # `aws_apigatewayv2_route.route_key` verbatim as the `for_each` key, so the
+    # module neither parses nor constrains them. A variable segment is not the
+    # greedy `{proxy+}` this file avoids: it matches exactly one segment, so
+    # these two keys claim `/api/auth/passkeys/<one id>` and nothing deeper, and
+    # no future path under `passkeys/` is routed by omission.
+    #
+    # `GET /api/auth/passkeys` and the two item keys are three separate literal
+    # keys rather than one greedy `passkeys/{proxy+}`, on the same rule
+    # `verify-email/confirm` follows. `register/options` and `register/verify`
+    # are likewise their own keys and sit below `passkeys/` without the
+    # collection key shadowing them: API Gateway matches a full route before a
+    # variable one, and `/api/auth/passkeys/register/options` has more segments
+    # than `{credential_id}` can match anyway.
+    #
+    # No trailing slash on any of the seven.
+    {
+      "POST /api/auth/passkeys/register/options" = {
+        integration          = "identity"
+        require_identity_jwt = true
+      }
+      "POST /api/auth/passkeys/register/verify" = {
+        integration          = "identity"
+        require_identity_jwt = true
+      }
+      "POST /api/auth/login/passkey/options" = { integration = "identity" }
+      "POST /api/auth/login/passkey/verify"  = { integration = "identity" }
+      "GET /api/auth/passkeys" = {
+        integration          = "identity"
+        require_identity_jwt = true
+      }
+      "PATCH /api/auth/passkeys/{credential_id}" = {
+        integration          = "identity"
+        require_identity_jwt = true
+      }
+      "DELETE /api/auth/passkeys/{credential_id}" = {
+        integration          = "identity"
+        require_identity_jwt = true
+      }
+    },
+
+    # The identity standard's M6 OAuth flows: the six routes
+    # `build_identity_router` mounts for third party sign in.
+    # `terraform/identity.tf` creates the `oauth-states` and `oauth-links`
+    # tables and `app/composition/identity.py` supplies both stores.
+    #
+    # MISSING FOR THE SAME REASON M5's SEVEN WERE, with the same consequence: a
+    # gateway 404 on every OAuth path while the function served them. It is what
+    # `curl https://api.staging.webbpulse.com/api/auth/oauth/providers`
+    # answering API Gateway's `{"message":"Not Found"}` proved from the outside.
+    #
+    # THE SIX DIVIDE UNEVENLY, and the division is not the one the paths
+    # suggest. Five mount only when a provider is configured with a client id;
+    # `GET /api/auth/oauth/providers` mounts in EVERY deployment through the
+    # package's own `register_oauth_provider_discovery`, including one with no
+    # OAuth at all, where it answers `{"providers": []}`. That is deliberate
+    # package design rather than an accident: an absent route is a 404 the
+    # frontend cannot distinguish from a routing mistake, and the sign-in page
+    # needs an authoritative answer either way.
+    #
+    # A key for a route the function has not mounted is harmless and is the
+    # right thing to declare. It makes the response the identity function's own
+    # 404 rather than the gateway's, which is the same argument
+    # `ANY /api/v1/admin` is kept on, and it means turning a provider on is a
+    # workspace variable rather than a Terraform change plus a variable. All six
+    # keys are therefore unconditional, matching how M3's and M4's keys are
+    # written whether or not their feature flags are on.
+    #
+    # **The same authorizer treatment as every identity block above**:
+    # `authorization_type` omitted throughout, so the staging access gate covers
+    # all six in staging and nothing gates them in production. Not
+    # `authorization_type = "NONE"` on `oauth/providers`, even though it is
+    # anonymous to the application and read by a sign-in page that holds no
+    # token. Anonymous to the application and outside the staging gate are two
+    # different claims, and section 2.5's hole stays exactly two documents wide:
+    # somebody loading a sign-in page in staging is somebody who is already
+    # through the fence, exactly as with `POST /api/auth/login`.
+    #
+    # THE require_identity_jwt SPLIT IS THREE AND THREE, and it follows the
+    # package's own table rather than the shape of the paths.
+    #
+    # Unflagged, because all three are legs of a browser navigation by a caller
+    # who is not signed in:
+    #
+    #   `GET /oauth/providers`      read by the sign-in page, which has no token
+    #                               by definition. Answers a constant derived
+    #                               from configuration, touches no store and
+    #                               holds nothing about any user.
+    #   `GET /oauth/{provider}/start`
+    #                               a top level browser navigation that answers
+    #                               302 to the provider. A browser following a
+    #                               link sends no Authorization header and there
+    #                               is nowhere to put one, so flagging it would
+    #                               refuse every sign in before it began. Its
+    #                               `mode=link` variant does read a bearer token
+    #                               when one is present, but that path is
+    #                               reached through `POST /oauth/{provider}/link`
+    #                               in practice and the route must stay usable
+    #                               without one.
+    #   `GET /oauth/callback`       the provider navigates the browser here with
+    #                               `state` and `code`. The caller is the
+    #                               provider's redirect and carries no token of
+    #                               ours at all; authorization is the single use
+    #                               state row the package spends before anything
+    #                               else happens. Flagging it would break every
+    #                               sign in on the return leg, which is the
+    #                               worse half to break because the user has
+    #                               already consented at the provider.
+    #
+    # Flagged, because all three are settings page calls made over `fetch` with
+    # an Authorization header by a signed-in user:
+    #
+    #   `POST /oauth/{provider}/link`   starts a link for the authenticated
+    #                                   caller and answers JSON rather than a
+    #                                   redirect precisely because it is a
+    #                                   `fetch` and not a navigation.
+    #   `GET /oauth/links`              lists the caller's linked providers.
+    #   `DELETE /oauth/{provider}/link` detaches one.
+    #
+    # All three call `require_subject` and refuse with NOT_AUTHENTICATED without
+    # a verified subject, reading the subject from the claims rather than from a
+    # body, so the gateway now refuses what the application already refused. The
+    # application check stays exactly where it is.
+    #
+    # `POST` and `DELETE /api/auth/oauth/{provider}/link` are two entries on the
+    # same path, which is two route keys because a route key is a method and a
+    # path together. They are not `ANY`: the package declares exactly these two
+    # methods there, and `ANY` would route a `PUT` to the function for a handler
+    # that does not exist.
+    #
+    # `{provider}` is a single segment variable, on the same terms as
+    # `{credential_id}` in M5's block above. `GET /api/auth/oauth/providers` and
+    # `GET /api/auth/oauth/callback` are literal keys that would also be matched
+    # by a hypothetical `GET /api/auth/oauth/{provider}`, which is why no such
+    # key exists: the package declares neither, and API Gateway prefers the
+    # literal in any case.
+    #
+    # No trailing slash on any of the six.
+    {
+      "GET /api/auth/oauth/providers"        = { integration = "identity" }
+      "GET /api/auth/oauth/{provider}/start" = { integration = "identity" }
+      "GET /api/auth/oauth/callback"         = { integration = "identity" }
+      "POST /api/auth/oauth/{provider}/link" = {
+        integration          = "identity"
+        require_identity_jwt = true
+      }
+      "GET /api/auth/oauth/links" = {
+        integration          = "identity"
+        require_identity_jwt = true
+      }
+      "DELETE /api/auth/oauth/{provider}/link" = {
+        integration          = "identity"
+        require_identity_jwt = true
+      }
+    },
+
   )
 
   throttling_burst_limit = 200
