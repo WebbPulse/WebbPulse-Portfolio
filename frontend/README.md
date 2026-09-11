@@ -146,15 +146,15 @@ admin panel and is the only authenticated surface.
 The identity migration is the active workstream, tracked by milestone against
 the backend's `@webbpulse/*` adoption. What has landed on `staging`:
 
-| Milestone | What the admin panel gained | PRs |
-| --- | --- | --- |
-| Shared packages | `@webbpulse/*` 0.4.0, then 0.5.0 | 159, 165 |
-| M2 sessions | The identity sign-in path behind `VITE_AUTH_MODE` | 159, 160 |
-| M3 links | The `/verify-email` and `/reset-password` pages | 162, 165 |
-| M4 MFA | The TOTP and recovery code management surface | 166, 167, 168 |
-| M6 OAuth | Google and GitHub sign-in buttons | 169, 170 |
-| M5 passkeys | Passkey sign-in and the Passkeys management panel | 171, 172, 173 |
-| Privacy policy | The public `/privacy` page | 177, 178 |
+| Milestone       | What the admin panel gained                       | PRs           |
+| --------------- | ------------------------------------------------- | ------------- |
+| Shared packages | `@webbpulse/*` 0.4.0, then 0.5.0                  | 159, 165      |
+| M2 sessions     | The identity sign-in path behind `VITE_AUTH_MODE` | 159, 160      |
+| M3 links        | The `/verify-email` and `/reset-password` pages   | 162, 165      |
+| M4 MFA          | The TOTP and recovery code management surface     | 166, 167, 168 |
+| M6 OAuth        | Google and GitHub sign-in buttons                 | 169, 170      |
+| M5 passkeys     | Passkey sign-in and the Passkeys management panel | 171, 172, 173 |
+| Privacy policy  | The public `/privacy` page                        | 177, 178      |
 
 Passkeys and passwordless sign-in are both on in staging and off in production,
 derived from the environment rather than set per workspace (PR 173). Gateway
