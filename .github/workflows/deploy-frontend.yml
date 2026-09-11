@@ -28,21 +28,41 @@ permissions:
   contents: read
 
 jobs:
-  # A `uses:` job cannot declare an environment, so the environment name is resolved
-  # here and passed to the shared workflow as an input.
+  # A `uses:` job cannot declare an `environment:`, and the environment the shared
+  # workflow declares from its own input is not in scope when this caller evaluates
+  # `with:`. A `vars.*` lookup here therefore reads repository variables only, and
+  # every deploy value for this repository is environment scoped, so it would come
+  # back empty. This job carries the environment itself and republishes the values
+  # it needs as job outputs, which the `with:` block below can read.
   resolve-env:
     runs-on: ubuntu-latest
     if: github.ref_name == 'main' || vars.STAGING_DEPLOY_ENABLED == 'true'
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
     outputs:
       environment: ${{ steps.pick.outputs.environment }}
+      s3-bucket: ${{ vars.FRONTEND_S3_BUCKET }}
+      cloudfront-distribution-id: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+      role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      build-env-json: ${{ steps.pick.outputs.build-env-json }}
     steps:
       - id: pick
+        env:
+          API_BASE_URL: ${{ vars.API_BASE_URL }}
         run: |
+          set -euo pipefail
           if [ "${{ github.ref_name }}" = "main" ]; then
             echo "environment=production" >> "$GITHUB_OUTPUT"
           else
             echo "environment=staging" >> "$GITHUB_OUTPUT"
           fi
+
+          if [ -n "$API_BASE_URL" ]; then
+            BUILD_ENV=$(API_BASE_URL="$API_BASE_URL" python3 -c \
+              'import json, os; print(json.dumps({"VITE_API_BASE_URL": os.environ["API_BASE_URL"] + "/api/v1"}))')
+          else
+            BUILD_ENV='{}'
+          fi
+          echo "build-env-json=$BUILD_ENV" >> "$GITHUB_OUTPUT"
 
   deploy:
     needs: resolve-env
@@ -55,16 +75,13 @@ jobs:
       node-version: "20"
       working-directory: frontend
       cache-dependency-path: frontend/package-lock.json
-      build-env-json: >-
-        ${{ vars.API_BASE_URL != ''
-            && format('{{"VITE_API_BASE_URL":"{0}/api/v1"}}', vars.API_BASE_URL)
-            || '{}' }}
-      s3-bucket: ${{ vars.FRONTEND_S3_BUCKET }}
-      cloudfront-distribution-id: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+      build-env-json: ${{ needs.resolve-env.outputs.build-env-json }}
+      s3-bucket: ${{ needs.resolve-env.outputs.s3-bucket }}
+      cloudfront-distribution-id: ${{ needs.resolve-env.outputs.cloudfront-distribution-id }}
       aws-region: us-west-2
       concurrency-group: frontend-deploy-${{ github.ref_name }}
       tfc-organization: WebbPulse
       tfc-workspace: ${{ github.ref_name == 'main' && 'WebbPulse-Portfolio' || 'WebbPulse-Portfolio-staging' }}
     secrets:
-      role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      role-to-assume: ${{ needs.resolve-env.outputs.role-to-assume }}
       tfc-api-token: ${{ secrets.TFC_API_TOKEN }}
