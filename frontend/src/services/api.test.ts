@@ -458,8 +458,6 @@ describe('ApiService', () => {
       const ended = vi.fn();
       service.onSessionEnded(ended);
 
-      // The write is refused, the refresh it triggers is refused too, so the
-      // session is over rather than replayable.
       fetchMock.mockResolvedValueOnce(
         jsonResponse({ message: 'Unauthorized' }, { status: 401 })
       );

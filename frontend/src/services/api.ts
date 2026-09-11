@@ -260,13 +260,7 @@ export class ApiService {
   /** The auth client, in `identity` mode only. */
   private readonly auth: AuthClient<unknown> | null;
 
-  /**
-   * Subscribers notified when a live session ends on its own.
-   *
-   * A set rather than a single callback so a remount cannot silently displace
-   * the previous listener, and so unsubscribing is by identity rather than by
-   * clearing whatever happens to be registered.
-   */
+  /** Subscribers notified when a live session ends on its own. */
   private readonly sessionEndedListeners = new Set<() => void>();
 
   constructor(baseUrl: string = API_BASE_URL, mode: AuthMode = AUTH_MODE) {
@@ -277,12 +271,6 @@ export class ApiService {
       this.auth = createAuthClient({
         baseUrl: identityOriginFrom(baseUrl),
         clientOptions: { credentials },
-        // Fires when a refresh failed mid session, which is the one event the
-        // UI cannot observe by polling `isAuthenticated` after a request: the
-        // proactive timer refreshes on its own schedule with no call in
-        // flight. Fanned out to `onSessionEnded` subscribers so the panel can
-        // show the sign-in screen with a reason instead of leaving a dead
-        // token behind a live-looking form.
         onSessionEnded: () => {
           this.notifySessionEnded();
         },
@@ -438,11 +426,7 @@ export class ApiService {
 
   /**
    * Registers a callback for a session that ended without the user asking.
-   *
-   * Returns the unsubscribe function, so a React effect can clean up by
-   * returning the result directly. In `bearer` mode nothing ever fires it:
-   * there is no refresh to fail, so the only way that session ends is the user
-   * signing out or a 401 the caller already sees.
+   * Returns the unsubscribe function. Never fires in `bearer` mode.
    */
   onSessionEnded(listener: () => void): () => void {
     this.sessionEndedListeners.add(listener);
@@ -459,18 +443,9 @@ export class ApiService {
   }
 
   /**
-   * Restores a session from the refresh cookie on page load.
-   *
-   * This is the silent refresh of section 7.1. The access token lives only in
-   * memory, so a reload, a new tab or a redeployed bundle starts with no token
-   * while the httpOnly refresh cookie is still valid; spending it here is what
-   * turns that into a signed-in page instead of a login form. Resolves to
-   * whether a session came back.
-   *
-   * Answers false rather than throwing when there is no cookie, because a
-   * first time visitor is the normal case and not an error the UI reports.
-   * `bearer` mode has no refresh route, so it reports whatever token the store
-   * already held.
+   * Spends the refresh cookie on page load to restore the in-memory token.
+   * Resolves to whether a session came back; false rather than throwing when
+   * there is no cookie. In `bearer` mode reports the stored token instead.
    */
   async restoreSession(): Promise<boolean> {
     if (this.auth === null) {
