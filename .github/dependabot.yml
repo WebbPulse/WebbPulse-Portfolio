@@ -1,5 +1,3 @@
-# Dependabot targets staging, never main: every push to main deploys to
-# production, and the release flow is staging first, then a promotion PR.
 version: 2
 updates:
   - package-ecosystem: "pip"
