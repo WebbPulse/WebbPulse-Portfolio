@@ -1,3 +1,5 @@
+"""Copy the Postgres portfolio database into DynamoDB, with a verify mode."""
+
 import argparse
 import os
 import sys
@@ -17,6 +19,7 @@ for name, placeholder in (
 from app.db.entities import BY_ENTITY  # noqa: E402
 from app.db.serializer import from_item, to_item  # noqa: E402
 
+#: Postgres table name to DynamoDB entity name.
 POSTGRES_TABLES = {
     "users": "users",
     "categories": "categories",
@@ -29,12 +32,14 @@ POSTGRES_TABLES = {
     "site_content": "site-content",
 }
 
+#: Entity fields that must default to an empty list when the column was null.
 LIST_FIELDS = {
     "projects": ("technologies",),
     "experience": ("technologies", "achievements"),
     "site-content": ("about_paragraphs", "about_values"),
 }
 
+#: Entity flags that must default to a value when the column was null.
 BOOL_DEFAULTS = {
     "users": {"is_admin": False, "is_active": True},
     "projects": {"featured": False, "is_active": True},
@@ -46,6 +51,7 @@ BOOL_DEFAULTS = {
 
 
 def transform_row(entity, row):
+    """Turn one Postgres row into the item body DynamoDB should hold."""
     data = {key: value for key, value in dict(row).items() if value is not None}
     data["id"] = int(data["id"])
     for field in LIST_FIELDS.get(entity, ()):
@@ -59,6 +65,7 @@ def transform_row(entity, row):
 
 
 def expected_item(entity, row):
+    """The item `verify` expects to find, defaults and derived fields applied."""
     repository = BY_ENTITY[entity]
     item = repository._apply_defaults(to_item(transform_row(entity, row)))
     item.update(to_item(repository.derive(item)))
@@ -66,6 +73,7 @@ def expected_item(entity, row):
 
 
 def fetch_rows(connection, table):
+    """Read every row of one Postgres table, ordered by id."""
     from psycopg2.extras import RealDictCursor
 
     with connection.cursor(cursor_factory=RealDictCursor) as cursor:
@@ -74,13 +82,17 @@ def fetch_rows(connection, table):
 
 
 class TargetNotEmpty(Exception):
+    """The DynamoDB tables already hold rows and `--replace` was not passed."""
+
     def __init__(self, existing):
+        """Build the error from the per-entity counts already present."""
         self.existing = existing
         detail = ", ".join(f"{entity}={count}" for entity, count in existing.items())
         super().__init__(f"target tables already hold data ({detail}); use --replace")
 
 
 def existing_counts():
+    """Count the rows already in each target table, inactive ones included."""
     return {
         entity: BY_ENTITY[entity].count(include_inactive=True)
         for entity in POSTGRES_TABLES.values()
@@ -88,6 +100,10 @@ def existing_counts():
 
 
 def migrate(rows_by_table, dry_run=False, replace=False):
+    """Write every row and reset each id counter. Refuses a non-empty target.
+
+    Raises `TargetNotEmpty` unless `replace` or `dry_run` is set.
+    """
     existing = existing_counts()
     occupied = {entity: count for entity, count in existing.items() if count}
     if occupied and not replace and not dry_run:
@@ -115,6 +131,7 @@ def migrate(rows_by_table, dry_run=False, replace=False):
 
 
 def verify(rows_by_table):
+    """Compare DynamoDB against Postgres and return a list of discrepancies."""
     problems = []
     for table, entity in POSTGRES_TABLES.items():
         repository = BY_ENTITY[entity]
@@ -155,6 +172,7 @@ def verify(rows_by_table):
 
 
 def parse_args():
+    """Parse the DSN and the dry-run, replace and verify switches."""
     parser = argparse.ArgumentParser(
         description="Copy the Postgres portfolio database into DynamoDB"
     )
@@ -166,6 +184,7 @@ def parse_args():
 
 
 def main():
+    """Read Postgres, then verify or migrate according to the switches."""
     args = parse_args()
     if not args.dsn:
         sys.exit("Provide a Postgres DSN as the first argument or set DATABASE_URL")

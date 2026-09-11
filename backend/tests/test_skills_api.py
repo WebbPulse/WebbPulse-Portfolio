@@ -55,12 +55,14 @@ class TestSkillsAPI:
 
     @pytest.mark.api
     def test_get_nonexistent_skill(self, client: TestClient):
+        """An unknown skill id answers 404 with the skill not found message."""
         response = client.get("/api/v1/skills/999")
         assert response.status_code == 404
         assert "Skill not found" in error_message(response)
 
     @pytest.mark.api
     def test_inactive_skill_hidden(self, client: TestClient):
+        """An inactive skill is 404 on the public endpoint."""
         from app.db.entities import skills
 
         inactive = skills.create(
@@ -84,6 +86,7 @@ class TestSkillsAdminAPI:
     def test_create_skill_admin(
         self, client: TestClient, admin_auth_headers, sample_skill_data
     ):
+        """An admin can create a skill."""
         response = client.post(
             "/api/v1/skills/",
             json=sample_skill_data,
@@ -100,6 +103,7 @@ class TestSkillsAdminAPI:
     def test_create_skill_unauthorized(
         self, client: TestClient, auth_headers, sample_skill_data
     ):
+        """A non-admin user cannot create a skill."""
         response = client.post(
             "/api/v1/skills/", json=sample_skill_data, headers=auth_headers
         )
@@ -108,6 +112,7 @@ class TestSkillsAdminAPI:
     @pytest.mark.api
     @pytest.mark.auth
     def test_create_skill_no_auth(self, client: TestClient, sample_skill_data):
+        """Creating a skill without credentials is refused."""
         response = client.post("/api/v1/skills/", json=sample_skill_data)
         assert response.status_code == 403
 
@@ -116,6 +121,7 @@ class TestSkillsAdminAPI:
     def test_create_skill_invalid_category(
         self, client: TestClient, admin_auth_headers
     ):
+        """An unknown category is rejected as a validation error."""
         response = client.post(
             "/api/v1/skills/",
             json={"name": "Bad", "category": "nope", "tier": "working"},
@@ -126,6 +132,7 @@ class TestSkillsAdminAPI:
     @pytest.mark.api
     @pytest.mark.auth
     def test_create_skill_invalid_tier(self, client: TestClient, admin_auth_headers):
+        """An unknown tier is rejected as a validation error."""
         response = client.post(
             "/api/v1/skills/",
             json={"name": "Bad", "category": "frontend", "tier": "expert"},
@@ -138,6 +145,7 @@ class TestSkillsAdminAPI:
     def test_update_skill_admin(
         self, client: TestClient, admin_auth_headers, test_skill
     ):
+        """An admin can update a skill, leaving unsent fields alone."""
         response = client.put(
             f"/api/v1/skills/{test_skill['id']}",
             json={"name": "Renamed", "tier": "core"},
@@ -147,7 +155,6 @@ class TestSkillsAdminAPI:
         data = response.json()
         assert data["name"] == "Renamed"
         assert data["tier"] == "core"
-        # Untouched field preserved
         assert data["category"] == "frontend"
 
     @pytest.mark.api
@@ -155,6 +162,7 @@ class TestSkillsAdminAPI:
     def test_update_skill_unauthorized(
         self, client: TestClient, auth_headers, test_skill
     ):
+        """A non-admin user cannot update a skill."""
         response = client.put(
             f"/api/v1/skills/{test_skill['id']}",
             json={"name": "X"},
@@ -165,6 +173,7 @@ class TestSkillsAdminAPI:
     @pytest.mark.api
     @pytest.mark.auth
     def test_update_nonexistent_skill(self, client: TestClient, admin_auth_headers):
+        """Updating an unknown skill id answers 404."""
         response = client.put(
             "/api/v1/skills/999",
             json={"name": "X"},
@@ -177,13 +186,13 @@ class TestSkillsAdminAPI:
     def test_delete_skill_admin(
         self, client: TestClient, admin_auth_headers, test_skill
     ):
+        """An admin can delete a skill, after which it reads as gone."""
         response = client.delete(
             f"/api/v1/skills/{test_skill['id']}", headers=admin_auth_headers
         )
         assert response.status_code == 200
         assert "deleted successfully" in response.json()["message"]
 
-        # Soft delete: GET returns 404
         get_response = client.get(f"/api/v1/skills/{test_skill['id']}")
         assert get_response.status_code == 404
 
@@ -192,6 +201,7 @@ class TestSkillsAdminAPI:
     def test_delete_skill_unauthorized(
         self, client: TestClient, auth_headers, test_skill
     ):
+        """A non-admin user cannot delete a skill."""
         response = client.delete(
             f"/api/v1/skills/{test_skill['id']}", headers=auth_headers
         )
@@ -200,6 +210,7 @@ class TestSkillsAdminAPI:
     @pytest.mark.api
     @pytest.mark.auth
     def test_delete_nonexistent_skill(self, client: TestClient, admin_auth_headers):
+        """Deleting an unknown skill id answers 404."""
         response = client.delete("/api/v1/skills/999", headers=admin_auth_headers)
         assert response.status_code == 404
 
@@ -209,6 +220,7 @@ class TestSkillsAPIValidation:
 
     @pytest.mark.api
     def test_get_skills_invalid_pagination(self, client: TestClient):
+        """Out of range skip and limit values are rejected."""
         response = client.get("/api/v1/skills/?skip=-1")
         assert response.status_code == 422
 
@@ -221,6 +233,7 @@ class TestSkillsAPIValidation:
     @pytest.mark.api
     @pytest.mark.auth
     def test_create_skill_minimal(self, client: TestClient, admin_auth_headers):
+        """A skill created with only the required fields takes the defaults."""
         response = client.post(
             "/api/v1/skills/",
             json={"name": "Minimal", "category": "other"},
@@ -229,6 +242,6 @@ class TestSkillsAPIValidation:
         assert response.status_code == 200
         data = response.json()
         assert data["name"] == "Minimal"
-        assert data["tier"] == "working"  # default
-        assert data["order"] == 0  # default
+        assert data["tier"] == "working"
+        assert data["order"] == 0
         assert data["icon"] is None

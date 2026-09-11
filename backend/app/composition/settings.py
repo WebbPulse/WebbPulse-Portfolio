@@ -1,30 +1,7 @@
 """Portfolio's settings, on top of the shared package's base.
 
-`BaseServiceSettings` carries the five fields every WebbPulse service has:
-`environment`, `service_name`, `log_level`, `app_secrets_arn` and the two CORS
-fields. Everything below them is Portfolio's own.
-
-**The change PR 4 makes is where a missing secret fails.** The class this
-replaces ended in a `model_validator(mode="after")` that raised when
-`SECRET_KEY`, `ADMIN_USERNAME`, `ADMIN_PASSWORD` or `ADMIN_EMAIL` was still
-unset, and the module ended in a bare `settings = Settings()`. Together those
-made importing anything under `app/` fail without secrets, which is exactly what
-the `public` domain must not do: it is the one function with no Secrets Manager
-access at all, and an import-time read would fail it on every cold start with no
-route ever reached.
-
-So the four secrets are ordinary optional fields here. They are filled from the
-`APP_SECRETS_ARN` JSON secret on first read rather than at construction, by
-`_resolve_secret`, and a domain that genuinely needs one calls
-`require_secrets()` and gets the same fail-fast message the validator used to
-raise, at request time instead of at import time.
-
-Uppercase field names are kept deliberately. `BaseServiceSettings` is
-case-insensitive, so `ENVIRONMENT` and `environment` are the same variable and
-the environment variable names Terraform sets do not change; keeping the
-attribute spelling means the ~40 `settings.DYNAMODB_TABLE_PREFIX` call sites
-across the application do not change either, which keeps this PR's diff about
-composition rather than about renaming.
+The four secret fields are optional and resolved from the `APP_SECRETS_ARN`
+blob on first read, so constructing this reads no AWS and importing needs none.
 """
 
 from __future__ import annotations
@@ -35,8 +12,8 @@ from typing import Any, Optional
 from pydantic import field_validator, model_validator
 from webbpulse.config import BaseServiceSettings
 
-# Settings filled from the single JSON secret named by APP_SECRETS_ARN. Its
-# keys are these names exactly, so there is no mapping to keep in step.
+#: Settings filled from the single JSON secret named by APP_SECRETS_ARN, whose
+#: keys are these names exactly.
 SECRET_FIELDS = ("SECRET_KEY", "ADMIN_USERNAME", "ADMIN_PASSWORD", "ADMIN_EMAIL")
 
 LOCALHOST_ORIGINS = [
@@ -53,10 +30,8 @@ DEFAULT_CORS_ORIGINS = (
     "https://webbpulse.com,https://www.webbpulse.com,http://webbpulse.com"
 )
 
-# How Portfolio's free-text `ENVIRONMENT` maps onto the base class's
-# `environment`, which is a Literal of local/test/staging/production. Anything
-# unrecognised lands on "local", which is the safe end: it is the value that
-# grants the least, and `is_production` stays False for it.
+#: Maps Portfolio's free-text `ENVIRONMENT` onto the base class's Literal.
+#: Anything unrecognised lands on "local", the value that grants the least.
 ENVIRONMENT_ALIASES = {
     "development": "local",
     "dev": "local",
@@ -88,39 +63,21 @@ class Settings(BaseServiceSettings):
     LOGIN_MAX_FAILURES: int = 10
     LOGIN_FAILURE_WINDOW_SECONDS: int = 900
 
-    # M1's issuer, and the only `IDENTITY_*` variable this class reads for it.
-    #
-    # The rest of M1's configuration is not here on purpose. `IdentitySettings`
-    # in `webbpulse.identity` is a `BaseSettings` with `env_prefix="IDENTITY_"`,
-    # so it reads `IDENTITY_AUDIENCE`, `IDENTITY_SIGNING_KEY_ARNS` and the other
-    # dozen fields out of the environment itself. Restating them here would be a
-    # second copy of the same list, kept in step by hand, with this one's types
-    # and validation necessarily weaker than the package's.
-    #
-    # This one field is the exception because the composition root needs a cheap
-    # way to answer "is the identity application configured at all" before it
-    # constructs `IdentitySettings`, which raises when it is not. `IDENTITY_ISSUER`
-    # is required by that class and set by Terraform on every deployed identity
-    # function, so its presence is exactly that question. Naming it here rather
-    # than reading `os.environ` in the composition root keeps every environment
-    # variable this application reads visible in one class.
+    #: The identity issuer. Present exactly when the identity application is
+    #: configured, which is how the composition root tests for it cheaply.
+    #: Every other `IDENTITY_*` field belongs to `IdentitySettings`.
     IDENTITY_ISSUER: Optional[str] = None
 
     APP_NAME: str = "Portfolio Blog API"
     SITE_URL: str = "https://www.webbpulse.com"
     DEBUG: bool = False
     LOG_LEVEL: str = "INFO"
-    # The two `POWERTOOLS_*` settings are gone with the dependency. Every domain
-    # service now logs through `app/core/logging.py`, which is
-    # `webbpulse.logging`, and the entrypoints already passed `service_name` and
-    # `environment` to `configure_logging` rather than reading either of them.
-    # Terraform never set them on a domain function, so nothing deployed loses a
-    # variable it was reading.
     CORS_ORIGINS: str = DEFAULT_CORS_ORIGINS
 
     @field_validator("CORS_ORIGINS")
     @classmethod
     def parse_cors_origins(cls, value: Any) -> Any:
+        """Split a comma separated origin list and add the localhost origins."""
         if isinstance(value, str):
             origins = [origin.strip() for origin in value.split(",") if origin.strip()]
             return sorted(set(origins + LOCALHOST_ORIGINS))
@@ -132,39 +89,16 @@ class Settings(BaseServiceSettings):
         """Accept `info` as well as `INFO`, like the base class's `log_level`."""
         return value.strip().upper() if isinstance(value, str) else value
 
-    # `BaseServiceSettings` names its own fields in lower case, and the shared
-    # package reads those: `create_app` takes `cors_allow_origins` and
-    # `cors_allow_credentials` off the settings object. A pydantic field cannot
-    # be shadowed by a property, so the two spellings are reconciled after
-    # validation instead: Portfolio's uppercase names stay the ones the
-    # application and Terraform use, and the lower case ones are derived.
-    #
-    # `environment` is the one that needs care, and it has to be translated
-    # *before* validation rather than after. `BaseServiceSettings` is
-    # case-insensitive, so the base's `environment` and Portfolio's
-    # `ENVIRONMENT` are fed by the same `ENVIRONMENT` environment variable.
-    # That means the base's Literal runs against Portfolio's raw value: with
-    # `ENVIRONMENT=development` set, which is both the documented default and
-    # what a developer actually exports, the model raised
-    #
-    #     Input should be 'local', 'test', 'staging' or 'production'
-    #
-    # and never reached the `mode="after"` validator that was supposed to do
-    # the mapping. `ENVIRONMENT=dev` failed the same way. Only leaving the
-    # variable unset worked, because then the base fell back to its own
-    # "local" default and the field was never given Portfolio's spelling.
-    #
-    # Mapping in a `mode="before"` model validator fixes that: the raw input
-    # is rewritten so `environment` already holds a Literal member by the time
-    # the field is validated, while `ENVIRONMENT` keeps the free-text value
-    # the application and Terraform use.
     @model_validator(mode="before")
     @classmethod
     def _map_environment_alias(cls, data: Any) -> Any:
+        """Translate the raw `ENVIRONMENT` before the base's Literal validates it.
+
+        Both fields are fed by the same case-insensitive variable, so the base
+        would otherwise reject Portfolio's free-text spellings.
+        """
         if not isinstance(data, dict):
             return data
-        # Case-insensitively, since the environment variable may arrive under
-        # any spelling and pydantic-settings matches without regard to case.
         keys = [key for key in data if key.lower() == "environment"]
         if not keys:
             return data
@@ -174,9 +108,6 @@ class Settings(BaseServiceSettings):
 
         mapped = ENVIRONMENT_ALIASES.get(raw.strip().lower(), "local")
         data = dict(data)
-        # Portfolio's own field keeps the value as given; the base's Literal
-        # field gets the translation. Both are written explicitly because a
-        # single case-insensitive key would otherwise feed both.
         for key in keys:
             data.pop(key)
         data["ENVIRONMENT"] = raw
@@ -185,6 +116,7 @@ class Settings(BaseServiceSettings):
 
     @model_validator(mode="after")
     def _mirror_base_fields(self) -> "Settings":
+        """Derive the base class's lower case fields from Portfolio's own."""
         object.__setattr__(
             self,
             "environment",
@@ -202,14 +134,8 @@ class Settings(BaseServiceSettings):
     def _resolve_secret(self, field: str) -> Optional[str]:
         """One secret field, from the environment first and the blob second.
 
-        Reading a field that is already set costs nothing. Reading one that is
-        not, with an ARN configured, fetches the blob once per execution
-        environment and fills every field it carries, so four unset fields cost
-        one Secrets Manager call rather than four.
-
-        The fetch itself is `webbpulse.config.load_json_secret`, reached through
-        `app.secrets`, so the caching and the "this secret is not a JSON object"
-        errors are the shared package's rather than a second copy of them here.
+        One fetch fills every unset field it carries, so several unset fields
+        still cost a single Secrets Manager call.
         """
         current = object.__getattribute__(self, field)
         if current is not None:
@@ -229,8 +155,7 @@ class Settings(BaseServiceSettings):
         return object.__getattribute__(self, field)
 
     def __getattribute__(self, name: str) -> Any:
-        # Only the four secrets are lazy; every other attribute takes the
-        # ordinary path, so this costs one set membership test per access.
+        """Resolve the secret fields lazily; everything else takes the fast path."""
         if name in SECRET_FIELDS:
             return object.__getattribute__(self, "_resolve_secret")(name)
         return object.__getattribute__(self, name)
@@ -238,10 +163,8 @@ class Settings(BaseServiceSettings):
     def require_secrets(self, *fields: str) -> None:
         """Assert the named secrets are readable, or raise saying which are not.
 
-        This is the failure the old `resolve_secrets` validator produced, moved
-        from import time to the point of use. A domain that needs the signing
-        key calls it; `public`, which needs none of them, never does and so runs
-        with no Secrets Manager permission at all.
+        A domain that needs none never calls this, so it needs no Secrets
+        Manager permission at all.
         """
         wanted = fields or SECRET_FIELDS
         missing = [field for field in wanted if getattr(self, field) is None]
@@ -254,12 +177,7 @@ class Settings(BaseServiceSettings):
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """The process-wide settings, built on first use rather than at import.
-
-    Behind a cache on purpose: a missing environment variable then fails the
-    request that needed it rather than the whole cold start, which is the
-    difference between one bad response and a function that cannot start.
-    """
+    """The process-wide settings, built on first use rather than at import."""
     return Settings()
 
 

@@ -1,3 +1,5 @@
+"""Project routes, with the listing sorted by the site's configured sort mode."""
+
 from typing import List
 
 from fastapi import Query
@@ -29,6 +31,7 @@ async def get_projects(
     limit: int = Query(50, ge=1, le=100),
     featured_only: bool = Query(False),
 ):
+    """A page of projects, optionally featured only, in the site's sort mode."""
     items = projects.list_all()
     if featured_only:
         items = [item for item in items if item.get("featured")]

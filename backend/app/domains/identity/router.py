@@ -1,3 +1,5 @@
+"""The legacy login route: username and password for an access token."""
+
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 
@@ -16,6 +18,7 @@ _DUMMY_HASH = get_password_hash("timing-equalizer")
 
 
 def _too_many_requests(retry_after: int) -> JSONResponse:
+    """The 429 body and `Retry-After` header for a locked out caller."""
     return JSONResponse(
         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         content={
@@ -28,6 +31,7 @@ def _too_many_requests(retry_after: int) -> JSONResponse:
 
 
 def _unauthorized(detail: str) -> HTTPException:
+    """A 401 that challenges for a bearer token."""
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail=detail,
@@ -37,26 +41,21 @@ def _unauthorized(detail: str) -> HTTPException:
 
 @router.post("/login", response_model=Token)
 async def login(user_credentials: UserLogin, request: Request):
+    """Exchange a username and password for an access token.
+
+    Every rejection costs one password verification against `_DUMMY_HASH`, so an
+    unknown user and a wrong password are indistinguishable in response and timing.
+    """
     ip = client_ip(request)
     retry_after = login_limiter.retry_after(ip)
     if retry_after:
         return _too_many_requests(retry_after)
 
     user = users.find_by_unique("username", user_credentials.username)
-    # `.get(...) or _DUMMY_HASH` rather than a subscript. Once
-    # `scripts/clear_legacy_credentials.py` has run for an environment the
-    # column is removed from the row outright, and a subscript would turn this
-    # route from "refuses every password" into "500s on every attempt". The
-    # dummy hash keeps the timing the same as a wrong password, which is the
-    # reason it exists at all, so a cleared user and an unknown user are
-    # indistinguishable from the outside.
     hashed = (user.get("hashed_password") if user else None) or _DUMMY_HASH
     if not user or not verify_password(user_credentials.password, hashed):
         failures = login_limiter.record_failure(ip)
         if failures >= login_limiter.max_failures:
-            # The limiter fails open, so the second lookup can come back None
-            # even though the first call reached the threshold. Fall back to the
-            # configured window rather than emitting a null Retry-After.
             retry_after = login_limiter.retry_after(ip)
             return _too_many_requests(
                 retry_after if retry_after else login_limiter.window_seconds

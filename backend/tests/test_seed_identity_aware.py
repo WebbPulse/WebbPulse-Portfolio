@@ -1,21 +1,4 @@
-"""The admin seeder in identity mode, against the real store on moto.
-
-The store under test is the package's `DynamoCredentialStore` over the same
-moto-backed `credentials` table `conftest.py` creates, not a stub. That is the
-point: the claim these tests make is about the rows the identity login flow
-reads, and a fake store would prove only that the seeder can call `put`.
-
-Three properties, and they are the three that decide whether
-`scripts/clear_legacy_credentials.py` can work at all:
-
-- a cleared `hashed_password` column stays cleared across a seed,
-- an existing credential is never overwritten, and
-- a missing credential is created exactly once.
-
-The legacy path is covered separately in `test_auth_hardening.py`, which is
-unchanged and still passes: the default test environment sets no
-`IDENTITY_ISSUER`, so every other test in the suite runs the old behaviour.
-"""
+"""The admin seeder in identity mode, against the real store on moto."""
 
 import pytest
 from webbpulse.identity import PASSWORD_CREDENTIAL_TYPE, CredentialRecord
@@ -57,17 +40,15 @@ def make_admin(**overrides):
 
 
 def reload(user):
+    """Re-read a user row, inactive ones included."""
     return entities.users.get(user["id"], include_inactive=True)
 
 
 class TestClearedColumnStaysCleared:
-    def test_a_row_with_no_legacy_column_is_not_repopulated(self, store):
-        """The whole reason this change exists.
+    """Seeding never repopulates the cleared legacy password column."""
 
-        Before it, `verify_password(pw, None)` answered `False` and the seeder
-        wrote a freshly salted hash back into the column within seconds of the
-        next request, which made the next migration run report a conflict.
-        """
+    def test_a_row_with_no_legacy_column_is_not_repopulated(self, store):
+        """The whole reason this change exists."""
         user = make_admin()
         entities.users.update(user["id"], {LEGACY_HASH_FIELD: None})
         assert LEGACY_HASH_FIELD not in reload(user)
@@ -84,12 +65,7 @@ class TestClearedColumnStaysCleared:
         assert LEGACY_HASH_FIELD not in reload(user)
 
     def test_a_populated_column_is_left_alone_rather_than_rewritten(self, store):
-        """Identity mode neither reads nor writes the column, in either direction.
-
-        It is not the seeder's job to clear it either: that is the clearing
-        script's, run once per environment after a human has verified the
-        migration.
-        """
+        """Identity mode neither reads nor writes the column, in either direction."""
         original = hash_password("something-that-is-not-the-admin-password")
         user = make_admin(hashed_password=original)
         store.put(
@@ -105,11 +81,7 @@ class TestClearedColumnStaysCleared:
         assert reload(user)[LEGACY_HASH_FIELD] == original
 
     def test_the_legacy_path_still_reconciles_the_column(self):
-        """No store supplied means the old behaviour, unchanged.
-
-        This is what a local checkout and every other test in the suite runs,
-        and it is what `POST /api/v1/admin/login` needs until M9 deletes it.
-        """
+        """No store supplied means the old behaviour, unchanged."""
         user = make_admin(hashed_password=hash_password("stale"))
 
         seed_admin_user()
@@ -118,13 +90,10 @@ class TestClearedColumnStaysCleared:
 
 
 class TestExistingCredentialIsNotOverwritten:
-    def test_a_password_changed_through_the_identity_flow_survives_a_seed(self, store):
-        """The case that makes this a create and not a reconcile.
+    """Seeding leaves an existing identity credential alone."""
 
-        An administrator who changes their password through
-        `POST /api/auth/password` must not have it reverted to `ADMIN_PASSWORD`
-        by the next cold start.
-        """
+    def test_a_password_changed_through_the_identity_flow_survives_a_seed(self, store):
+        """The case that makes this a create and not a reconcile."""
         user = make_admin()
         chosen = hash_password("the-password-the-admin-actually-chose")
         store.put(
@@ -145,6 +114,7 @@ class TestExistingCredentialIsNotOverwritten:
         assert not verify_password(settings.ADMIN_PASSWORD, credential.secret)
 
     def test_created_at_is_not_refreshed_by_a_seed(self, store):
+        """Repeated seeds leave both credential timestamps untouched."""
         user = make_admin()
         store.put(
             CredentialRecord(
@@ -164,7 +134,10 @@ class TestExistingCredentialIsNotOverwritten:
 
 
 class TestMissingCredentialIsCreatedOnce:
+    """Seeding creates the admin row and credential exactly once."""
+
     def test_a_brand_new_environment_gets_a_row_and_a_credential(self, store):
+        """An empty environment gets an admin row and credential, no legacy column."""
         assert entities.users.count() == 0
 
         seed_admin_user(store)
@@ -172,13 +145,12 @@ class TestMissingCredentialIsCreatedOnce:
         user = entities.users.find_by_unique("username", settings.ADMIN_USERNAME)
         assert user["is_admin"] is True and user["is_active"] is True
         assert user["email"] == settings.ADMIN_EMAIL
-        # The row is created without the legacy column at all, on the same rule
-        # `create_user` in `app/composition/identity_hooks.py` follows.
         assert LEGACY_HASH_FIELD not in user
         credential = store.get(str(user["id"]), PASSWORD_CREDENTIAL_TYPE)
         assert verify_password(settings.ADMIN_PASSWORD, credential.secret)
 
     def test_an_existing_row_with_no_credential_gets_one(self, store):
+        """An existing admin row without a credential gets one."""
         user = make_admin()
         assert store.get(str(user["id"]), PASSWORD_CREDENTIAL_TYPE) is None
 
@@ -188,6 +160,7 @@ class TestMissingCredentialIsCreatedOnce:
         assert verify_password(settings.ADMIN_PASSWORD, credential.secret)
 
     def test_repeated_seeds_write_the_credential_exactly_once(self, store):
+        """Repeated seeds keep one user and one unchanged credential."""
         seed_admin_user(store)
         user = entities.users.find_by_unique("username", settings.ADMIN_USERNAME)
         first = store.get(str(user["id"]), PASSWORD_CREDENTIAL_TYPE)
@@ -196,9 +169,6 @@ class TestMissingCredentialIsCreatedOnce:
         seed_admin_user(store)
 
         after = store.get(str(user["id"]), PASSWORD_CREDENTIAL_TYPE)
-        # Byte identical, which is stronger than "still verifies": bcrypt salts
-        # per call, so a second `put` would produce a different secret and the
-        # next migration run would report a conflict.
         assert after.secret == first.secret
         assert entities.users.count() == 1
 
@@ -218,6 +188,7 @@ class TestTheStoreResolution:
     """`app/core/middleware.py` is what decides which mode the seeder runs in."""
 
     def test_no_identity_issuer_means_no_store(self, monkeypatch):
+        """With no identity issuer configured there is no credential store."""
         middleware.reset_admin_credential_store()
         monkeypatch.setattr(settings, "IDENTITY_ISSUER", None)
         try:
@@ -226,6 +197,7 @@ class TestTheStoreResolution:
             middleware.reset_admin_credential_store()
 
     def test_an_identity_issuer_builds_the_credential_store(self, monkeypatch):
+        """An identity issuer builds a DynamoDB credential store."""
         middleware.reset_admin_credential_store()
         monkeypatch.setattr(
             settings, "IDENTITY_ISSUER", "https://api.example.test/api/auth"
@@ -233,7 +205,6 @@ class TestTheStoreResolution:
         try:
             resolved = middleware._admin_credential_store()
             assert resolved is not None
-            # Same class the running service and both scripts construct.
             from webbpulse.identity import DynamoCredentialStore
 
             assert isinstance(resolved, DynamoCredentialStore)
