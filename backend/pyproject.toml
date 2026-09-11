@@ -75,6 +75,7 @@ identity = [
   "tests/test_auth_api.py",
   "tests/test_auth_hardening.py",
   "tests/test_core_security.py",
+  "tests/test_identity_admin_claims.py",
   "tests/test_identity_m1.py",
   "tests/test_identity_m2.py",
   "tests/test_identity_m3.py",

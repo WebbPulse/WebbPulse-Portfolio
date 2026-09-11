@@ -1492,3 +1492,402 @@ def test_the_account_management_routes_require_an_identity_token():
     assert missing == [], (
         f"these routes read a verified subject but are not flagged: {missing}"
     )
+
+
+# ---------------------------------------------------------------------------
+# The domain admin routes: what `CurrentUser` protects against what is flagged
+# ---------------------------------------------------------------------------
+#
+# The identity cutover's last gap. The `/api/auth` routes above were flagged
+# when they were written, because the package's `require_subject` was always
+# their only caller check. The `/api/v1` admin routes are older: they verified
+# the legacy HS256 token and nothing else, so in identity mode the frontend's
+# RS256 access token reached them as a credential they could not read and every
+# admin write answered 401.
+#
+# Closing it has two halves and they have to agree. The application half is
+# `get_current_user` reading the gateway's verified claims when the legacy token
+# does not resolve. The gateway half is flagging exactly those route keys so
+# there are claims to read. This section is what keeps the halves in step, and
+# it is deliberately exhaustive in both directions:
+#
+# - **A protected route that is not flagged** carries no claims in identity
+#   mode. The application falls back, finds nothing, and answers 401. That is
+#   the original bug, reintroduced one route at a time, and it is invisible
+#   until somebody uses that route in the admin panel.
+# - **A flagged route that is not protected** is a public read the gateway now
+#   refuses without a token. That one is louder, because it breaks the
+#   anonymous site rather than the admin panel, but it is just as easy to write.
+#
+# Both sides are derived rather than listed. The application side walks the
+# FastAPI dependency tree, so adding `Depends(CurrentUser)` to a new route makes
+# this fail until `apigateway.tf` names it. The Terraform side parses
+# `local.domain_identity_jwt_route_paths`, which is the unflagged list form the
+# keys are generated from, because the generated entries carry
+# `require_identity_jwt = var.domain_jwt_enforced` rather than a literal `true`
+# and `IDENTITY_JWT_ROUTE_ENTRY` above would not see them. That difference is
+# the point of `test_the_domain_flag_is_gated_on_a_variable_rather_than_hardcoded`.
+
+# `<name> = [ ... ]` inside the domain map, one entry per domain. Written as its
+# own pattern rather than reusing COLLECTION_LIST because that one runs over the
+# whole file and would also match every other list in it; this needs only the
+# lists nested inside one block.
+DOMAIN_LIST = re.compile(r"(?P<name>\w+)\s*=\s*\[(?P<body>[^\]]*)\]", re.DOTALL)
+
+# The application's dependency name that means "this route needs an
+# administrator". Both are checked: a route can depend on `CurrentUser`
+# directly, or reach it through `require_admin`, and either one is a route that
+# cannot be served to an anonymous caller.
+CALLER_DEPENDENCIES = {"CurrentUser", "get_current_user", "require_admin"}
+
+# The domains whose `/api/v1` routes this section covers. `identity` and
+# `public` are excluded deliberately: `identity` serves only the login POST,
+# which is how a caller gets a token and must stay reachable without one, and
+# `public` serves the anonymous site.
+PROTECTED_DOMAINS = ("content", "resume")
+
+
+def _block(source: str, opening: str) -> str:
+    """The brace-balanced block that `opening` starts, `opening` included.
+
+    A regex cannot match nested braces, and the domain map has a level of them
+    per domain. This walks the braces instead, which is enough structure for a
+    file this shape without taking a dependency on an HCL parser.
+    """
+    start = source.index(opening)
+    depth = 0
+    for offset in range(start, len(source)):
+        if source[offset] == "{":
+            depth += 1
+        elif source[offset] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start : offset + 1]
+    raise AssertionError(f"unbalanced braces after {opening!r}")
+
+
+def domain_identity_jwt_route_paths() -> dict[str, set[str]]:
+    """`local.domain_identity_jwt_route_paths`, per domain, as plain sets.
+
+    The declared list rather than the generated map. Comments are stripped
+    first, because the block carries the shadowing analysis in prose and a route
+    key quoted inside a comment is not a route key.
+    """
+    source = _strip_comments(_terraform_source())
+    block = _block(source, "domain_identity_jwt_route_paths = {")
+
+    paths = {
+        match.group("name"): set(re.findall(r'"([^"]+)"', match.group("body")))
+        for match in DOMAIN_LIST.finditer(block)
+    }
+    assert paths, "local.domain_identity_jwt_route_paths is empty or was renamed"
+    return paths
+
+
+def flagged_domain_route_keys() -> set[str]:
+    """Every `/api/v1` route key the domain map flags, across all domains."""
+    return set().union(*domain_identity_jwt_route_paths().values())
+
+
+def _dependency_names(dependant) -> set[str]:
+    """Every dependency callable's name in this route's tree, however deep.
+
+    `Depends(CurrentUser)` is one level, but `require_admin` depends on
+    `CurrentUser` in turn and a router can carry a dependency for every route
+    under it. Walking the whole tree is what makes the derivation a fact about
+    what the route requires rather than about how it happens to be spelled.
+    """
+    names = set()
+    stack = list(dependant.dependencies)
+    while stack:
+        sub = stack.pop()
+        if sub.call is not None:
+            names.add(getattr(sub.call, "__name__", ""))
+        stack.extend(sub.dependencies)
+    return names
+
+
+def _api_routes(app):
+    """Every route the application serves, flattened, across two FastAPI shapes.
+
+    `include_router` used to copy each route onto `app.routes`, so an `APIRoute`
+    isinstance check found all of them. Newer FastAPI keeps the inclusion lazy
+    instead: `app.routes` holds a `_IncludedRouter` per `include_router` call and
+    the real routes are behind its `effective_route_contexts()`, which yields an
+    `_EffectiveRouteContext` carrying the same `path`, `methods` and `dependant`
+    the route did.
+
+    Both are handled because the pinned version in CI and the resolved version
+    in a local checkout are not the same, and a derivation that silently found
+    no routes would make every exhaustiveness test below pass vacuously. That is
+    the failure mode worth spending a branch on: an empty derived set trivially
+    satisfies "every protected route is flagged".
+    """
+    from fastapi.routing import APIRoute
+
+    flat = [route for route in app.routes if isinstance(route, APIRoute)]
+
+    try:
+        from fastapi.routing import _IncludedRouter
+    except ImportError:
+        return flat
+
+    for route in app.routes:
+        if isinstance(route, _IncludedRouter):
+            flat.extend(route.effective_route_contexts())
+    return flat
+
+
+def routes_requiring_a_caller(domain: str) -> set[str]:
+    """The route keys this domain's application will not serve anonymously.
+
+    Derived from the built application, not from a list here: this is the set
+    `apigateway.tf` has to match, so writing it out by hand would be asserting
+    the copy against itself.
+    """
+    keys = set()
+    for route in _api_routes(build_domain_app(domain)):
+        if route.path in DOCUMENTATION_PATHS or route.path == "/health":
+            continue
+        if not _dependency_names(route.dependant) & CALLER_DEPENDENCIES:
+            continue
+        for method in route.methods or set():
+            if method in ("HEAD", "OPTIONS"):
+                continue
+            # The served collection path carries a trailing slash that a route
+            # key may not; `matches` documents the normalisation this mirrors.
+            path = route.path
+            if len(path) > 1 and path.endswith("/"):
+                path = path[:-1]
+            keys.add(f"{method} {path}")
+    return keys
+
+
+def test_the_route_derivation_finds_routes_at_all():
+    """The guard on the guard.
+
+    Every exhaustiveness test below compares against `routes_requiring_a_caller`,
+    and an empty set would satisfy all of them while proving nothing. FastAPI
+    changed how `include_router` stores routes, so this asserts the walk still
+    finds them rather than trusting that it does.
+    """
+    for domain in PROTECTED_DOMAINS:
+        served = _api_routes(build_domain_app(domain))
+        assert len(served) > 5, f"{domain}: route walk found {len(served)} routes"
+        assert routes_requiring_a_caller(domain), f"{domain}: no protected routes found"
+
+
+def test_the_domain_map_lists_exactly_the_domains_it_should():
+    """Only `content` and `resume` have protected `/api/v1` routes.
+
+    A third domain appearing here would mean either `public` grew an admin route
+    or `identity`'s login stopped being anonymous, and both deserve a failing
+    test rather than a silent flag.
+    """
+    assert set(domain_identity_jwt_route_paths()) == set(PROTECTED_DOMAINS)
+
+
+@pytest.mark.parametrize("domain", PROTECTED_DOMAINS)
+def test_every_route_requiring_a_caller_is_flagged_in_terraform(domain):
+    """Direction one: a protected route with no flag answers 401 in identity mode.
+
+    This is the original bug. Without the flag the gateway puts no claims on the
+    request, `get_current_user` finds neither a legacy token it can verify nor a
+    subject to fall back to, and the admin panel's write fails for a caller who
+    is in fact signed in.
+    """
+    required = routes_requiring_a_caller(domain)
+    flagged = domain_identity_jwt_route_paths()[domain]
+
+    missing = sorted(required - flagged)
+    assert missing == [], (
+        f"{domain} routes requiring CurrentUser but not flagged in "
+        f"apigateway.tf: {missing}"
+    )
+
+
+@pytest.mark.parametrize("domain", PROTECTED_DOMAINS)
+def test_every_flagged_key_is_a_route_that_requires_a_caller(domain):
+    """Direction two: a flag on a public read breaks the anonymous site.
+
+    Once the variable is true the gateway refuses a flagged key without a valid
+    access token, before the application sees it. Flagging a route the
+    application would happily serve to a visitor takes it off the public site,
+    and no application test would notice.
+    """
+    required = routes_requiring_a_caller(domain)
+    flagged = domain_identity_jwt_route_paths()[domain]
+
+    extra = sorted(flagged - required)
+    assert extra == [], (
+        f"{domain} route keys flagged in apigateway.tf that the application "
+        f"serves without requiring a caller: {extra}"
+    )
+
+
+def test_the_two_sets_are_equal_across_every_domain():
+    """The same claim as the two above, stated once as the set equality.
+
+    Kept alongside them rather than instead of them: the parametrized pair name
+    the direction that broke, which is the thing a failure needs to say, and
+    this one is the summary line that the whole surface agrees.
+    """
+    derived = set().union(
+        *(routes_requiring_a_caller(domain) for domain in PROTECTED_DOMAINS)
+    )
+    assert derived == flagged_domain_route_keys()
+
+
+def test_every_flagged_key_is_routed_to_the_domain_that_serves_it():
+    """Each flagged key reaches the same function it would have without the flag.
+
+    The keys are new route keys, not annotations on existing ones. Before this
+    change `PUT /api/v1/site-content` was served through content's greedy
+    `ANY /api/v1/site-content/{proxy+}`-style keys; the explicit key is more
+    specific, so it wins route selection, and if it named the wrong integration
+    the flag would also silently repoint the route at another domain.
+
+    `matches` is the same reader the rest of this file uses for the question
+    "could this key have carried this path", which is what makes "the existing
+    routing agrees" a checkable claim rather than a reading of the diff.
+    """
+    # The per-domain keys are written inside `for` expressions over
+    # local.content_prefixes and local.resume_collections, so the loop variable
+    # has to be expanded before the keys name real paths. `gateway_route_keys`
+    # leaves `${prefix}` in place; `expand_for_expression_keys` is what resolves
+    # it, and the union of the two is every key the module actually receives.
+    declared = {
+        domain: gateway_route_keys().get(domain, set())
+        | expand_for_expression_keys(domain)
+        for domain in ("content", "resume", "identity", "public")
+    }
+
+    for domain, keys in domain_identity_jwt_route_paths().items():
+        for key in sorted(keys):
+            method, path = key.split(" ", 1)
+
+            covering = {
+                other_domain
+                for other_domain, other_keys in declared.items()
+                for other_key in other_keys
+                if "${" not in other_key
+                and matches(other_key, path)
+                and other_key.split(" ", 1)[0] in ("ANY", method)
+            }
+
+            assert covering == {domain}, (
+                f"{key} is flagged on {domain} but the routes map serves that "
+                f"path from {sorted(covering)}"
+            )
+
+
+def test_no_flagged_domain_key_ends_in_a_slash():
+    """The apply-time failure a green plan does not catch.
+
+    API Gateway rejects any route key whose path ends in a slash with
+    "Part of the given route key path is empty". The collection routes these
+    flags cover are served at a trailing slash, so the normalisation in
+    `routes_requiring_a_caller` is the only reason they are spelled bare here.
+    """
+    trailing = sorted(key for key in flagged_domain_route_keys() if key.endswith("/"))
+    assert trailing == []
+
+
+def test_no_flagged_domain_key_uses_a_greedy_segment():
+    """Each flag names one route, not a subtree.
+
+    `ANY /api/v1/posts/{proxy+}` would flag the public post reads along with the
+    admin writes, because a greedy key matches everything under it. The keys are
+    per method and per path for that reason.
+    """
+    greedy = sorted(key for key in flagged_domain_route_keys() if "{proxy+}" in key)
+    assert greedy == []
+
+
+def test_no_flagged_domain_key_uses_any_as_its_method():
+    """`ANY` would flag the GET alongside the write it was meant for.
+
+    The admin collections are the case: `GET /api/v1/posts/admin` is flagged
+    because it lists drafts, but `/api/v1/posts` is a public read one segment
+    away, and a method-less key is how the two get confused.
+    """
+    method_less = sorted(
+        key for key in flagged_domain_route_keys() if key.startswith("ANY ")
+    )
+    assert method_less == []
+
+
+def test_the_domain_flag_is_gated_on_a_variable_rather_than_hardcoded():
+    """The keys exist either way; only enforcement moves.
+
+    This is what makes the cutover two steps instead of one. Applying the keys
+    with the variable false is an adds-only plan that changes no behaviour,
+    which can land while the frontend still sends the legacy session. Flipping
+    the variable afterwards is the change that starts requiring a token, and it
+    is a one line revert if it goes wrong.
+
+    A literal `true` here would collapse the two into a single apply that
+    refuses every admin write the moment it lands, because the frontend has not
+    been redeployed yet.
+    """
+    block = _block(
+        _strip_comments(_terraform_source()), "domain_identity_jwt_route_keys = merge("
+    )
+
+    assert "require_identity_jwt = var.domain_jwt_enforced" in block, (
+        "the generated entries must take the flag from the variable"
+    )
+    assert "require_identity_jwt = true" not in block, (
+        "hardcoding true would enforce on apply, before the frontend is ready"
+    )
+
+
+def test_the_domain_jwt_variable_defaults_to_off():
+    """The default is what an apply with no variable set does.
+
+    Production applies this PR with `domain_jwt_enforced` unset, and that apply
+    has to be adds-only and behaviour-neutral. A default of true would make the
+    first apply the cutover, with the frontend still in bearer mode.
+    """
+    variables = (REPO / "terraform" / "variables.tf").read_text(encoding="utf-8")
+    block = _block(variables, 'variable "domain_jwt_enforced" {')
+
+    assert re.search(r"^\s*type\s*=\s*bool\s*$", block, re.MULTILINE), block
+    assert re.search(r"^\s*default\s*=\s*false\s*$", block, re.MULTILINE), block
+
+
+def test_the_flagged_keys_reach_the_staging_gate():
+    """Gate mode enforces from `module.api.identity_jwt_route_keys`.
+
+    Staging runs `identity_jwt_mode = "gate"`, where every route carries the
+    access gate's own Lambda authorizer, so the gate is told which keys also
+    need a verified identity token. The plumbing predates this change; the point
+    here is that the domain keys join the same list rather than needing their
+    own, so flipping the variable is the single gate-side change.
+    """
+    gate = (REPO / "terraform" / "staging_access_gate.tf").read_text(encoding="utf-8")
+    gate = _strip_comments(gate)
+
+    assert "module.api.identity_jwt_route_keys" in gate
+    assert re.search(r"identity_jwt_route_keys\s*=", gate)
+
+
+def test_the_flagged_keys_are_the_admin_surface_and_not_the_public_reads():
+    """A spot check in plain terms, against the site's own anonymous pages.
+
+    The derivation above is exhaustive but abstract. These five are the reads
+    the blog and portfolio pages make for a signed out visitor, and flagging any
+    of them takes the public site down. Naming them is cheaper than reasoning
+    about the dependency tree when this fails.
+    """
+    flagged = flagged_domain_route_keys()
+
+    must_stay_open = {
+        "GET /api/v1/posts",
+        "GET /api/v1/posts/{slug}",
+        "GET /api/v1/posts/categories",
+        "GET /api/v1/projects",
+        "GET /api/v1/site-content",
+    }
+
+    assert must_stay_open & flagged == set(), sorted(must_stay_open & flagged)

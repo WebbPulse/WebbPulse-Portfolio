@@ -61,6 +61,12 @@ the gateway. Production is `off` until the identity stack is promoted there,
 because `CreateAuthorizer` fetches the discovery document synchronously and
 would fail the apply against an issuer that does not answer yet.
 
+**The `/api/v1` admin routes accept the identity token too**, as of the change in
+"Admin routes in identity mode" below. Until then those routes verified only the
+legacy HS256 token, so an admin signed in through the identity path had a
+credential they could not read and every admin write answered 401. That was the
+last thing standing between a flipped frontend and a working admin panel.
+
 **Production is untouched.** It still runs on `bearer` and repeats the whole
 sequence from step 1.
 
@@ -154,6 +160,29 @@ longer authenticate anybody, so rolling back to `bearer` means first
 re-migrating from the identity store back into the `users` table. See "Rolling
 back" below.
 
+### 3a. Apply the admin route keys, then enforce them
+
+The step this document used to be missing, and the one that makes step 4 work at
+all. See "Admin routes in identity mode" below for what the change is and why it
+is split in two.
+
+It is two applies, and the order matters:
+
+1. **Apply with `domain_jwt_enforced` absent.** This adds 24 explicit route keys
+   for the `/api/v1` routes that require an administrator. Adds only, and no
+   behaviour changes: the keys route exactly where the greedy keys already
+   routed, and without the flag the gateway asks for nothing it did not ask for
+   before. Safe to land while the frontend is still in bearer mode.
+2. **Set `domain_jwt_enforced = true` and apply again.** Now the gateway
+   enforces. In `gate` mode this is the staging access gate's Lambda environment
+   only, `0 add 1 change 0 destroy`; in `native` mode the 24 keys move onto the
+   JWT authorizer.
+
+**Do this before step 4, not after.** The backend accepts both credentials from
+the moment step 1 lands, so an admin in bearer mode is unaffected by either
+apply. Flipping the frontend first would leave a window where the identity token
+is the only credential the browser has and no claims reach the application.
+
 ### 4. Flip `VITE_AUTH_MODE` to `identity`
 
 Done in staging on 2026-09-11 at 02:25Z; production still has this ahead of it.
@@ -209,6 +238,91 @@ build time and the currently deployed bundle already has the old value baked in.
 
 There is no `.env` file in `frontend/` and no Terraform input for this: the
 bundle's configuration comes from the workflow's build step only.
+
+## Admin routes in identity mode
+
+The `/api/auth` routes were built against the identity stack, so they read a
+verified subject from the start. The `/api/v1` admin routes predate it: they
+called `get_current_user`, which verified the legacy HS256 token and nothing
+else. An identity access token is RS256, signed by KMS, and carries the user id
+as a numeric `sub`, so those routes could not read it. In identity mode the
+admin panel signed in successfully and then got 401 on every write.
+
+### What changed
+
+**The backend accepts either credential.** `get_current_user` tries the legacy
+HS256 token first, exactly as before, and falls back to the claims an authorizer
+put on the request. Nothing about the legacy path moved: same token, same
+lookup, same 401 for a bad one. The fallback resolves the numeric `sub` to a
+user row and applies the same `is_admin` and `is_active` checks, so a disabled
+account is refused whatever it presents.
+
+**The application does not verify the signature, and has no KMS access.** The
+gateway is the verifier: API Gateway's own JWT authorizer in `native` mode, the
+staging access gate's Lambda in `gate` mode. The claims are trusted because of
+where they arrive, not because this process checked them. They reach the process
+in the `x-amzn-request-context` header, which the Lambda Web Adapter writes from
+the invoke event; API Gateway does not forward an inbound header of that name
+and the adapter overwrites it regardless, so a caller cannot fabricate one.
+
+**This means a route only gets claims if its route key is flagged.** That is why
+the Terraform half is not optional: an unflagged route carries no claims, the
+fallback finds nothing, and the 401 comes back. `backend/tests/entrypoints/
+test_gateway_routes.py` derives the set of routes requiring an administrator from
+the FastAPI app and asserts it equals the flagged keys in `apigateway.tf`, in
+both directions, so neither half can drift from the other.
+
+### The two claim shapes
+
+Same token, two envelopes, and which one applies is a deployment fact:
+
+| Mode | Where the claims land | Shape |
+|---|---|---|
+| `native` | `requestContext.authorizer.jwt.claims` | flat string map, `exp` included |
+| `gate` | `requestContext.authorizer.lambda["jwt.claims"]` | one JSON string, values stringified |
+
+The gate uses a single string key because a Lambda authorizer's context always
+lands under `lambda` and API Gateway refuses a nested object there. It
+stringifies the values deliberately so `exp` reads the same way in both
+environments. `app/core/identity_claims.py` reads both and returns identical
+Python values either way.
+
+### The 24 flagged routes
+
+Derived from the application rather than listed by hand, and split by the domain
+that serves them:
+
+| Domain | Count | Routes |
+|---|---|---|
+| `content` | 9 | the `/api/v1/posts/admin` collection and item routes, `POST /api/v1/posts/admin/{post_id}/publish`, the three `/api/v1/posts/categories` writes, and `PUT /api/v1/site-content` |
+| `resume` | 15 | `POST`, `PUT /{item_id}` and `DELETE /{item_id}` across `certifications`, `education`, `experience`, `projects` and `skills` |
+
+The other 16 `/api/v1` routes stay anonymous: 15 public reads the site itself
+makes, plus `POST /api/v1/admin/login`, which is how a caller gets a token and
+must stay reachable without one.
+
+**No anonymous guard keys were needed**, which is worth stating because adding a
+specific key can shadow a public route. API Gateway prefers a static segment
+over a variable at the same depth and a concrete method over `ANY`, so a new key
+can capture traffic a broader key was serving. Here it cannot: every flagged
+`{param}` key is a `PUT`, `POST` or `DELETE`, every public route at the same
+depth is a `GET`, and a route key matches only its own method. The single
+same-depth pair, `GET /api/v1/posts/categories` against
+`GET /api/v1/posts/{slug}`, has both sides anonymous, so the specificity rule
+resolves it the same way FastAPI's own ordering does.
+
+### Why the flag is a variable
+
+`var.domain_jwt_enforced` is a bool defaulting to false. The route keys exist
+either way; only enforcement moves. That makes the change two applies instead of
+one: the keys land with no behaviour change while the frontend is still in
+bearer mode, and enforcement is flipped separately once the frontend is ready.
+Rollback is setting it back to false, which is a one line revert and a plan of
+the same shape in reverse.
+
+Hardcoding `true` would collapse the two into a single apply that starts
+refusing admin writes the moment it lands, before the frontend has been
+redeployed.
 
 ## Two factor authentication, once M4 is applied
 

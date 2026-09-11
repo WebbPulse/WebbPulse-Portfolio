@@ -135,3 +135,41 @@ variable "identity_jwt_mode" {
     error_message = "identity_jwt_mode must not be native in staging. Every route there carries the staging access gate's REQUEST authorizer and a route takes exactly one authorizer, so a native JWT authorizer has no slot to occupy. Use gate, which moves the same check into the gate's own Lambda."
   }
 }
+
+variable "domain_jwt_enforced" {
+  description = <<-EOT
+    Whether the 24 `/api/v1` admin route keys that need an authenticated caller actually require an
+    identity access token at the gateway.
+
+    THE KEYS EXIST EITHER WAY. local.domain_identity_jwt_route_keys in terraform/apigateway.tf
+    writes all 24 route keys into the API in both settings, pointing at the same integration the
+    generated `ANY` prefix pair already points at, so a request reaches the same function by the
+    same route regardless. This variable only decides whether each of those keys additionally
+    carries require_identity_jwt, which is what puts it in module.api.identity_jwt_route_keys and
+    so into the staging gate Lambda's list, or onto the native JWT authorizer in production.
+
+    THE DEFAULT IS false AND IT HAS TO BE, because of the ordering the cutover sits in. With
+    identity_jwt_mode = "gate", the moment a key is marked the gate demands a valid RS256 identity
+    access token on it, and the frontend still sends the legacy HS256 session token in bearer mode,
+    which the gate rejects. Marking the keys before the frontend cutover breaks every admin write.
+    So the keys land first, unmarked and inert, and enforcement is a later one line flip on the
+    workspace variable once the frontend sends identity tokens.
+
+    WHAT THE FLIP COSTS IN A PLAN. In staging, where identity_jwt_mode is "gate", the platform
+    module keeps a marked route in the same resource at the same address as an unmarked one, with
+    the same authorization_type CUSTOM and the same gate authorizer, because it only moves routes
+    into its own JWT resource when a native authorizer exists. So no route resource changes at all:
+    the only change is the gate authorizer Lambda's environment, which is where the route key list
+    is published. That is 0 add, 1 change, 0 destroy.
+
+    In production, where identity_jwt_mode is "native", a marked route moves onto the module's JWT
+    authorizer resource, so the 24 keys are replaced rather than updated in place.
+
+    ROLLING BACK IS SETTING IT FALSE AGAIN. Nothing is destroyed by the flip in gate mode and the
+    keys stay where they are, so unsetting the variable puts the gate's list back to the identity
+    routes alone on the next apply.
+  EOT
+
+  type    = bool
+  default = false
+}
