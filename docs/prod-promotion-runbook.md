@@ -771,3 +771,172 @@ git revert --no-commit <promotion-merge-sha>
 5. Verify sign-in, set `AUTH_MODE=identity` on the production environment,
    redeploy the frontend, confirm a browser sign-in, and only then run
    `clear_legacy_credentials.py --apply`.
+
+## Executed 2026-09-11
+
+The promotion ran on 2026-09-11 against production, 036807648992. It is
+**paused at step 7**, not finished. The identity stack is live in production and
+the public site is unaffected, but the credential migration refused and the
+legacy column is untouched, which is the safe state.
+
+### Outcome by step
+
+| Step | Result |
+| --- | --- |
+| 0, gates | Pass, with one carry-over. DMARC fix confirmed merged (PR 184, plus PR 186 adding `rua` to the staging record only). Staging confirmed cleared. SES sandbox accepted knowingly, no support case opened. |
+| 1, restore point | `065e626b78e58f7f664129762fa9598e3708cd18`. Users table snapshotted to `~/prod-users-preflight.json`, one item, mode 600. |
+| 2, merge | PR 187, merge commit `6e53cc0`. Needed unplanned work first, see below. |
+| 3, first plan and apply | Plan verified and applied. **Apply errored after 58 of 61 resources**, see below. |
+| 4, verify | Pass on everything that applied. DMARC unchanged. |
+| 5, deploy backend | Pass, run `34566117153`, all nine jobs green. |
+| 6, discovery and JWKS gate | **Pass.** Both 200, issuer carries its path, one RS256 key. |
+| 7, credential migration | **Stopped. The dry run reports one conflict.** Nothing written. |
+| 8 to 12 | Not started. `identity_jwt_mode` was never created, so production is still mode `off` and no authorizer exists. |
+
+### Unplanned work: the promotion pull request opened conflicting
+
+The runbook assumed `staging` was strictly ahead of `main`. It was not. PR 178
+had added the public privacy policy page directly on `main`, and the same page
+was applied separately to `staging`, so the two branches carried the identical
+change as different commits. PR 187 opened `CONFLICTING` in three frontend
+files.
+
+Resolved in PR 188 by merging `main` into `staging` and taking `staging` in all
+three files. The merged tree was byte identical to `origin/staging`, so `main`
+contributed no content, and no Terraform file was involved. `App.tsx` and
+`pages/index.ts` were straightforward supersets; `Privacy.test.tsx` differed
+only in assertion style, and staging's jest-dom matchers are the house
+convention. The Privacy suite passes on the resolved tree.
+
+**Runbook change worth making:** step 1 should check
+`git merge-base --is-ancestor origin/main origin/staging` and reconcile first if
+it fails, rather than discovering the conflict at the pull request.
+
+### The first apply: plan good, apply partially failed
+
+The plan matched the runbook and cleared all three hard stops.
+
+| Group | Expected | Observed |
+| --- | --- | --- |
+| Counts | n/a | 59 add, 1 change, 1 destroy |
+| KMS | 3 create | 4 create: signing **and MFA** key plus both aliases |
+| Identity tables | 10 create | 10 create |
+| IAM role policies | 2 to 3 create | 4 create: signing, tables, SES, **and MFA** |
+| SES | 2 plus 3 DKIM | 2 created, **3 DKIM CNAMEs failed** |
+| `ses_dmarc` | 0 changes | **0. Gate pass.** |
+| Gateway routes | many create | 33 create, including `GET /api/auth/passkeys/availability` from PR 185 |
+| Authorizer | 0 | **0. Gate pass.** |
+| Identity Lambda env | 1 update | 1 update |
+| App secret version | 1 update | 1 replace, the run's only destroy, normal rotation |
+| Destroys | none unexplained | **none. Gate pass.** |
+
+The runbook's table under-counted KMS and IAM by one each: it does not mention
+the `identity_mfa` key, alias and role policy. Both extra resources are plain
+creates. Worth correcting in the table.
+
+Run `run-uLQv9hvafL7qubwm` applied 58 of 61 resources and then **errored on the
+three SES DKIM CNAMEs**:
+
+```
+creating Route53 Record: AccessDenied: User:
+arn:aws:sts::488386929690:assumed-role/WebbPulse-Portfolio-Route53/...
+is not authorized to perform: route53:ChangeResourceRecordSets
+on resource: arn:aws:route53:::hostedzone/Z01273391K7FAD6GLXNTW
+```
+
+The cross-account Route 53 role in the management account, 488386929690, can
+assume into the production zone but carries no
+`route53:ChangeResourceRecordSets` permission for it. This is a pre-existing
+permissions gap the runbook did not anticipate, and it is unrelated to the
+identity work. Consequence: SES DKIM for `webbpulse.com` is `PENDING` and the
+domain is not verified for sending. Nothing in the promotion sends mail, and
+SES is sandboxed anyway, so this did not block step 6. **It does need fixing
+before identity email is usable.**
+
+Everything else landed: ten tables, both KMS keys and aliases, four IAM
+policies, 33 routes, the SES identity and configuration set, the secret version
+and the identity function's environment.
+
+### Step 7: why it stopped
+
+```
+error: 1 user(s) already hold a different credential (1);
+rerun with --replace to overwrite from the users table
+```
+
+The cause is **the identity-aware admin seeder, not a data problem**. The
+production `credentials` table was created empty by the apply, and 48 seconds
+after the identity function's environment landed the seeder ran on its first
+cold start:
+
+```
+2026-09-11T05:34:46.580Z INFO "Seeded admin identity credential" username=Tylert2610
+```
+
+The credential row's `created_at` is the same `05:34:46Z`. So by the time the
+migration ran, a credential already existed, written by
+`_ensure_credential` in `app/domains/identity/service.py` as
+`get_password_hash(settings.ADMIN_PASSWORD)`.
+
+**The conflict is benign.** Both hashes are bcrypt cost 12, and both were
+confirmed to verify the same `ADMIN_PASSWORD`. They differ only because bcrypt
+salts each hash, and both scripts compare hash strings for equality. So the
+administrator can already sign in through the identity path with their existing
+password, and the migration has nothing to copy that is not effectively already
+there.
+
+`clear_legacy_credentials.py --prefix webbpulse-production` was dry run and
+classifies the same row as `mismatch`, refusing and writing nothing:
+
+```
+totals: cleared=0, already_clear=0, mismatch=1, missing_credential=0, errors=0
+```
+
+Both refusals are the scripts working as designed. Neither was overridden:
+`--replace` was not passed, and the legacy column is intact.
+
+**This is an ordering gap in the runbook.** Step 5 deploys the backend, which
+starts the seeder, and step 7 then expects an empty `credentials` table. For any
+environment whose admin row is seeded from `ADMIN_PASSWORD`, the seeder always
+wins that race. The runbook should either run the migration before the backend
+deploy, or state that a single seeded conflict is the expected outcome and say
+which override is correct.
+
+### Verification performed
+
+All non-credential checks from step 9 pass:
+
+- Discovery `200`, issuer `https://api.webbpulse.com/api/auth`, `jwks_uri` exact, one RS256 key.
+- `/health`, `/api/v1/projects`, `/api/v1/site-content` all `200`, unchanged.
+- `/api/auth/oauth/providers` advertises both `google` and `github`, which is the
+  behavioural confirmation that both `OAUTH_*_CLIENT_SECRET` keys reached the
+  `app` secret.
+- Identity login rejects a wrong password with `401`.
+- Identity Lambda logs carry no errors.
+- All CloudWatch alarms quiet.
+- `dig +short TXT _dmarc.webbpulse.com` still `"v=DMARC1; p=none; rua=mailto:tyler@webbpulse.com"`.
+
+Not performed: the credentialed sign-in and the browser sign-in. Both need the
+administrator's password typed by a person, so steps 9's sign-in, 10 and 11 were
+not attempted.
+
+### State left behind
+
+- Production runs the promoted code, mode `off`, no gateway authorizer.
+- `identity_jwt_mode` was **never created** on `ws-JpNLUhFzVCzMDgAN`.
+- Frontend `AUTH_MODE` is **unset**, so production is still `bearer`.
+- The legacy `hashed_password` column is **intact**. Nothing one-way happened.
+- `~/prod-users-preflight.json` still exists and should be deleted once the
+  promotion holds.
+
+### To resume
+
+1. Decide the step 7 question: the seeded credential already verifies the
+   correct password, so either accept it and skip the migration, or run with
+   `--replace` to make the two hashes byte identical, which is what unblocks
+   `clear_legacy_credentials.py` later.
+2. Grant `route53:ChangeResourceRecordSets` on `Z01273391K7FAD6GLXNTW` to
+   `WebbPulse-Portfolio-Route53` in 488386929690, then re-apply to create the
+   three DKIM records.
+3. Confirm one real sign-in at `https://www.webbpulse.com`, then continue from
+   step 8.
