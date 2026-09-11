@@ -6,6 +6,11 @@ webbpulse[testing]==0.17.0
 moto[dynamodb]==5.1.6
 pytest==8.4.1
 pytest-cov==6.2.1
+# Parallel test execution. The reusable workflow runs each per-domain job with
+# `-n auto`, so the runner's cores are used within a domain as well as across
+# domains. Without this the -n flag is an unrecognised argument and pytest exits
+# before collecting anything.
+pytest-xdist==3.8.0
 httpx==0.28.1
 psycopg2-binary==2.9.10
 # Lint and format. Replaced flake8, black and isort in PR 4, because the org
