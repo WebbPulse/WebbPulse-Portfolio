@@ -224,37 +224,9 @@ module "lambda_domain" {
     },
     each.value.secrets ? { APP_SECRETS_ARN = module.app_secrets.arns["app"] } : {},
 
-    # The identity standard's M0 spike, on the identity function only and only
-    # when var.identity_spike_enabled is set. With the spike off this merge
-    # contributes an empty map, so no other domain and no production plan sees
-    # any of it. identity_spike.tf has the whole rationale.
-    #
-    # IDENTITY_SIGNING_KEY_ID is the alias, `alias/webbpulse-<env>-identity-signing`,
-    # not the key id or the key ARN, and that avoids a dependency cycle rather
-    # than merely being tidier. The key policy in identity_spike.tf names
-    # module.lambda_domain["identity"].role_arn as a principal, so the key
-    # depends on this module; naming aws_kms_key.identity_signing[0].key_id here
-    # would make this module depend on the key, and Terraform would refuse the
-    # graph. The alias name is a pure function of local.prefix, so it closes the
-    # loop with a string. KMS accepts an alias anywhere it accepts a key id for
-    # Sign and GetPublicKey, and the alias is created from the same local, so
-    # the two cannot drift.
-    #
-    # The issuer and audience are passed rather than derived in the application
-    # for the reason identity_spike.tf gives at length: the authorizer and the
-    # signer have to agree on both strings byte for byte, and the only way to
-    # guarantee that is for both to read the same Terraform local.
-    each.key == "identity" && local.identity_spike_enabled ? {
-      IDENTITY_SPIKE_ENABLED  = "true"
-      IDENTITY_SIGNING_KEY_ID = "alias/${local.prefix}-identity-signing"
-      IDENTITY_TOKEN_ISSUER   = local.identity_spike_issuer
-      IDENTITY_TOKEN_AUDIENCE = local.identity_spike_audience
-    } : {},
-
     # The identity standard's M1, on the identity function only and in every
-    # environment. Unlike the spike block above there is no flag: from M1 the
-    # discovery document and the JWKS are what this product publishes about
-    # itself rather than an experiment's exhaust, so they are unconditional.
+    # environment. There is no flag: the discovery document and the JWKS are
+    # what this product publishes about itself, so they are unconditional.
     # identity.tf has the full rationale.
     #
     # Every name here is a field of `webbpulse.identity.IdentitySettings`, whose
@@ -270,25 +242,21 @@ module "lambda_domain" {
     # map. They are the five that follow from the module's own resources, so
     # the function and the resources cannot disagree about any of them.
     #
-    # IDENTITY_SIGNING_KEY_ARNS stays a JSON array of real ARNs rather than the
-    # alias the spike passes or a bare comma separated string, and the module
-    # renders it that way for the same three reasons this file used to give: it
+    # IDENTITY_SIGNING_KEY_ARNS is a JSON array of real ARNs rather than an
+    # alias or a bare comma separated string, and the module renders it that way
+    # for the same three reasons this file used to give: it
     # is a list because section 3.5's rotation is an edit to the list at every
     # step, it is JSON because IdentitySettings refuses bare CSV for list
     # fields, and it is the ARN rather than the alias because two aliases would
     # have to be created and swapped in lockstep to express a two key overlap.
     #
-    # Naming the key ARNs here does not close a dependency cycle, and the point
-    # is worth keeping because this block and the spike's above look
-    # contradictory. The cycle would exist if the key were built from something
+    # Naming the key ARNs here does not close a dependency cycle. The cycle
+    # would exist if the key were built from something
     # this Lambda module produces and this module were built from the key. The
     # key policy does take module.lambda_domain["identity"].role_arn, so the key
     # depends on the role; but environment variables are an attribute of the
     # function rather than of the role, and Terraform's graph is per resource
     # rather than per module, so the order is role, then key, then function.
-    # The alias indirection is what the spike needed because it wrote the
-    # variable at a point where it would have referenced the key resource from
-    # the same module call the key's policy references back.
     #
     # IDENTITY_ISSUER and IDENTITY_AUDIENCE are passed rather than derived in
     # the application, for the reason identity.tf gives at length: the gateway

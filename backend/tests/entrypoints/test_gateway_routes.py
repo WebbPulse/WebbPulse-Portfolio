@@ -45,12 +45,7 @@ Terraform is parsed rather than planned. A plan needs credentials and a
 workspace; the route keys are static text in the module call, and a regex over
 them is enough to compare two sets of strings.
 
-Almost all of them are in `terraform/apigateway.tf`. The identity standard's M0
-spike puts one route, `whoami`, in `terraform/identity_spike.tf` instead, as its
-own `aws_apigatewayv2_route` rather than a routes-map entry, because it has to
-be created after the JWT authorizer while the rest of the route set has to be
-created before it. `standalone_route_keys` reads that file, and the tests around
-it pin the split so it cannot be tidied away.
+Every one of them is in `terraform/apigateway.tf`.
 """
 
 import re
@@ -544,62 +539,16 @@ def test_no_content_route_key_points_at_a_path_the_app_does_not_serve():
         assert any(matches(key, path) for path in paths), key
 
 
-#: Route keys served by the `identity` integration that belong to the identity
-#: standard's M0 spike rather than to cut 4. Every one of them is gated behind
-#: `local.identity_spike_enabled`, which is false by default, so they exist in
-#: no plan unless the spike has been switched on.
-#:
-#: The two `.well-known` keys and the mint route are entries in
-#: `apigateway.tf`'s routes map. `whoami` is not, and that split is the spike's
-#: whole ordering fix rather than a filing preference: `whoami` is the one route
-#: that names the JWT authorizer, API Gateway validates the issuer by fetching
-#: the discovery document when the authorizer is created, and a routes-map entry
-#: naming the authorizer would make every route on the API wait on an authorizer
-#: that needs two of those routes to already answer. So `whoami` is a standalone
-#: `aws_apigatewayv2_route` in `identity_spike.tf`. `spike_route_keys()` below
-#: reads both files, and `test_the_spike_keys_are_the_two_expected_ones` pins
-#: which file each key has to come from.
-#:
-#: The mint route is in the map rather than beside `whoami` because it names no
-#: authorizer at all: it sets no `authorization_type`, so it takes the module's
-#: CUSTOM default and sits behind the staging access gate, which is the only
-#: thing standing in front of a route that signs a token for an arbitrary
-#: subject. It was missing from the map entirely when the spike first went live,
-#: which made `POST /api/identity/spike/token` a gateway 404 with a handler
-#: behind it that nothing could reach.
-#:
-#: They are excluded from `identity_route_keys()` rather than folded into it
-#: because every assertion that helper feeds is about cut 4's permanent shape:
-#: two keys, both `ANY`, both under `/api/v1/admin`. The spike is deliberately
-#: none of those things, and widening those assertions to accommodate it would
-#: retire exactly the invariants they exist to hold. `test_the_spike_keys_are_
-#: the_two_expected_ones` below pins the spike's own shape instead, so the
-#: exclusion cannot quietly grow.
-#:
-#: This set goes when the spike does.
-IDENTITY_SPIKE_ROUTE_KEYS = {
-    "POST /api/identity/spike/token",
-    "GET /api/identity/spike/whoami",
-}
-
-#: The spike's routes-map keys: just the mint route now. The rest of
-#: `IDENTITY_SPIKE_ROUTE_KEYS` is the standalone `whoami`.
-IDENTITY_SPIKE_ROUTES_MAP_KEYS = {
-    "POST /api/identity/spike/token",
-}
-
 #: M1's permanent identity keys, which are excluded from `identity_route_keys()`
-#: for the same reason the spike's are: every assertion that helper feeds is
-#: about cut 4's shape, which is two `ANY` keys under `/api/v1/admin`, and M1 is
-#: deliberately none of those things.
+#: because every assertion that helper feeds is about cut 4's shape, which is
+#: two `ANY` keys under `/api/v1/admin`, and M1 is deliberately none of those
+#: things.
 #:
-#: Unlike the spike's, these are unconditional. They are created whether or not
-#: `identity_spike_enabled` is set, because M2 creates a JWT authorizer whose
-#: CreateAuthorizer call fetches the discovery document before the authorizer
-#: exists, so the two documents have to already be live on their own apply. The
-#: spike used to own the `.well-known` pair and gated it behind its own flag,
-#: which would have made M2's first apply depend on a spike nobody wants to keep
-#: switched on. `terraform/identity.tf` and `build_identity_router` own them now.
+#: These are unconditional. They are created in every environment, because M2
+#: creates a JWT authorizer whose CreateAuthorizer call fetches the discovery
+#: document before the authorizer exists, so the two documents have to already
+#: be live on their own apply. `terraform/identity.tf` and
+#: `build_identity_router` own them.
 #:
 #: All three sit under `/api/auth`, which is the issuer's path. API Gateway
 #: appends the discovery path to the issuer with its path included, and follows
@@ -697,42 +646,6 @@ IDENTITY_M4_ROUTE_KEYS = {
     "POST /api/auth/step-up",
 }
 
-IDENTITY_SPIKE_TF = REPO / "terraform" / "identity_spike.tf"
-
-# `route_key = "<METHOD> <path>"` on a standalone aws_apigatewayv2_route. The
-# routes-map form is a map key rather than an argument, so `ROUTE_ENTRY` does
-# not match this and this does not match those.
-STANDALONE_ROUTE_KEY = re.compile(
-    r'^\s*route_key\s*=\s*"'
-    r'(?P<key>(?:ANY|GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) /[^"]*)"',
-    re.MULTILINE,
-)
-
-
-def standalone_route_keys() -> set[str]:
-    """Route keys declared as their own resource rather than in the routes map.
-
-    Today this is the spike's `whoami` and nothing else. Standalone routes are
-    the exception in this repository, for the reason `apigateway.tf` gives at
-    length: a route in the map is addressed by its key and its authorization is
-    resolved by the module, and both of those are worth keeping. `whoami` is out
-    of the map only because it has to be created after an authorizer that has to
-    be created after the map's own routes.
-    """
-    return {
-        match.group("key")
-        for match in STANDALONE_ROUTE_KEY.finditer(
-            IDENTITY_SPIKE_TF.read_text(encoding="utf-8")
-        )
-    }
-
-
-def spike_route_keys() -> set[str]:
-    """Every M0 spike route key Terraform will create, from both files."""
-    return (
-        gateway_route_keys()["identity"] & IDENTITY_SPIKE_ROUTE_KEYS
-    ) | standalone_route_keys()
-
 
 def identity_route_keys() -> set[str]:
     """Cut 4's keys, which are literal rather than generated.
@@ -741,15 +654,13 @@ def identity_route_keys() -> set[str]:
     `expand_for_expression_keys`. Cut 4 covers one prefix and writes both keys
     out, so `gateway_route_keys` reads them straight from the file.
 
-    The M0 spike's keys, M1's permanent identity keys, M2's six flow keys,
-    M3's four email keys and M4's six MFA keys are all subtracted. See
-    `IDENTITY_SPIKE_ROUTE_KEYS`, `IDENTITY_M1_ROUTE_KEYS`,
+    M1's permanent identity keys, M2's six flow keys, M3's four email keys and
+    M4's six MFA keys are all subtracted. See `IDENTITY_M1_ROUTE_KEYS`,
     `IDENTITY_M2_ROUTE_KEYS`, `IDENTITY_M3_ROUTE_KEYS` and
     `IDENTITY_M4_ROUTE_KEYS`.
     """
     keys = (
         gateway_route_keys()["identity"]
-        - IDENTITY_SPIKE_ROUTE_KEYS
         - IDENTITY_M1_ROUTE_KEYS
         - IDENTITY_M2_ROUTE_KEYS
         - IDENTITY_M3_ROUTE_KEYS
@@ -759,45 +670,13 @@ def identity_route_keys() -> set[str]:
     return keys
 
 
-def test_the_spike_keys_are_the_two_expected_ones():
-    """The M0 spike's route keys, pinned so the exclusion above cannot grow.
-
-    Either both are present, because the spike is switched on in the
-    configuration, or neither is, because it has been removed with the rest of
-    the spike. A partial set means somebody edited one and not the other, which
-    is exactly what happened when the spike first went live: `spike.py` declared
-    the mint handler and no route key was ever created for it, so the endpoint
-    was a gateway 404 and no token could be obtained to exercise `whoami`.
-
-    This was four keys through M0. The two `.well-known` documents moved to
-    `IDENTITY_M1_ROUTE_KEYS` when M1 made them permanent, so what is left here
-    is the spike's own two application routes.
-
-    The shape of each one matters, and it is the reason these are pinned rather
-    than merely excluded:
-
-    - Both are literal, with no `{proxy+}`. A greedy key under
-      `/api/identity/spike/` would claim `whoami`, whose authorization is
-      supposed to come from the JWT authorizer rather than from the gate.
-    - The methods are the served methods rather than `ANY`, because the spike's
-      two routes split their authorization across two different authorizers and
-      neither one owns the prefix.
-    - Both spike paths are outside `/api/v1` so a throwaway experiment stays out
-      of the published contract in `tests/fixtures/route_contract.json`.
-    """
-    present = spike_route_keys()
-    assert present in (set(), IDENTITY_SPIKE_ROUTE_KEYS), sorted(present)
-
-
 def test_the_m1_keys_are_present_unconditionally():
-    """M1's three keys exist whether or not the spike does.
+    """M1's three keys exist in every environment.
 
-    This is the load-bearing difference between M1 and the M0 spike it grew out
-    of, and it is what `IDENTITY_M1_ROUTE_KEYS` exists to hold. The spike gated
-    the `.well-known` pair behind `identity_spike_enabled`; M1 does not gate it
-    behind anything, because M2's `CreateAuthorizer` fetches the discovery
-    document during the apply that creates the authorizer, and a document that
-    only exists when a throwaway flag is on is a document M2 cannot rely on.
+    This is what `IDENTITY_M1_ROUTE_KEYS` exists to hold. M1 does not gate the
+    `.well-known` pair behind anything, because M2's `CreateAuthorizer` fetches
+    the discovery document during the apply that creates the authorizer, and a
+    document that only exists when a flag is on is one M2 cannot rely on.
     """
     assert IDENTITY_M1_ROUTE_KEYS <= gateway_route_keys()["identity"]
 
@@ -821,7 +700,7 @@ def test_the_m1_keys_are_literal_and_do_not_end_in_a_slash():
 
 
 def test_the_m2_flow_keys_are_present_unconditionally():
-    """M2's six flow routes exist, whether or not the spike does.
+    """M2's six flow routes exist in every environment.
 
     Unconditional for the same reason M1's three are, and for one more: the
     identity function serves them from the moment `composition/identity.py`
@@ -1109,26 +988,6 @@ def test_the_well_known_pair_is_anonymous_and_the_health_route_is_gated():
     assert "GET /api/auth/health" not in anonymous
 
 
-def test_the_mint_route_is_behind_the_gate():
-    """The spike's entire safety story, in one assertion.
-
-    `POST /api/identity/spike/token` signs a token for whatever subject the
-    caller names and authenticates nobody. `spike.py` says in as many words that
-    a route like that is acceptable here only because the staging access gate
-    stands in front of it, so the gate is not a detail of this route, it is the
-    reason the route is allowed to exist. It is gated by setting no
-    `authorization_type` at all and taking the module's CUSTOM default, so the
-    way this can regress is by somebody adding `authorization_type = "NONE"` to
-    it the way M1's two `.well-known` entries have, which would leave an
-    unauthenticated token mint open to the internet.
-    """
-    if not spike_route_keys():
-        pytest.skip("the M0 spike has been removed")
-
-    anonymous = set(ANONYMOUS_ROUTE_ENTRY.findall(_terraform_source()))
-    assert "POST /api/identity/spike/token" not in anonymous
-
-
 def test_the_anonymous_surface_is_exactly_the_two_discovery_documents():
     """The whole gate hole, across every file, in one place.
 
@@ -1139,62 +998,6 @@ def test_the_anonymous_surface_is_exactly_the_two_discovery_documents():
     """
     anonymous = set(ANONYMOUS_ROUTE_ENTRY.findall(_terraform_source()))
     assert anonymous == IDENTITY_M1_ANONYMOUS_KEYS, sorted(anonymous)
-
-
-def test_the_spike_splits_its_keys_across_the_two_files_for_ordering():
-    """Which file each spike key lives in, which is the ordering fix itself.
-
-    API Gateway validates a JWT authorizer's issuer at CreateAuthorizer time by
-    fetching `<issuer>/.well-known/openid-configuration`, and refuses the call
-    with a BadRequestException when that is not a discovery document. The first
-    apply of the spike proved it. So the two `.well-known` routes have to exist
-    before the authorizer, and `whoami`, which names the authorizer, after it.
-
-    A single routes map cannot express that. Every route in it is one
-    `for_each`, so a `whoami` entry referencing the authorizer's id makes the
-    whole set wait on the authorizer, and the authorizer waits on a document
-    only that set can serve. Moving `whoami` out is what breaks the knot, and
-    this test is what keeps somebody from tidying it back in.
-
-    The mint route stays in the map, and this test pins that too. It names no
-    authorizer, so it imposes no ordering, and moving it out beside `whoami`
-    would mean writing its gate authorization out by hand instead of letting the
-    module resolve it, which is how a route ends up unintentionally public.
-    """
-    if not spike_route_keys():
-        pytest.skip("the M0 spike has been removed")
-
-    assert gateway_route_keys()["identity"] & IDENTITY_SPIKE_ROUTE_KEYS == (
-        IDENTITY_SPIKE_ROUTES_MAP_KEYS
-    )
-    assert standalone_route_keys() == {"GET /api/identity/spike/whoami"}
-
-
-def test_the_spike_authorizer_waits_for_the_routes_and_the_function():
-    """The `depends_on` that orders the authorizer after what it fetches.
-
-    Nothing the authorizer resource references implies either dependency:
-    `module.api.api_id` is the API, created long before any route on it, and the
-    authorizer reads nothing at all from `module.lambda_domain`. Without the
-    explicit list Terraform is free to create the authorizer first, which is
-    exactly what the first apply did.
-
-    The wait resource is the third entry because `depends_on` orders API calls
-    and not their effects; see its comment in `identity_spike.tf`.
-    """
-    source = IDENTITY_SPIKE_TF.read_text(encoding="utf-8")
-    if not spike_route_keys():
-        pytest.skip("the M0 spike has been removed")
-
-    authorizer = source.split('resource "aws_apigatewayv2_authorizer"', 1)[1]
-    depends = authorizer.split("depends_on", 1)[1].split("]", 1)[0]
-
-    for required in (
-        "module.api",
-        "module.lambda_domain",
-        "terraform_data.identity_spike_discovery_ready",
-    ):
-        assert required in depends, required
 
 
 def test_identity_has_two_route_keys_for_its_single_prefix():

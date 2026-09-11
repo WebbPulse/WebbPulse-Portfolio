@@ -312,12 +312,10 @@ module "api" {
     # says in as many words that setting NONE on any of them would punch a hole
     # straight past the gate.
     #
-    # These two set it deliberately, and they are unconditional: no
-    # local.identity_spike_enabled, no count, present in every environment.
-    # Under M0 the same two keys were gated behind the spike flag, because the
-    # documents were an experiment's exhaust. From M1 they are what this product
-    # publishes about itself, and terraform/identity.tf creates the signing key
-    # they publish unconditionally to match.
+    # These two set it deliberately, and they are unconditional: no count,
+    # present in every environment. They are what this product publishes about
+    # itself, and terraform/identity.tf creates the signing key they publish
+    # unconditionally to match.
     #
     # WHY THEY MUST BE ANONYMOUS, which is section 2.5 and the single most
     # likely way to get this deployment wrong. The JWT authorizer fetches both
@@ -601,38 +599,6 @@ module "api" {
       }
     },
 
-    # The identity standard's M0 spike, which is now only its mint route.
-    #
-    # The two `.well-known` keys used to be part of this block and are now
-    # permanent above, because M1 owns them. What is left here is the one route
-    # that is genuinely throwaway, and it stays gated on
-    # local.identity_spike_enabled, which defaults to false, so with the spike
-    # off this block contributes nothing and a production plan is unaffected.
-    #
-    # It sets no authorization_type at all. That is the point: it takes the
-    # module's CUSTOM default and sits behind the staging access gate, which is
-    # the only thing standing in front of a route that signs a token for an
-    # arbitrary subject without authenticating anybody. `spike.py` says in as
-    # many words that a route like that is acceptable only because the gate is
-    # in front of it, so the gate is not a detail of this route, it is the
-    # reason the route is allowed to exist.
-    #
-    # The spike's fourth key, `GET /api/identity/spike/whoami`, is deliberately
-    # not here. It is a standalone aws_apigatewayv2_route in identity_spike.tf,
-    # because it names the JWT authorizer and so has to be created after it,
-    # while every route in this map has to be created before it. That knot is
-    # the spike's own ordering fix and identity_spike.tf explains it in full.
-    #
-    # The mint key is literal and POST rather than ANY, so it claims exactly the
-    # one path the spike serves under `/api/identity/spike/` and does not
-    # swallow `whoami`, whose authorization is supposed to come from the JWT
-    # authorizer instead. It does not end in a slash; `mint` is declared as
-    # `POST /token` on a router mounted at `/api/identity/spike`.
-    local.identity_spike_enabled ? {
-      "POST /api/identity/spike/token" = {
-        integration = "identity"
-      }
-    } : {},
   )
 
   throttling_burst_limit = 200

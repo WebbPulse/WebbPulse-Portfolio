@@ -99,9 +99,8 @@ with `moved` blocks; the physical names are unchanged because both modules build
 `"<name_prefix>-<key>"` from the same `local.prefix`.
 
 `http_api_id` is deliberately not passed, so the module creates no JWT
-authorizer. The M0 spike in `identity_spike.tf` still owns the only JWT
-authorizer on this API, and an HTTP API route takes one authorizer while the
-staging access gate already occupies that slot on every route.
+authorizer. An HTTP API route takes one authorizer while the staging access gate
+already occupies that slot on every route.
 
 Rotating a signing key is two applies against the module's `signing_key_count`
 and `active_signing_key` inputs, never a mutation of one key: `kid` is derived
