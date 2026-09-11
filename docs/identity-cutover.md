@@ -503,6 +503,14 @@ The two login routes mount at the same time and refuse while
 working on the day that second variable is set, with no code change and no
 redeploy beyond the apply.
 
+`GET /api/auth/passkeys/availability` is the eighth route and it is already
+there. Added by webbpulse-python 0.17.0, it mounts in every deployment
+regardless of either variable and answers
+`{"enabled": <bool>, "passwordless": <bool>}` from exactly the two settings
+above, with `Cache-Control: public, max-age=300`. It is what the frontend reads
+to decide what to draw, so on the day either variable is flipped the answer
+changes with it and the affordance appears within five minutes.
+
 Three package behaviours worth knowing before the first real sign in, because
 each presents as a refusal with no obvious cause:
 
@@ -529,12 +537,28 @@ there is a second way in.
 
 The frontend part of passkeys ships ahead of the backend adoption, in the same
 shape the OAuth work shipped: the UI is written and tested, and it shows nothing
-at all until a deployment answers the routes. There is no discovery document to
-read, so the login page asks the same question the OAuth buttons ask, by making
-one request and reading the answer. `POST /api/auth/login/passkey/options`
-returning a 404 means the routes are not mounted, and the sign-in button is not
-rendered. A `PASSKEYS_DISABLED` or `PASSKEY_LOGIN_DISABLED` refusal is read the
-same way. The probe runs once per page load.
+at all until a deployment says it has the capability. The login page asks the
+same way the OAuth buttons ask, by reading a discovery route:
+`GET /api/auth/passkeys/availability` answers two booleans, and the sign-in
+button is drawn only when `passwordless` is true.
+
+The two fields are different questions. `enabled` means the deployment registers
+and verifies passkeys, so the settings panel offers to add one. `passwordless`
+means a passkey is a way *into* an account, so the sign-in page offers the
+button. With `enabled` true and `passwordless` false a passkey is a managed
+credential and a second factor but not an entry point, which is the state
+production starts in.
+
+Until webbpulse-python 0.17.0 there was no such route and the login page probed
+`POST /api/auth/login/passkey/options` instead, reading a 404 or a
+`PASSKEYS_DISABLED` or `PASSKEY_LOGIN_DISABLED` refusal as "not offered here".
+That is gone. The probe spent one of the options route's thirty calls per
+fifteen minutes per IP on a sign-in *page load* rather than on a sign-in, so a
+user who reloaded enough times was refused the passkey sign-in they were
+reloading in order to attempt, and it wrote a WebAuthn challenge row per call
+that was never spent. The route that replaced it is anonymous, unrated, touches
+no store and is cached for five minutes by the browser. The answer is fetched
+once per page load, coalesced across the components that ask on the same paint.
 
 #### What a signed-in admin sees
 
@@ -565,8 +589,9 @@ rather than an empty panel that looks like an account with nothing enrolled.
 
 A **Sign in with a passkey** button under the password form, next to the OAuth
 buttons, when all three of these are true: the build is in `identity` mode, the
-browser supports WebAuthn, and the probe above came back. It is a button rather
-than a link because the ceremony is a script call that needs a user gesture.
+browser supports WebAuthn, and the availability route above answered
+`passwordless: true`. It is a button rather than a link because the ceremony is
+a script call that needs a user gesture.
 
 Where the browser also supports conditional mediation, the page starts a second,
 invisible ceremony on load and marks the username field `username webauthn`, so

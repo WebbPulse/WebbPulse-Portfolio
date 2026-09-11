@@ -697,7 +697,17 @@ IDENTITY_M4_ROUTE_KEYS = {
 #: `POST /api/auth/login/totp`'s — the TOTP leg is unflagged because the ticket
 #: it carries would be actively *rejected* by a check on the API audience, while
 #: these two are unflagged because they carry nothing to check.
+#:
+#: Eight since the 0.17.0 bump. `GET /api/auth/passkeys/availability` is the odd
+#: one and it is M6's `oauth/providers` in a different milestone's block: added
+#: by `register_passkey_availability`, it mounts in EVERY deployment including
+#: one with passkeys switched off, where it answers
+#: `{"enabled": false, "passwordless": false}`. It is kept in this set rather
+#: than in one of its own because the set's job is subtraction in
+#: `identity_route_keys()`, and a key nobody subtracts is a key three other
+#: tests here fail on.
 IDENTITY_M5_ROUTE_KEYS = {
+    "GET /api/auth/passkeys/availability",
     "POST /api/auth/passkeys/register/options",
     "POST /api/auth/passkeys/register/verify",
     "POST /api/auth/login/passkey/options",
@@ -1353,7 +1363,7 @@ def test_every_identity_path_the_package_mounts_has_a_gateway_route_key(monkeypa
 
 
 def test_the_m5_keys_are_present_and_match_the_paths_the_package_declares():
-    """M5's seven keys exist, and their suffixes are the package's own.
+    """M5's eight keys exist, and their suffixes are the package's own.
 
     Read from `webbpulse.identity.passkey_routes` rather than retyped, exactly
     as the M4 test reads `webbpulse.identity.router`, so a path the package
@@ -1362,6 +1372,7 @@ def test_the_m5_keys_are_present_and_match_the_paths_the_package_declares():
     from webbpulse.identity.passkey_routes import (
         LOGIN_PASSKEY_OPTIONS_PATH,
         LOGIN_PASSKEY_VERIFY_PATH,
+        PASSKEY_AVAILABILITY_PATH,
         PASSKEY_ITEM_PATH,
         PASSKEY_REGISTER_OPTIONS_PATH,
         PASSKEY_REGISTER_VERIFY_PATH,
@@ -1369,6 +1380,7 @@ def test_the_m5_keys_are_present_and_match_the_paths_the_package_declares():
     )
 
     expected = {
+        f"GET /api/auth{PASSKEY_AVAILABILITY_PATH}",
         f"POST /api/auth{PASSKEY_REGISTER_OPTIONS_PATH}",
         f"POST /api/auth{PASSKEY_REGISTER_VERIFY_PATH}",
         f"POST /api/auth{LOGIN_PASSKEY_OPTIONS_PATH}",

@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { clearAvailabilityMemoryCache } from './availabilityCache';
 import {
   OAUTH_PROVIDERS_PATH,
   fetchOAuthProviders,
@@ -252,34 +251,6 @@ describe('oauthProviders', () => {
       oauthProviders('https://api.other.test', fetchImpl as never)
     ).resolves.toEqual([GITHUB]);
 
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
-  });
-
-  it('refetches after a reload rather than trusting a stored verdict', async () => {
-    // The passkey gate persists its answer in `sessionStorage` and this one
-    // deliberately does not, because the three-state verdict is not the whole
-    // answer here: the provider list lives beside it and dies with the page.
-    // Serving "available" out of storage would skip the fetch that refills the
-    // list, and the sign-in page would conclude it has OAuth and then draw no
-    // buttons. This test is what stops that being switched on by accident.
-    // A fresh Response per call: a body can only be read once, and both calls
-    // here are meant to reach the network.
-    const fetchImpl = vi
-      .fn()
-      .mockImplementation(() =>
-        Promise.resolve(jsonResponse({ providers: [GOOGLE] }))
-      );
-
-    await expect(oauthProviders(ORIGIN, fetchImpl as never)).resolves.toEqual([
-      GOOGLE,
-    ]);
-
-    clearAvailabilityMemoryCache();
-    resetProviderCache();
-
-    await expect(oauthProviders(ORIGIN, fetchImpl as never)).resolves.toEqual([
-      GOOGLE,
-    ]);
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 });

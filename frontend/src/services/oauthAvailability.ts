@@ -188,9 +188,10 @@ export async function fetchOAuthProviders(
 /**
  * The providers this deployment offers, fetched at most once per page load.
  *
- * The cache is `services/availabilityCache.ts`, shared with the passkey probe
- * so both capability gates spend one request per page load rather than one per
- * render. See that file for why promises rather than results are stored and
+ * The cache is `services/availabilityCache.ts`, shared with the passkey gate so
+ * both capability gates spend one request per page load rather than one per
+ * render. Neither is a probe any more: that file's note explains what the cache
+ * is still for now that both routes are cheap and cacheable. See that file for why promises rather than results are stored and
  * why an `unknown` answer is not kept.
  *
  * The cache stores an {@link Availability}, which is a three-state string and
