@@ -330,7 +330,41 @@
 # own 404 reaching no function.
 # `test_every_identity_path_the_package_mounts_has_a_gateway_route_key` fails
 # on this bump until the key is added, which is the mechanism working.
-webbpulse[fastapi,dynamodb,otel,aws-otel,security,identity,oauth,passkeys]==0.17.0
+#
+# --- 0.19.0 -------------------------------------------------------------------
+#
+# A RELIABILITY BUMP WITH NO INTERFACE CHANGE. Nothing this app imports moved,
+# was renamed or changed shape. `IdentityHooks` is byte identical to 0.17.0, so
+# `PortfolioIdentityHooks` satisfies the protocol unchanged, and no gateway
+# route key is needed: 0.19.0 mounts no new route.
+#
+# WHAT IT FIXES, both inside `webbpulse.otel` and both about span export rather
+# than about this application's own behaviour.
+#
+# Stale SigV4 credentials. ADOT's `AwsAuthSession` resolves credentials once and
+# latches them for the life of the process. Lambda injects the role through
+# environment variables, and botocore's `EnvProvider` hands back plain
+# non-refreshable `Credentials` unless `AWS_CREDENTIAL_EXPIRATION` is also set,
+# which Lambda does not set. A container that outlives its credentials therefore
+# signs every export with an expired key and is refused 403, and because the
+# exporter retries in silence the symptom is traces quietly stopping. In
+# CarModPicker staging this fired an aggregate error alarm nine times in one
+# night; no domain function had cold started in 24 hours. 0.19.0 re-resolves
+# non-refreshable credentials and leaves genuine `RefreshableCredentials` to
+# their own machinery.
+#
+# A negative connect timeout. The upstream OTLP exporter computes one deadline
+# and passes the remainder to `requests` on each retry, so a sandbox frozen mid
+# export and thawed later hands urllib3 a negative timeout. That raises a bare
+# `ValueError`, which is not a `RequestException` and so escapes upstream's
+# retry loop entirely. 0.19.0 clamps it and stops logging the thawed-sandbox
+# case at ERROR while keeping genuine exporter failures at ERROR.
+#
+# 0.18.0 IS SKIPPED BECAUSE IT WAS NEVER TAGGED. It added `webbpulse.ci`, a new
+# additive module for the per-domain pytest matrix that this app does not
+# import, plus a dev-only `pytest-xdist` extra. It publishes alongside 0.19.0
+# rather than being missing.
+webbpulse[fastapi,dynamodb,otel,aws-otel,security,identity,oauth,passkeys]==0.19.0
 
 fastapi==0.115.12
 boto3==1.38.46
