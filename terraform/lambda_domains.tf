@@ -390,10 +390,16 @@ module "lambda_domain" {
       # This is the one place in this block where omitting a line would not
       # leave the behaviour alone: `IdentitySettings.passkeys_enabled` and
       # `.passkeys_passwordless` both default on, so an unset variable mounts
-      # seven routes rather than none. identity.tf carries the full note on why
-      # the two are separate switches and why each ships false; the short
-      # version is that the first waits on `@webbpulse/auth` 0.8.0 on the
-      # frontend and the second is a policy decision the owner has not made.
+      # seven routes rather than none.
+      #
+      # These read the two locals rather than the variables directly, because
+      # each variable is nullable and null means "derive from the environment".
+      # `local.passkeys_enabled` and `local.passkeys_passwordless` resolve that
+      # to true in staging and false in production, so this environment is where
+      # the split becomes an actual pair of strings. identity.tf carries the full
+      # note on why the two are separate switches, why the derived default lives
+      # in code rather than in HCP, and how a workspace variable still overrides
+      # either one.
       #
       # `tostring` rather than the bare bool because a Lambda environment
       # variable is a string either way and Terraform would render `true` and
@@ -416,8 +422,8 @@ module "lambda_domain" {
       # every credential and immutable for that credential's life, so a passkey
       # enrolled under a wrong rp_id is a passkey that has to be re-enrolled
       # rather than a setting that gets fixed.
-      IDENTITY_PASSKEYS_ENABLED      = tostring(var.passkeys_enabled)
-      IDENTITY_PASSKEYS_PASSWORDLESS = tostring(var.passkeys_passwordless)
+      IDENTITY_PASSKEYS_ENABLED      = tostring(local.passkeys_enabled)
+      IDENTITY_PASSKEYS_PASSWORDLESS = tostring(local.passkeys_passwordless)
       IDENTITY_WEBAUTHN_ORIGINS      = local.identity_webauthn_origins
       },
 

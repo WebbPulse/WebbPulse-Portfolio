@@ -337,20 +337,66 @@ variable "oauth_github_client_secret" {
 # oracle. Whether a single administrator product wants a passwordless entry
 # point is the owner's call, and it stays false until they make it.
 #
-# So the ordinary sequence is two separate HCP variable changes with a redeploy
-# each, not one. docs/identity-cutover.md carries it.
+# The rollout has now reached its first step, and the defaults below carry it
+# rather than a pair of typed HCP values.
+#
+# BOTH DEFAULT ON IN STAGING AND OFF IN PRODUCTION, DERIVED FROM
+# var.environment. The frontend precondition that kept `passkeys_enabled` false
+# everywhere is met: `@webbpulse/auth` 0.8.0 shipped and PR 172 landed the admin
+# panel code that calls `navigator.credentials.create`, so a mounted route in
+# staging is now a route the frontend actually drives. Production stays off
+# until the owner promotes it, which is the same two-environment sequence every
+# other identity switch in this file has followed.
+#
+# WHY A DERIVED DEFAULT RATHER THAN A WORKSPACE VARIABLE. Every other per
+# environment decision in this configuration is a `var.environment` conditional
+# in code: the domain, the OTEL sample ratio, deletion protection on both
+# tables, the staging access gate. A typed HCP value would put this one switch
+# somewhere no reader of this repository can see it, and the failure that
+# matters here is the silent one, a promotion to production that carries a
+# staging value nobody remembered was set. Derived, the environment split is
+# reviewable in the diff and cannot drift between the two workspaces.
+#
+# BOTH STAY OVERRIDABLE. Each variable is nullable with a null default, and null
+# means "use the environment's answer". Setting either in HCP still wins, which
+# is what keeps the rollback in docs/identity-cutover.md a one variable change
+# with no code deploy: `passkeys_enabled = false` on the staging workspace turns
+# the routes off at the next apply.
 # ---------------------------------------------------------------------------
 
 variable "passkeys_enabled" {
-  description = "Whether identity M5's passkey routes are declared. False, the shipping default, mounts none of the seven and leaves the served API identical to M6's. The package's own default is true, so this is set explicitly rather than omitted: an unset value here would mount routes the frontend has no code for. Turning it on needs @webbpulse/auth 0.8.0 on the frontend first."
+  description = "Whether identity M5's passkey routes are declared. Null, the default, derives the answer from var.environment: true in staging, false in production. The package's own default is true, so this is always resolved to an explicit bool before it reaches the Lambda environment rather than omitted. Set it on an HCP workspace to override the derived value, which is how the rollback in docs/identity-cutover.md turns the routes back off without a code deploy."
   type        = bool
-  default     = false
+  default     = null
+  nullable    = true
 }
 
 variable "passkeys_passwordless" {
-  description = "Whether a passkey is an entry point as well as a credential. False, the shipping default, refuses both /login/passkey routes, so a passkey can be enrolled and managed and used as a second factor but cannot sign anybody in on its own. Independent of passkeys_enabled and stays off until the owner decides a passwordless sign in is wanted; the package's own default is true."
+  description = "Whether a passkey is an entry point as well as a credential. Null, the default, derives the answer from var.environment: true in staging, false in production. With it false and passkeys_enabled true, both /login/passkey routes refuse and a passkey is a managed credential and a second factor but not a way in. Independent of passkeys_enabled and overridable per workspace on the same terms."
   type        = bool
-  default     = false
+  default     = null
+  nullable    = true
+}
+
+locals {
+  # The two switches resolved to the explicit bools lambda_domains.tf renders.
+  #
+  # `var.environment` is validated to be exactly "production" or "staging" in
+  # variables.tf, so the conditional has no third case to answer for. Writing it
+  # as `!= "production"` rather than `== "staging"` is deliberate: if a third
+  # environment is ever added it should arrive with passkeys on, matching every
+  # non production environment, rather than silently off.
+  passkeys_enabled = (
+    var.passkeys_enabled != null
+    ? var.passkeys_enabled
+    : var.environment != "production"
+  )
+
+  passkeys_passwordless = (
+    var.passkeys_passwordless != null
+    ? var.passkeys_passwordless
+    : var.environment != "production"
+  )
 }
 
 variable "identity_rp_name" {
