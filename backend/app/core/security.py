@@ -48,7 +48,7 @@ side effect of moving hashing and signing into the package.
 from datetime import timedelta
 from typing import Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from webbpulse.http import user_id_dependency
 from webbpulse.log_context import set_span_context_attributes
@@ -64,6 +64,7 @@ from webbpulse.security import (
 
 from ..config import settings
 from ..db.entities import users
+from .identity_claims import identity_subject
 from .logging import logger
 
 
@@ -137,13 +138,110 @@ def verify_token(token: str) -> Optional[str]:
     return subject if isinstance(subject, str) else None
 
 
-security = HTTPBearer()
+class IdentityAwareHTTPBearer(HTTPBearer):
+    """`HTTPBearer` that does not refuse a request an authorizer already vouched for.
+
+    The parent class with `auto_error` left on raises from the dependency
+    itself, before the route's own resolver runs, whenever the `Authorization`
+    header is missing or is not a bearer scheme. That is the shipped behaviour
+    and it stays the default here: a request with nothing on it still gets the
+    same **403** with the same body it always did, produced by the same line of
+    the same parent class, which is what `tests/test_auth_hardening.py` pins.
+
+    What it cannot see is the case this subclass exists for. On a route key
+    marked `require_identity_jwt` the gateway verified the access token before
+    this process was invoked and put the claims in the request context, so the
+    credential for that request is in `x-amzn-request-context` rather than in
+    `Authorization`. A caller in that position has no reason to send the token
+    twice, and with the parent's behaviour unmodified the resolver that knows
+    how to read those claims could never be reached: the one shape this change
+    serves would be the one shape refused before reaching the code serving it.
+
+    So the refusal is conditional on there being nothing to fall through to.
+    Returning `None` says "no bearer credential here, ask the request context",
+    and `get_current_user` still raises its own 401 if the claims turn out to
+    name no usable account.
+
+    **This widens nothing.** The extra path is entered only when
+    `identity_subject` finds a subject, which requires an authorizer to have run
+    and verified a token, which is something no caller can fabricate: the
+    `x-amzn-request-context` header is written by the Lambda Web Adapter from
+    the invoke event and an inbound header of that name never reaches it.
+    """
+
+    async def __call__(
+        self, request: Request
+    ) -> Optional[HTTPAuthorizationCredentials]:
+        if request.headers.get("authorization"):
+            return await super().__call__(request)
+        if identity_subject(request):
+            return None
+        return await super().__call__(request)
+
+
+#: `scheme_name` pins the OpenAPI security scheme to the name the parent class
+#: would have given it. FastAPI names a scheme after its class by default, and
+#: the class is an implementation detail: the published contract must not change
+#: because of it.
+security = IdentityAwareHTTPBearer(scheme_name="HTTPBearer")
+
+
+def _identity_user(request: Request) -> Optional[dict]:
+    """The Portfolio admin an identity access token names, or `None`.
+
+    **The mapping is the id and nothing else.** `PortfolioIdentityHooks.
+    claims_for` leaves `sub` to the package, which sets it from the user row's
+    `id`, and `load_user_by_id` parses that `sub` straight back to an integer
+    and does one `GetItem` on `users`. So an identity user *is* the legacy user
+    row, under the same integer id it always had, and there is no second id
+    space. That is what makes this a dual-mode read rather than a data
+    migration.
+
+    A `sub` that is not an integer is a token this product did not mint, so it
+    gets the same `None` a missing row does rather than a `ValueError` that
+    would surface as a 500 on a request that deserves a 401.
+
+    The two account checks are the same pair `may_authenticate` applies at the
+    package's door, restated here deliberately: that hook guards the identity
+    login and this guards every admin route, and the two are independent. A
+    token minted before an account was disabled must not keep working for the
+    rest of its lifetime.
+    """
+    subject = identity_subject(request)
+    if not subject:
+        return None
+    try:
+        user_id = int(subject)
+    except (TypeError, ValueError):
+        return None
+    user = users.get(user_id)
+    if not user or not user.get("is_admin"):
+        return None
+    if not user.get("is_active", True):
+        return None
+    return user
 
 
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> dict:
-    """Resolve the bearer token to the admin user it names.
+    """Resolve the caller to the admin user it names.
+
+    Dual mode: the legacy HS256 bearer token resolves first and unchanged, and
+    an identity RS256 access token the gateway already verified resolves to the
+    same row when it does not.
+
+    **The legacy path is tried first and deliberately so.** It is the path every
+    request takes in bearer mode, it costs one HMAC verification with no network
+    call, and putting it first means the shipped flow's latency, its status
+    codes and its failure modes are untouched. An identity token simply fails
+    `verify_token`, because it is RS256 and the decoder names HS256 explicitly,
+    and falls through.
+
+    Nothing here verifies an RS256 signature. On a flagged route key the gateway
+    is the verifier; see `app/core/identity_claims.py` for why the claims are
+    trusted only because of where they arrive.
 
     Resolution only. Binding the id onto the log context is `CurrentUser`
     below, which is what every route depends on; this function is that
@@ -159,8 +257,21 @@ async def get_current_user(
     hop back. The two `HTTPException`s and their status codes are untouched,
     which `tests/test_auth_hardening.py` pins.
     """
-    username = verify_token(credentials.credentials)
+    username = verify_token(credentials.credentials) if credentials else None
     if not username:
+        # Not a legacy session. An identity access token the gateway already
+        # verified is the other thing a caller can present, and the account
+        # checks are applied to it inside `_identity_user` rather than repeated
+        # here, so a non-admin or inactive account is refused on both paths.
+        #
+        # It answers 401 rather than the 403 the admin checks below produce, and
+        # that is the same collapse `verify_token` already makes: an identity
+        # token naming nobody usable is indistinguishable from one naming
+        # nothing at all, and telling the two apart is a signal handed to
+        # somebody probing.
+        identity_user = _identity_user(request)
+        if identity_user is not None:
+            return identity_user
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials",

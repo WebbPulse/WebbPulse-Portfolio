@@ -63,6 +63,120 @@ locals {
     "posts",
     "site-content",
   ]
+
+  # ---------------------------------------------------------------------------
+  # The `/api/v1` admin routes that need an authenticated caller, each given a
+  # route key of its own so the identity access token can be required on it.
+  #
+  # WHY THIS EXISTS. Every `/api/v1` key above is an `ANY` over a whole prefix,
+  # and that is the right shape for routing: one key per prefix carries the
+  # domain's public reads and its admin writes alike, and cuts 2 and 3 chose it
+  # so the keys cannot drift when an operation is added. It is the wrong shape
+  # for authorization, because `require_identity_jwt` is set per key: marking
+  # `ANY /api/v1/posts/{proxy+}` would demand a token on `GET /api/v1/posts/{slug}`,
+  # which is a public blog post. So the authenticated half is split out here.
+  # Each key below names one method and one concrete path, points at the same
+  # integration the generated `ANY` pair already points at, and differs from
+  # that pair in exactly one respect: it can be marked.
+  #
+  # A more specific key wins at API Gateway, so each of these takes precedence
+  # over its domain's `ANY` pair on exactly the method and path it names, and
+  # changes nothing else. The `ANY` pairs stay and still carry everything else.
+  #
+  # HOW THE SET IS DERIVED, and it is derived rather than chosen. A route is
+  # here when its FastAPI dependency tree reaches `CurrentUser`, which resolves
+  # through `get_current_user` in `backend/app/core/security.py` and answers 401
+  # without a caller. `backend/tests/entrypoints/test_gateway_routes.py`
+  # recomputes that set from the four built applications and fails if it is not
+  # exactly the set below, in both directions, so a route added behind
+  # `CurrentUser` and not added here is a failing test rather than a silent
+  # hole at the gateway.
+  #
+  # WHAT IS DELIBERATELY NOT HERE. Every public read: the five resume
+  # collections' `GET` list and item routes, `GET /api/v1/posts` and its
+  # `{slug}`, `category/{category_slug}` and `categories` reads, and
+  # `GET /api/v1/site-content`. Those are the site itself, served to signed out
+  # visitors, and marking any of them would turn the portfolio into a 401.
+  # `POST /api/v1/admin/login` is not here either, for the reason
+  # `POST /api/auth/login` is not: it is how a caller obtains a token, so
+  # requiring one would make it unreachable.
+  #
+  # WHY THE MARK IS BEHIND A VARIABLE. `var.domain_jwt_enforced` is false by
+  # default and these keys land unmarked and inert. The frontend still runs in
+  # bearer mode and sends the legacy HS256 session; in staging
+  # `identity_jwt_mode` is "gate", so the moment a key is marked the gate Lambda
+  # demands a valid RS256 identity access token on it and the legacy session is
+  # refused. Landing the keys and enforcing them in one apply would break every
+  # admin write. So the keys land first and the flip is a one line change on the
+  # workspace variable afterwards, once the frontend sends identity tokens. See
+  # `variable "domain_jwt_enforced"` for what the flip costs in a plan.
+  #
+  # NO ANONYMOUS GUARD KEYS ARE NEEDED, and that is a derived result rather than
+  # an omission, so it is worth stating. The hazard is a flagged `{param}` key
+  # capturing a public route at the same depth: API Gateway resolves by
+  # specificity rather than by declaration order, so a static segment beats a
+  # path variable and a method beats `ANY`. Portfolio has exactly one pair
+  # shaped like that, `GET /api/v1/posts/categories` against
+  # `GET /api/v1/posts/{slug}`, and **neither is flagged**: both are public
+  # reads, so the collision is between two anonymous routes and the gateway's
+  # specificity rule already resolves it the way FastAPI's ordering does. Every
+  # flagged `{param}` key below is a `PUT`, `DELETE` or `POST`, and every public
+  # route that shares its depth is a `GET`, so no flagged key can capture one:
+  # a route key matches its own method only. `test_gateway_routes.py` asserts
+  # this over the whole application rather than over the known pairs, so a
+  # public route added under a flagged `{id}` key in future fails there instead
+  # of quietly becoming a 401 at the next flip.
+  #
+  # `PUT /api/v1/site-content` is the one key whose path carries no trailing
+  # slash in the gateway and does in the application. `site_content.py` declares
+  # `PUT "/"` under the `/site-content` prefix, so the served path is
+  # `/api/v1/site-content/`; a route key may not end in a slash, and cut 3
+  # records the `BadRequestException` that proves it, so the key is the bare
+  # path and the gateway's normalisation is what joins them.
+  domain_identity_jwt_route_paths = {
+    content = [
+      "GET /api/v1/posts/admin",
+      "POST /api/v1/posts/admin",
+      "PUT /api/v1/posts/admin/{post_id}",
+      "DELETE /api/v1/posts/admin/{post_id}",
+      "POST /api/v1/posts/admin/{post_id}/publish",
+      "POST /api/v1/posts/categories",
+      "PUT /api/v1/posts/categories/{category_id}",
+      "DELETE /api/v1/posts/categories/{category_id}",
+      "PUT /api/v1/site-content",
+    ]
+
+    resume = [
+      "POST /api/v1/certifications",
+      "PUT /api/v1/certifications/{item_id}",
+      "DELETE /api/v1/certifications/{item_id}",
+      "POST /api/v1/education",
+      "PUT /api/v1/education/{item_id}",
+      "DELETE /api/v1/education/{item_id}",
+      "POST /api/v1/experience",
+      "PUT /api/v1/experience/{item_id}",
+      "DELETE /api/v1/experience/{item_id}",
+      "POST /api/v1/projects",
+      "PUT /api/v1/projects/{item_id}",
+      "DELETE /api/v1/projects/{item_id}",
+      "POST /api/v1/skills",
+      "PUT /api/v1/skills/{item_id}",
+      "DELETE /api/v1/skills/{item_id}",
+    ]
+  }
+
+  # The 24 keys above, each pointing at the domain that serves its prefix and
+  # carrying the flag only when the variable says to enforce. The integration is
+  # the map key rather than a lookup, so a key cannot name a domain that does
+  # not serve its path.
+  domain_identity_jwt_route_keys = merge([
+    for domain, keys in local.domain_identity_jwt_route_paths : {
+      for key in keys : key => {
+        integration          = domain
+        require_identity_jwt = var.domain_jwt_enforced
+      }
+    }
+  ]...)
 }
 
 module "api" {
@@ -855,6 +969,19 @@ module "api" {
       }
     },
 
+    # The `/api/v1` admin route keys, from local.domain_identity_jwt_route_paths
+    # above. Twenty-four concrete method-and-path keys sitting alongside the
+    # `ANY` prefix pairs that cuts 2 and 3 created, each taking precedence over
+    # its pair on exactly the method and path it names and changing nothing
+    # else. They carry `require_identity_jwt = var.domain_jwt_enforced`, so they
+    # land inert and the flip is a workspace variable.
+    #
+    # The merge cannot collide with anything above it. Every key from cuts 1 to
+    # 4 is either a literal root path or `ANY <prefix>` or `ANY <prefix>/{proxy+}`,
+    # every identity key names a concrete method and a path under `/api/auth`,
+    # and every key here names a concrete method and a path under `/api/v1`
+    # outside `/api/v1/admin`. So no key is written twice.
+    local.domain_identity_jwt_route_keys,
   )
 
   throttling_burst_limit = 200

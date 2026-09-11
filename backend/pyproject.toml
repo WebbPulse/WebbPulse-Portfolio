@@ -43,3 +43,57 @@ ignore = ["E203"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
+
+# Per-domain CI. The organisation's reusable python-ci.yml reads this table and
+# runs one pytest job per domain, so wall clock time tracks the largest domain
+# rather than the sum of all four. Adding a domain here is the whole change: the
+# workflow discovers it, and the branch ruleset requires `all-checks-passed`
+# rather than the matrix job names, so neither has to be edited.
+#
+# The convention is specified and tested in the shared package as `webbpulse.ci`.
+# Paths are relative to this directory, which is the workflow's working-directory.
+#
+# These lists name files rather than directories because `tests/` is flat: the
+# suite predates the domain split and moving 30 files into four folders would
+# bury a CI change under a rename. A file may be named directly for exactly that
+# reason.
+#
+# Anything not listed here runs in the `shared` job, which sweeps `tests/` with an
+# --ignore per claimed path. So forgetting to claim a new file makes it run in
+# `shared`, which is slower but never silent. tests/entrypoints/ is deliberately
+# left to `shared`: those suites assert across every domain's wiring at once, so
+# they belong to no single one.
+[tool.webbpulse.ci]
+test-root = "tests"
+
+[tool.webbpulse.ci.domains]
+content = [
+  "tests/test_posts_api.py",
+  "tests/test_site_content_api.py",
+]
+identity = [
+  "tests/test_auth_api.py",
+  "tests/test_auth_hardening.py",
+  "tests/test_core_security.py",
+  "tests/test_identity_admin_claims.py",
+  "tests/test_identity_m1.py",
+  "tests/test_identity_m2.py",
+  "tests/test_identity_m3.py",
+  "tests/test_identity_m4.py",
+  "tests/test_identity_m5.py",
+  "tests/test_identity_m6.py",
+  "tests/test_credential_migration.py",
+  "tests/test_clear_legacy_credentials.py",
+  "tests/test_security_compat.py",
+  "tests/test_seed_identity_aware.py",
+]
+public = [
+  "tests/test_seo.py",
+]
+resume = [
+  "tests/test_certifications_api.py",
+  "tests/test_education_api.py",
+  "tests/test_experience_api.py",
+  "tests/test_projects_api.py",
+  "tests/test_skills_api.py",
+]
