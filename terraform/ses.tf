@@ -246,10 +246,11 @@ resource "aws_iam_role_policy" "identity_ses" {
 # Staging-only, and by construction rather than by a new condition: the whole
 # file is gated on local.custom_domain_count, and in production `local.domain`
 # is `webbpulse.com`, whose `_dmarc` is the `p=none` record the management
-# account owns. This resource reuses the same gate as the DKIM records above,
-# so production behaviour is untouched.
+# account owns. That record carries the Google Workspace mail domain, so this
+# resource is gated on the environment as well as on custom domains: it is
+# created in staging only and never touches `_dmarc.webbpulse.com`.
 resource "aws_route53_record" "ses_dmarc" {
-  count    = local.custom_domain_count
+  count    = var.environment == "staging" ? local.custom_domain_count : 0
   provider = aws.dns
 
   zone_id = local.records_zone_id
