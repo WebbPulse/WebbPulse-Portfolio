@@ -295,11 +295,48 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
         setIsAuthenticated(apiService.isAuthenticated());
         return;
       default:
-        setIsAuthenticated(apiService.isAuthenticated());
+        // No OAuth parameters, so this is an ordinary load: a reload, a new
+        // tab, or the first paint after a redeploy replaced the bundle. The
+        // access token lives only in memory and is gone in all three cases,
+        // while the httpOnly refresh cookie usually is not, so the session is
+        // restored by spending that cookie rather than by reading a token
+        // that cannot be there. Without this the panel renders the login form
+        // for a user whose session is still valid, and a token minted before
+        // the reload is never refreshed because no timer survived it.
+        setLoading(true);
+        void apiService
+          .restoreSession()
+          .then(restored => {
+            setIsAuthenticated(restored);
+          })
+          .finally(() => {
+            setLoading(false);
+          });
     }
     // Runs once. `identityClient` is fixed for the life of the bundle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /**
+   * Sends the panel back to the sign-in screen when a session ends by itself.
+   *
+   * The proactive refresh runs on a timer with no request in flight, so a
+   * refresh that fails while the tab sits idle is invisible to every call
+   * site: the next admin write would be the first thing to notice, and it
+   * would surface as a failed save rather than as an expired session. This
+   * turns that into the sign-in screen with a reason, which is the outcome
+   * section 7.1 asks for.
+   */
+  useEffect(
+    () =>
+      apiService.onSessionEnded(() => {
+        setIsAuthenticated(false);
+        setMfaTicket(null);
+        setLoading(false);
+        setError('Your session expired. Please sign in again.');
+      }),
+    []
+  );
 
   useEffect(() => {
     if (!isAuthenticated) return;

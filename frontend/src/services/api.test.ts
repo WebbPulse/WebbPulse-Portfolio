@@ -463,6 +463,96 @@ describe('ApiService', () => {
 
       expect(result.status).toBe('failed');
     });
+
+    it('restores a session from the refresh cookie on load', async () => {
+      fetchMock.mockResolvedValueOnce(tokenResponse('restored-token'));
+      const service = new ApiService(BASE, 'identity');
+
+      const restored = await service.restoreSession();
+
+      expect(restored).toBe(true);
+      expect(service.isAuthenticated()).toBe(true);
+      expect(callArgs().url).toBe(`${ORIGIN}/api/auth/refresh`);
+    });
+
+    it('reports no session when the refresh cookie is missing or spent', async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({ message: 'Unauthorized' }, { status: 401 })
+      );
+      const service = new ApiService(BASE, 'identity');
+
+      const restored = await service.restoreSession();
+
+      expect(restored).toBe(false);
+      expect(service.isAuthenticated()).toBe(false);
+    });
+
+    it('sends the restored token as a bearer header on the next request', async () => {
+      fetchMock.mockResolvedValueOnce(tokenResponse('restored-token'));
+      const service = new ApiService(BASE, 'identity');
+      await service.restoreSession();
+
+      fetchMock.mockResolvedValueOnce(jsonResponse({ id: 1 }));
+      await service.getSiteContent();
+
+      const call = fetchMock.mock.calls[1] as [string, RequestInit];
+      expect((call[1].headers as Headers).get('authorization')).toBe(
+        'Bearer restored-token'
+      );
+    });
+
+    it('notifies session-ended subscribers when a refresh on a 401 is refused', async () => {
+      fetchMock.mockResolvedValueOnce(tokenResponse('memory-token'));
+      const service = new ApiService(BASE, 'identity');
+      await service.login({ username: 'admin', password: 'secret' });
+
+      const ended = vi.fn();
+      service.onSessionEnded(ended);
+
+      // The write is refused, the refresh it triggers is refused too, so the
+      // session is over rather than replayable.
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({ message: 'Unauthorized' }, { status: 401 })
+      );
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({ message: 'Unauthorized' }, { status: 401 })
+      );
+
+      const response = await service.getSiteContent();
+
+      expect(response.error).not.toBeNull();
+      expect(ended).toHaveBeenCalledTimes(1);
+      expect(service.isAuthenticated()).toBe(false);
+    });
+
+    it('stops notifying a session-ended subscriber once it unsubscribes', async () => {
+      fetchMock.mockResolvedValueOnce(tokenResponse('memory-token'));
+      const service = new ApiService(BASE, 'identity');
+      await service.login({ username: 'admin', password: 'secret' });
+
+      const ended = vi.fn();
+      service.onSessionEnded(ended)();
+
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({ message: 'Unauthorized' }, { status: 401 })
+      );
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({ message: 'Unauthorized' }, { status: 401 })
+      );
+      await service.getSiteContent();
+
+      expect(ended).not.toHaveBeenCalled();
+    });
+
+    it('reports the stored token rather than refreshing in bearer mode', async () => {
+      localStorage.setItem('authToken', 'stored-token');
+      const service = new ApiService(BASE, 'bearer');
+
+      const restored = await service.restoreSession();
+
+      expect(restored).toBe(true);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
   });
 
   describe('identityOriginFrom', () => {
