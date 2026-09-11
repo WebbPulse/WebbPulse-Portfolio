@@ -1,3 +1,19 @@
+# Builds the frontend and publishes it to S3 and CloudFront through the shared
+# spa-deploy workflow.
+#
+# This used to be a hand-rolled build and `aws s3 sync --delete`. That sync set no
+# --cache-control, so every object landed in S3 with no Cache-Control metadata at
+# all and CloudFront passed that absence through to browsers. With no explicit
+# freshness a browser falls back to heuristic caching, so a returning visitor could
+# keep serving an index.html from its own disk cache long after a deploy, pointing
+# at a hashed bundle that had already been pruned from the bucket. A CloudFront
+# invalidation does not help: it clears the edge, not the browser.
+#
+# The shared workflow fixes that by writing the header at upload time, in three
+# passes: hashed assets first with a one year immutable max-age, then the unhashed
+# entry documents with no-cache so the browser revalidates on every load, then a
+# prune pass for objects from earlier builds. The CloudFront invalidation is
+# unchanged.
 name: Deploy Frontend
 
 on:
@@ -9,120 +25,46 @@ on:
       - ".github/workflows/deploy-frontend.yml"
 
 permissions:
-  id-token: write
   contents: read
 
-concurrency:
-  group: frontend-deploy-${{ github.ref_name }}
-  cancel-in-progress: false
-
 jobs:
-  deploy:
-    if: github.ref_name == 'main' || vars.STAGING_DEPLOY_ENABLED == 'true'
+  # A `uses:` job cannot declare an environment, so the environment name is resolved
+  # here and passed to the shared workflow as an input.
+  resolve-env:
     runs-on: ubuntu-latest
-    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
-
-    env:
-      AWS_REGION: us-west-2
-      TFC_ORG: WebbPulse
-      TFC_WAIT_ENABLED: ${{ secrets.TFC_API_TOKEN != '' }}
-      TFC_WORKSPACE: ${{ github.ref_name == 'main' && 'WebbPulse-Portfolio' || 'WebbPulse-Portfolio-staging' }}
-
+    if: github.ref_name == 'main' || vars.STAGING_DEPLOY_ENABLED == 'true'
+    outputs:
+      environment: ${{ steps.pick.outputs.environment }}
     steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "20"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      # The @webbpulse scoped packages resolve from CodeArtifact, so npm has to
-      # be logged in before the install. The deploy role in each GitHub
-      # Environment can read CodeArtifact, so this reuses the credentials the
-      # deploy already assumes rather than adding a second role.
-      #
-      # The login writes the registry and token into ~/.npmrc, and it is run
-      # from the repository root rather than frontend/: inside a workspaces
-      # package directory the aws CLI writes the config to the wrong .npmrc.
-      - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Log in to CodeArtifact for npm
-        env:
-          CODEARTIFACT_DOMAIN_OWNER: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
+      - id: pick
         run: |
-          set -euo pipefail
-          aws codeartifact login \
-            --tool npm \
-            --domain webbpulse \
-            --domain-owner "$CODEARTIFACT_DOMAIN_OWNER" \
-            --repository npm \
-            --namespace @webbpulse
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            echo "environment=production" >> "$GITHUB_OUTPUT"
+          else
+            echo "environment=staging" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Install dependencies
-        working-directory: frontend
-        run: npm ci
-
-      - name: Build
-        working-directory: frontend
-        env:
-          VITE_API_BASE_URL: ${{ vars.API_BASE_URL != '' && format('{0}/api/v1', vars.API_BASE_URL) || '' }}
-          # Empty when the environment variable is unset, which the frontend reads as
-          # bearer mode. Set AUTH_MODE=identity on the environment to cut over.
-          VITE_AUTH_MODE: ${{ vars.AUTH_MODE }}
-        run: npm run build
-
-      - name: Wait for Terraform run to complete
-        if: env.TFC_WAIT_ENABLED == 'true'
-        env:
-          TFC_API_TOKEN: ${{ secrets.TFC_API_TOKEN }}
-        run: |
-          TFC_WORKSPACE_ID=$(curl -sfg \
-            -H "Authorization: Bearer $TFC_API_TOKEN" \
-            -H "Content-Type: application/vnd.api+json" \
-            "https://app.terraform.io/api/v2/organizations/$TFC_ORG/workspaces/$TFC_WORKSPACE" \
-            | python3 -c "import sys, json; print(json.load(sys.stdin)['data']['id'])")
-          echo "Resolved workspace ID: $TFC_WORKSPACE_ID"
-
-          TERMINAL="applied planned_and_finished discarded errored canceled force_canceled"
-          echo "Polling HCP Terraform workspace $TFC_WORKSPACE for active runs..."
-          for i in $(seq 1 40); do
-            RESPONSE=$(curl -sfg \
-              -H "Authorization: Bearer $TFC_API_TOKEN" \
-              -H "Content-Type: application/vnd.api+json" \
-              "https://app.terraform.io/api/v2/workspaces/$TFC_WORKSPACE_ID/runs?page[size]=1")
-            STATUS=$(echo "$RESPONSE" | python3 -c "
-          import sys, json
-          runs = json.load(sys.stdin).get('data', [])
-          print(runs[0]['attributes']['status'] if runs else 'no_runs')
-          ")
-            echo "  Attempt $i/40 — Terraform run status: $STATUS"
-            if echo "$TERMINAL" | grep -qw "$STATUS" || [ "$STATUS" = "no_runs" ]; then
-              echo "Terraform is idle. Proceeding."
-              break
-            fi
-            if [ "$i" -eq 40 ]; then
-              echo "Timed out waiting for Terraform (last status: $STATUS)."
-              exit 1
-            fi
-            sleep 15
-          done
-
-      - name: Sync to S3
-        env:
-          FRONTEND_BUCKET: ${{ vars.FRONTEND_S3_BUCKET }}
-        run: |
-          aws s3 sync frontend/dist/ s3://$FRONTEND_BUCKET/ --delete
-
-      - name: Invalidate CloudFront cache
-        if: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID != '' }}
-        env:
-          CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
-        run: |
-          aws cloudfront create-invalidation \
-            --distribution-id $CLOUDFRONT_DISTRIBUTION_ID \
-            --paths "/*"
+  deploy:
+    needs: resolve-env
+    uses: WebbPulse/.github/.github/workflows/spa-deploy.yml@v2
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      environment: ${{ needs.resolve-env.outputs.environment }}
+      node-version: "20"
+      working-directory: frontend
+      cache-dependency-path: frontend/package-lock.json
+      build-env-json: >-
+        ${{ vars.API_BASE_URL != ''
+            && format('{{"VITE_API_BASE_URL":"{0}/api/v1"}}', vars.API_BASE_URL)
+            || '{}' }}
+      s3-bucket: ${{ vars.FRONTEND_S3_BUCKET }}
+      cloudfront-distribution-id: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+      aws-region: us-west-2
+      concurrency-group: frontend-deploy-${{ github.ref_name }}
+      tfc-organization: WebbPulse
+      tfc-workspace: ${{ github.ref_name == 'main' && 'WebbPulse-Portfolio' || 'WebbPulse-Portfolio-staging' }}
+    secrets:
+      role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      tfc-api-token: ${{ secrets.TFC_API_TOKEN }}
