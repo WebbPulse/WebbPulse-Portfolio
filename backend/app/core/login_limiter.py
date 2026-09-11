@@ -15,9 +15,9 @@ from ..db import client
 from ..db.tables import RATE_LIMIT_TTL_ATTRIBUTE, RATE_LIMITS
 from .logging import logger
 
-#: The header the Lambda Web Adapter injects, carrying the API Gateway request
-#: context as a plain, unencoded JSON string.
 REQUEST_CONTEXT_HEADER = "x-amzn-request-context"
+"""The header the Lambda Web Adapter injects, carrying the API Gateway request
+context as a plain, unencoded JSON string."""
 
 LOGIN_FAIL_PREFIX = "LOGIN_FAIL#"
 

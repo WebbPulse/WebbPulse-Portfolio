@@ -14,9 +14,9 @@ from webbpulse.config import load_json_secret, reset_secret_cache
 
 logger = logging.getLogger(__name__)
 
-#: The flattened string map, cached separately from the shared loader's parsed
-#: object, so a repeated read does neither the fetch nor the flatten.
 _cache: Optional[dict[str, str]] = None
+"""The flattened string map, cached separately from the shared loader's parsed
+object, so a repeated read does neither the fetch nor the flatten."""
 
 
 def load_app_secrets(secret_arn: str, client: Any = None) -> dict[str, str]:

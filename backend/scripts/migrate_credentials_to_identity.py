@@ -24,12 +24,12 @@ from webbpulse.identity import PASSWORD_CREDENTIAL_TYPE  # noqa: E402
 
 from app.db.tables import CREDENTIALS  # noqa: E402
 
-#: The legacy column holding the bcrypt hash on a Portfolio user row.
 LEGACY_HASH_FIELD = "hashed_password"
+"""The legacy column holding the bcrypt hash on a Portfolio user row."""
 
-#: Bcrypt modular crypt prefixes that `bcrypt.checkpw` still verifies; anything
-#: else is not copied because the credential could never verify.
 BCRYPT_PREFIXES = ("$2a$", "$2b$", "$2y$")
+"""Bcrypt modular crypt prefixes that `bcrypt.checkpw` still verifies; anything else
+is not copied because the credential could never verify."""
 
 
 class CredentialConflict(Exception):
