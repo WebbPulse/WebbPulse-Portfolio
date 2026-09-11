@@ -25,9 +25,20 @@ module "staging_access_gate" {
   # environment no longer grows with the number of enforced routes.
   #
   # The inputs below are unchanged; how they reach the function was never part
-  # of the module's interface. The bump plans one in-place update of the
-  # authorizer function and nothing else.
-  version = "~> 2.11"
+  # of the module's interface.
+  #
+  # 2.12 fixes a defect that made enforcement useless in a gated environment.
+  # The authorizer verifies a token against the issuer's JWKS, and in this
+  # topology the issuer is the same API the authorizer guards, so the JWKS path
+  # carries this very authorizer. The authorizer's own fetch has no gate cookie
+  # and no origin header, so the gate refused it 403 and every valid RS256 token
+  # was denied "JWKS unavailable". 2.12.0 sends the origin verification header on
+  # that fetch and exempts the issuer's .well-known subtree, which is public key
+  # material every verifier of these tokens has to be able to reach.
+  #
+  # The bump plans one in-place update of the authorizer function (source hash,
+  # and the config file rendered into its archive) and nothing else.
+  version = "~> 2.12"
 
   name             = local.prefix
   cookie_domain    = local.domain

@@ -1185,3 +1185,185 @@ the moment the authorizer is removed.
   already granted. The real fix was a **name pattern**, and an IAM
   `AccessDenied` that names an action can still mean a condition that did not
   match.
+
+## Executed 2026-09-11, steps 9a and 10
+
+What actually ran in production for the admin route enforcement and the frontend
+flip, recorded against the addendum above. Steps 0 through 9 are recorded
+separately; this section starts from the point where the identity stack was
+already live, the native JWT authorizer already carried the 15 `/api/auth`
+routes, and the administrator had signed in successfully through
+`POST https://api.webbpulse.com/api/auth/login` at 06:39Z.
+
+Step 11 was deliberately not run. The legacy `hashed_password` column is still
+populated, so the rollback described in the addendum still works.
+
+### The release merge
+
+PR 193, `staging` into `main`, "Release: per-domain CI matrix and the repository
+level gate". Merged with a merge commit rather than a squash, which is what this
+repository does for a staging to main promotion.
+
+| Thing | Value |
+| --- | --- |
+| Merge commit | `b9db85c02cbcdf134d6de5e4c469dd2b24f7b00c` |
+| Required check | `all-checks-passed`, green before the merge |
+| `Deploy Backend` run | `34573028977`, success at 07:11:51Z |
+
+The backend run built all four domain images (`content`, `resume`, `identity`,
+`public`), deployed them, and passed both `verify-route-cuts` and
+`smoke-domains`. The route cut verification passing before the first apply is
+what makes the next step's plan trustworthy: the route keys Terraform is about
+to write are the ones the built applications actually serve.
+
+### First apply, flag absent
+
+Run `run-kKkAoHyXtviUFYzk` on `ws-JpNLUhFzVCzMDgAN`, the VCS run for the merge
+commit. `domain_jwt_enforced` did not exist on the workspace, so it took its
+`false` default.
+
+**Plan: 24 to add, 0 to change, 0 to destroy.** Exactly the addendum's expected
+shape. Every one of the 24 was an `aws_apigatewayv2_route` create under
+`module.api.aws_apigatewayv2_route.this`, nine on `content` and fifteen on
+`resume`, matching `local.domain_identity_jwt_route_paths` key for key. Nothing
+else appeared in the plan: no `random_password`, no DynamoDB table, no KMS key,
+no Route 53 record, and no change to the JWT authorizer created in step 8.
+
+The platform modules float to 2.11.0 rode along in this merge and was a no-op
+here, as expected: production does not use the staging access gate module, which
+is the only thing 2.11 changed.
+
+Applied at 07:13:44Z. Verified against the live gateway with
+`aws apigatewayv2 get-routes --api-id v41a6bqcl1`:
+
+- 77 routes total.
+- All 24 expected keys present, none missing.
+- All 24 carrying `AuthorizationType: NONE` and no `AuthorizerId`, which is the
+  inert state the addendum describes.
+- The only routes on the API carrying an authorizer were the 15 `/api/auth`
+  routes from step 8, on authorizer `1ii09i`, unchanged.
+
+Behaviour was unchanged by this apply, confirmed by probe:
+`GET /api/v1/posts`, `GET /api/v1/site-content` and `GET /api/v1/projects` all
+`200`, and `POST /api/v1/posts/admin` with no token still answered `403` from
+the application rather than `401` from the gateway.
+
+### Second apply, flag on
+
+`domain_jwt_enforced` was created on the workspace as a `terraform` category
+variable with `hcl = true` and the value `true`, because the variable is
+`type = bool`. The existing `identity_jwt_mode` was created the same way except
+for `hcl`, since its value is a string.
+
+Run `run-xUPq2RpVre9Mu9Kh`, message "Step 9a: enforce identity JWT on admin
+routes".
+
+**Plan: 24 to add, 0 to change, 24 to destroy.**
+
+This is worth stating carefully, because the addendum's table calls it "24 route
+changes" and a reader expecting `0 add 24 change 0 destroy` will see this and
+stop. The replacement shape is the correct one in `native` mode, and
+`variable "domain_jwt_enforced"` in `terraform/variables.tf` says so directly:
+"In production, where `identity_jwt_mode` is `native`, a marked route moves onto
+the module's JWT authorizer resource, so the 24 keys are replaced rather than
+updated in place."
+
+What the plan actually contained, checked rather than assumed:
+
+- 24 deletes, all `module.api.aws_apigatewayv2_route.this[<key>]`.
+- 24 creates, all `module.api.aws_apigatewayv2_route.identity_jwt[<key>]`.
+- The two key sets are **identical**, compared as sets in both directions. No
+  key is deleted without being recreated and none appears only on the create
+  side.
+- `aws_apigatewayv2_route` is the only resource type in the plan. No other
+  resource of any type changed.
+- Each created route carries `authorization_type = "JWT"` and
+  `authorizer_id = "1ii09i"`, which is the authorizer step 8 created, and the
+  same `target` integration the deleted route pointed at.
+
+So the count that matters, the number of route keys that moved onto the
+authorizer, is 24 and not more. Neither `.well-known` route and no public read
+appears anywhere in the plan.
+
+Applied at 07:17:41Z, run finished 07:17:47Z.
+
+### Verification after enforcement
+
+Probes against `https://api.webbpulse.com`, immediately after the apply:
+
+| Probe | Result |
+| --- | --- |
+| `GET /api/v1/posts` | `200` |
+| `GET /api/v1/site-content` | `200` |
+| `GET /api/v1/projects` | `200` |
+| `GET /health` | `200` |
+| `POST /api/v1/posts/admin`, no token | `401`, `www-authenticate: Bearer`, body `{"message":"Unauthorized"}` |
+| `POST /api/v1/posts/admin`, `Authorization: Bearer not-a-token` | `401`, `www-authenticate: Bearer scope="" error="invalid_token" error_description="token contains an invalid number of segments"` |
+
+Both 401s carry an `apigw-requestid` and no application error envelope, which is
+how you tell the gateway refused the request before the function saw it. The
+second one is the more informative of the two: the authorizer parsed the header,
+failed to read a JWT out of it, and said so. That is the enforcement working.
+
+### Step 10, the frontend flip
+
+`AUTH_MODE=identity` set on the `production` GitHub Environment at 07:18:03Z.
+The mechanism is build time: `deploy-frontend.yml` passes
+`VITE_AUTH_MODE: ${{ vars.AUTH_MODE }}` into `npm run build`, and
+`frontend/src/services/api.ts` reads it once at startup through `ConfigReader`,
+falling back to `bearer` when absent.
+
+`Deploy Frontend` dispatched on `main`, run `34573737408`, success at 07:20:21Z.
+
+Confirmed in the shipped artefact rather than in the workflow log. The bundle
+name changed from `index-BegbBg5K.js` to `index-BLzXYflL.js`, and the embedded
+marker changed with it:
+
+| When | Marker in the bundle |
+| --- | --- |
+| Before | `VITE_AUTH_MODE:""` |
+| After | `VITE_AUTH_MODE:"identity"` |
+
+An empty string is what the bearer fallback looks like after Vite's build time
+substitution, so those two strings are the whole of the flip as the browser sees
+it. `https://webbpulse.com` returned `200` and `GET /api/v1/site-content`
+returned `200` afterwards.
+
+### The window
+
+The addendum warns that admin writes from the browser fail between the flag
+apply and the frontend deploy. They did, and the window was:
+
+| Boundary | Time |
+| --- | --- |
+| Flag apply finished | 07:17:47Z |
+| Frontend deploy finished | 07:20:21Z |
+| **Duration** | **2 minutes 34 seconds** |
+
+Public reads were unaffected throughout, which the probes above confirm at both
+ends. Keeping the window this short came from having the `gh variable set` and
+the workflow dispatch ready to run before the second apply was queued, which is
+what the addendum recommends.
+
+### What the runbook got right and what it did not
+
+Right: the two apply split, the 24 count, the inert first apply, the direction of
+the window, and the advice to have step 10 staged before starting the flag apply.
+
+Not quite right: the addendum's expected plan table for `native` mode says "24
+route changes", which reads as 24 in place updates. It is 24 replacements, so
+`24 add 0 change 24 destroy`. The variable's own documentation has this correct
+and the table should be read against it. Anyone following this step should
+compare the deleted and created key sets rather than the headline counts, since
+the headline counts alone cannot distinguish a clean one for one move from a key
+being dropped and a different one added.
+
+### Left open
+
+- **Step 11 has not run.** `clear_legacy_credentials.py --apply` is deliberately
+  not executed, so the legacy `hashed_password` column is intact and the
+  addendum's rollback still works in full. It is waiting on the owner making one
+  admin write through the identity path in a browser, which is the gate step 11
+  has always had.
+- SES DKIM remains `PENDING` and sending is still sandbox limited. Neither
+  blocks the admin path.
