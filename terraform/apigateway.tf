@@ -602,7 +602,7 @@ module "api" {
     # The identity standard's M5 passkey flows: the seven routes
     # `build_identity_router` mounts when `passkeys_enabled` is on and the
     # product supplies both a `passkeys` store and a `webauthn_challenges`
-    # store. `terraform/identity.tf` creates the two tables and sets
+    # store, plus the eighth route that mounts whatever those say. `terraform/identity.tf` creates the two tables and sets
     # `IDENTITY_PASSKEYS_ENABLED` true in staging;
     # `app/composition/identity.py` supplies the stores unconditionally.
     #
@@ -670,8 +670,52 @@ module "api" {
     # variable one, and `/api/auth/passkeys/register/options` has more segments
     # than `{credential_id}` can match anyway.
     #
-    # No trailing slash on any of the seven.
+    # THE EIGHTH KEY, `GET /api/auth/passkeys/availability`, IS THE ONE THAT
+    # DOES NOT FOLLOW THE PARAGRAPHS ABOVE, and it is unflagged for a reason
+    # none of the other seven share. Added by webbpulse-python 0.17.0 through
+    # its own `register_passkey_availability`, it mounts in EVERY deployment,
+    # including one with `passkeys_enabled` off and one supplying no stores at
+    # all, where it answers `{"enabled": false, "passwordless": false}`. That is
+    # deliberate package design on exactly the terms
+    # `GET /api/auth/oauth/providers` in the M6 block below is designed: an
+    # absent route is a 404 the sign-in page cannot tell apart from a routing
+    # mistake, a gateway misconfiguration or a backend older than 0.17.0, and
+    # the whole point of a discovery route is an answer the frontend can trust
+    # in the negative. `{"enabled": false}` says "no passkeys, and I am sure".
+    #
+    # The other seven do not mount when they cannot work, because a route that
+    # can only answer 503 is worse than an absent one. This one can always work,
+    # so its key is unconditional here for the same reason all six OAuth keys
+    # are: a key for a route the function has not mounted is harmless and gives
+    # the function's own 404 rather than the gateway's, while a path with no key
+    # is the outage the seven keys above were added to end.
+    #
+    # UNFLAGGED, and not on the two login legs' reasoning. Those two carry no
+    # token because a caller mid sign-in has none to carry. This one is read by
+    # a sign-in page that holds no token by definition and answers two booleans
+    # derived from configuration: it touches no store, makes no call, is not
+    # rate limited by the package, and holds nothing about any user. It is
+    # `GET /api/auth/oauth/providers`'s twin in every respect, which is why it
+    # is written in that key's style rather than this block's.
+    #
+    # `authorization_type` omitted, like every other identity key in this file.
+    # Anonymous to the application and outside the staging access gate are two
+    # different claims, and the anonymous surface stays exactly the two
+    # discovery documents: somebody loading a sign-in page in staging is
+    # somebody already through the fence.
+    #
+    # IT IS A LITERAL KEY UNDER `passkeys/` AND IT DOES NOT COLLIDE WITH
+    # `{credential_id}`. `GET /api/auth/passkeys/availability` and
+    # `PATCH`/`DELETE /api/auth/passkeys/{credential_id}` would match the same
+    # segment shape, but they are different methods, and a route key is a method
+    # and a path together: no GET key carries the variable, so nothing here is
+    # shadowed in either direction. API Gateway prefers a literal segment over a
+    # variable one in any case, which is the rule `register/options` already
+    # relies on two paragraphs up.
+    #
+    # No trailing slash on any of the eight.
     {
+      "GET /api/auth/passkeys/availability" = { integration = "identity" }
       "POST /api/auth/passkeys/register/options" = {
         integration          = "identity"
         require_identity_jwt = true

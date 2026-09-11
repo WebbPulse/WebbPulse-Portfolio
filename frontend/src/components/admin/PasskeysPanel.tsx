@@ -16,13 +16,23 @@ import { defaultPasskeyName } from '../../services/passkeyNames';
  * ## Why the list is a route and the capability is not
  *
  * `GET /api/auth/passkeys` answers what is enrolled, so the list is a fetch
- * like any other. Whether the deployment has passkeys switched on has no route
- * at all, which is why the login page probes for it. This panel does not need
- * the probe: it learns the same thing from any call it makes, because the
- * package folds `PASSKEYS_DISABLED` into an `unavailable` outcome on all five
- * methods. An `unavailable` list is rendered as a sentence rather than an empty
- * panel, so a backend without the capability does not look like an account
- * without passkeys.
+ * like any other. Whether the deployment has passkeys switched on is a separate
+ * question, and since webbpulse-python 0.17.0 it has its own route:
+ * `GET /api/auth/passkeys/availability` reports it as `enabled`, which is what
+ * `services/passkeyAvailability.ts` reads for the sign-in page.
+ *
+ * This panel still does not ask it, and that is deliberate rather than a
+ * leftover. It learns the same thing from any call it already makes, because
+ * the package folds `PASSKEYS_DISABLED` into an `unavailable` outcome on all
+ * five methods, so the list fetch this panel cannot avoid carries the answer.
+ * Adding a second request to learn what the first one reports would be one more
+ * round trip on a settings page for nothing. An `unavailable` list is rendered
+ * as a sentence rather than an empty panel, so a backend without the capability
+ * does not look like an account without passkeys.
+ *
+ * The sign-in page is the one that needs the route, because it has no
+ * equivalent call: everything it could ask costs something, which is exactly
+ * why it used to probe.
  *
  * ## The refusal with a remedy
  *

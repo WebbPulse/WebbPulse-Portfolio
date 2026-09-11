@@ -12,8 +12,13 @@
  *    API is. False in a browser served over plain HTTP, because WebAuthn is a
  *    secure-context API, and false in jsdom. A button that throws when pressed
  *    is worse than no button.
- * 3. **Does this deployment have passwordless sign-in on?** Probed, because
- *    there is no discovery document. See `services/passkeyAvailability.ts`.
+ * 3. **Does this deployment have passwordless sign-in on?** Read from
+ *    `GET /api/auth/passkeys/availability`, which webbpulse-python 0.17.0
+ *    added for exactly this. Until that release there was no discovery route
+ *    and this question was answered by probing
+ *    `POST /api/auth/login/passkey/options`, which spent a rate limit slot and
+ *    wrote a challenge row per sign-in page load. See
+ *    `services/passkeyAvailability.ts`.
  *
  * Conditional mediation is a fourth question and a separate capability: a
  * browser can do WebAuthn without it. It is asked only when the first three
@@ -22,7 +27,17 @@
  *
  * The hook starts with everything false and fills in after a round trip, which
  * is why the login page renders no passkey affordance until it does rather
- * than rendering one that then disappears.
+ * than rendering one that then disappears. The round trip is now a cached GET
+ * rather than a rate limited POST, so the wait is usually the browser's own
+ * HTTP cache answering.
+ *
+ * This hook reads `passwordless` and not `enabled`. They are different
+ * questions and a deployment can answer yes to the first and no to the second:
+ * with `enabled` true and `passwordless` false a passkey is a managed
+ * credential and a second factor but not an entry point, so the settings panel
+ * offers to add one and this button must not appear. The package gates
+ * `passwordless` on `enabled` in the route itself, so reading it alone is
+ * safe.
  */
 import { useEffect, useState } from 'react';
 import type { AuthClient } from '@webbpulse/auth';
@@ -31,10 +46,7 @@ import {
   passkeysSupported,
 } from '@webbpulse/auth';
 
-import {
-  PASSKEY_LOGIN_OPTIONS_PATH,
-  passkeyLoginAvailability,
-} from '../services/passkeyAvailability';
+import { passkeyLoginOffered } from '../services/passkeyAvailability';
 
 /** What the login page needs to know before drawing anything. */
 export interface PasskeySignInSupport {
@@ -51,6 +63,9 @@ export interface PasskeySignInSupport {
  * the API origin rather than this application's `/api/v1` base. It is passed
  * in rather than read off the client because `AuthClient` keeps its own client
  * private and exposes no equivalent of `oauthStartUrl` for the passkey routes.
+ * It is passed as an origin rather than a full URL, the way `useOAuthProviders`
+ * takes one: the service owns the path, so a route the package renames is one
+ * edit in one file.
  */
 export function usePasskeySignIn(
   client: AuthClient<unknown> | null,
@@ -79,11 +94,9 @@ export function usePasskeySignIn(
     let live = true;
 
     void (async () => {
-      const state = await passkeyLoginAvailability(
-        `${identityOrigin}${PASSKEY_LOGIN_OPTIONS_PATH}`
-      );
+      const offered = await passkeyLoginOffered(identityOrigin);
       if (!live) return;
-      if (state !== 'available') {
+      if (!offered) {
         setSupport({ offered: false, conditional: false });
         return;
       }

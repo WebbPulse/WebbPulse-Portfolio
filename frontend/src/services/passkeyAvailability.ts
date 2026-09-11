@@ -1,182 +1,254 @@
 /**
- * Whether this deployment offers passwordless passkey sign-in.
+ * Whether this deployment offers passkeys, and whether they are a way in.
  *
- * ## Why this is still a probe when the OAuth one no longer is
+ * ## One cached GET, replacing a probe that wrote a row
  *
- * webbpulse-python 0.16.0 replaced the OAuth probe with
- * `GET /api/auth/oauth/providers`, and the obvious move was to do the same
- * here. There is nothing to move to. 0.16.0 adds exactly one discovery route
- * and it is about OAuth: it answers a provider list and carries no passkey
- * field. The OIDC discovery document at
- * `/api/auth/.well-known/openid-configuration` is not a candidate either. It
- * is `build_discovery_document`, a pure function of the issuer returning five
- * fixed keys, `issuer`, `jwks_uri`, `response_types_supported`,
- * `subject_types_supported` and `id_token_signing_alg_values_supported`, none
- * of which says anything about a capability. And there is no
- * `/api/auth/passkeys/config` route: the only passkey GET the package mounts
- * is `GET /api/auth/passkeys`, which lists the signed-in user's own
- * credentials from behind the authorizer, so it is useless to a sign-in page
- * that by definition holds no token.
+ * webbpulse-python 0.17.0 added `GET /api/auth/passkeys/availability`, and
+ * this file is what it exists for. It is the release the previous version of
+ * this file asked for by name.
  *
- * **A package change would settle this.** A future release adding
- * `GET /api/auth/passkeys/availability`, unconditional and anonymous and
- * `Cache-Control`ed the way `oauth/providers` is, would delete this probe
- * outright and turn this file into one fetch and one field read.
+ * Until it there was nothing to ask. The identity service mounts the passkey
+ * routes only when the capability is configured and it can mount the enrolment
+ * routes while leaving passwordless sign-in off, and neither fact was
+ * published anywhere the bundle could read. `GET /api/auth/oauth/providers`
+ * answers a provider list and carries no passkey field. The OIDC discovery
+ * document is a pure function of the issuer returning five fixed keys, none of
+ * which describes a capability. `GET /api/auth/passkeys` lists the signed-in
+ * user's own credentials from behind the authorizer, so it is useless to a
+ * sign-in page that by definition holds no token. So the only observable
+ * difference between "passkey sign-in works here" and "it does not" was what
+ * `POST /api/auth/login/passkey/options` answered, and this file probed it.
  *
- * Until then: the identity service mounts the
- * passkey routes only when the capability is configured, and it can mount the
- * enrolment routes while leaving passwordless sign-in off. Neither fact is
- * published anywhere the bundle can read. The only observable difference
- * between "passkey sign-in works here" and "it does not" is what
- * `POST /api/auth/login/passkey/options` answers.
+ * That was wrong twice over, which is the reasoning the package's own
+ * changelog gives for the route.
  *
- * So this probes that route and reads the answer:
+ * It spent the wrong budget. The options route is rate limited to thirty calls
+ * per fifteen minutes per IP, and spending those on sign-in *page loads*
+ * rather than on sign-ins meant a user who reloaded enough times was refused
+ * the passkey sign-in they were reloading in order to attempt. A rate limit
+ * doing the opposite of its job.
  *
- * - a 200 carrying a challenge means passwordless sign-in is on
- * - a 404 means the route is not mounted at all, which is the whole-surface
- *   case and the one the brief calls out
- * - a 4xx or 503 carrying `PASSKEYS_DISABLED` or `PASSKEY_LOGIN_DISABLED`
- *   means the routes exist and this capability does not
+ * And the probe was not a read. `begin_passkey_login` writes a WebAuthn
+ * challenge row per call, so every sign-in page load in the estate left a row
+ * in the challenge table to expire: a storage cost paid to answer a question
+ * about configuration.
  *
- * ## Why this probe is cheaper than it looks
+ * The discovery route answers the question directly instead. It is anonymous,
+ * it is not rate limited, it touches no store, it writes nothing, and it
+ * carries `Cache-Control: public, max-age=300` so repeat loads mostly do not
+ * reach the function at all.
  *
- * Unlike the OAuth start route, this one is an ordinary same-origin JSON POST:
- * no redirect to a third party, no CORS surprise, no `redirect: 'manual'`
- * dance. What it does cost is real: one of the thirty login-options calls per
- * fifteen minutes that `PASSKEY_OPTIONS_LIMIT` allows per IP, and a challenge
- * row that is written and then never spent.
+ * ## Why it is trustworthy in the negative
  *
- * So the answer is cached for the tab's session rather than for the page load.
- * A page-load cache still meant a probe per *reload*, and a sign-in page is
- * reloaded: a mistyped password, a back button, a link followed and returned
- * from. Thirty of those in a quarter of an hour is not a hostile number, and
- * hitting it meant the rate limiter refusing the sign-in the user was
- * reloading in order to attempt. The verdict is a fact about the deployment,
- * not about the user, so it is the same on the next reload and there is
- * nothing to learn by asking again.
+ * It mounts in **every** deployment, including one with passkeys switched off
+ * and the documents-only one that supplies no passkey stores at all. That is
+ * deliberate package design on the same terms as `oauth/providers`: an absent
+ * route answers 404, and a 404 is indistinguishable from a routing mistake, a
+ * gateway misconfiguration, or this bundle talking to a backend older than
+ * 0.17.0. `{"enabled": false}` is a real answer rather than an inference.
  *
- * The probe is also gated on `passkeysSupported()` in `usePasskeySignIn`,
- * which reads `PublicKeyCredential` off the global. A browser that cannot do
- * WebAuthn never reaches this file at all, so it never spends a request
- * finding out about a capability it could not use.
+ * The other seven passkey routes do not mount when they cannot work, because a
+ * route that can only answer 503 is worse than an absent one. This one can
+ * always work.
  *
- * The body is deliberately empty rather than carrying an email. An address
- * would be a discoverable-credential request for a specific account, and the
- * probe has no account in hand: it is asking about the deployment, not about a
- * user. The server answers an empty body with a discoverable challenge, which
- * is exactly the "is this switched on" signal wanted here.
+ * ## The two fields, and why `passwordless` can be read alone
+ *
+ * `enabled` says the deployment registers and verifies passkeys at all, so an
+ * account settings page should offer to add one. `passwordless` says a passkey
+ * is a way *into* an account, so a sign-in page should offer the button. With
+ * `enabled` true and `passwordless` false a passkey is a managed credential
+ * and a second factor but not an entry point, which is the distinction
+ * `begin_passkey_login` already enforces and the one the old probe could see
+ * only as the difference between `PASSKEYS_DISABLED` and
+ * `PASSKEY_LOGIN_DISABLED`.
+ *
+ * The package gates `passwordless` on `enabled` inside the route, so the two
+ * can never disagree on the wire and a caller that wants the sign-in button
+ * can read `passwordless` alone. This file does not re-derive that gate: doing
+ * so would be a second opinion about a server invariant, and if the server
+ * ever broke it the right outcome is to see what the server said.
+ *
+ * ## Why the `sessionStorage` tier went away with the probe
+ *
+ * PR 182 added a persistent tier to `availabilityCache.ts` because a reload
+ * cost another rate limit slot and another challenge row, and the first load
+ * of every session paid both anyway. The package's changelog says as much: a
+ * cache in one frontend is not a fix.
+ *
+ * With this route there is nothing left to protect. A reload costs at most one
+ * anonymous GET of a five-minute-cacheable response holding two booleans, and
+ * the browser's own HTTP cache serves most of those without a request. Keeping
+ * a hand-rolled `sessionStorage` tier to save that would be storing a
+ * deployment fact for longer than the deployment is guaranteed to hold it, in
+ * a place no redeploy can invalidate, to avoid a fetch the platform already
+ * avoids. `Cache-Control` is the same idea implemented by the browser, with
+ * correct invalidation. So the tier is gone, and `availabilityCache.ts` is
+ * back to the single in-memory map it was before PR 182. Nothing else used
+ * `persist`: `oauthAvailability.ts` deliberately did not, for a reason that
+ * file states.
+ *
+ * ## What still gates this, and what does not
+ *
+ * `usePasskeySignIn` still checks `passkeysSupported()`, which reads
+ * `PublicKeyCredential` off the global, before it asks this file anything, and
+ * still asks `conditionalMediationAvailable()` only after this route has said
+ * yes. Those are browser capabilities and this route answers a question about
+ * the server, so neither replaces the other: a browser that cannot do WebAuthn
+ * must not be shown a button however the deployment is configured, and a
+ * deployment with passwordless off must not be shown one however capable the
+ * browser is.
  */
-import { type Availability, cachedAvailability } from './availabilityCache';
+import { cachedAvailability } from './availabilityCache';
 
-/** Where the login options route lives, relative to the identity origin. */
-export const PASSKEY_LOGIN_OPTIONS_PATH = '/api/auth/login/passkey/options';
+/** Where the availability route lives, relative to the identity origin. */
+export const PASSKEY_AVAILABILITY_PATH = '/api/auth/passkeys/availability';
 
 /**
- * Error codes that mean "the identity service is there, passkey sign-in is
- * not".
+ * What the deployment says about passkeys.
  *
- * `PASSKEYS_DISABLED` is the capability off altogether and
- * `PASSKEY_LOGIN_DISABLED` is passwordless sign-in specifically off while
- * enrolment still works. The package folds both into one `unavailable`
- * outcome, and this gate does the same: a user can do nothing about either,
- * and the button is hidden in both cases.
+ * Mirrors the wire shape, so there is no mapping step that could quietly drop
+ * or invert a field.
  */
-const UNAVAILABLE_CODES: ReadonlySet<string> = new Set([
-  'PASSKEYS_DISABLED',
-  'PASSKEY_LOGIN_DISABLED',
-]);
+export interface PasskeyAvailability {
+  /** Passkeys can be registered and verified, so a settings page can offer one. */
+  readonly enabled: boolean;
+  /** A passkey is a way into an account, so a sign-in page can offer the button. */
+  readonly passwordless: boolean;
+}
 
-/** Reads `error_code` off the backend's error envelope, tolerating any shape. */
-function errorCodeOf(body: unknown): string | undefined {
+/**
+ * What is assumed when the question could not be answered.
+ *
+ * Both false, which renders no affordance. It is the same conclusion the probe
+ * gate reached from an `unknown`, and it is the only safe one: a button that
+ * starts a ceremony against routes that are not mounted fails in the browser's
+ * own dialog, where there is nowhere to put an explanation.
+ */
+const UNKNOWN: PasskeyAvailability = { enabled: false, passwordless: false };
+
+/**
+ * Reads the two booleans off a parsed body, or `undefined` for anything else.
+ *
+ * `undefined` means nothing was learned and is not cached, which is the
+ * distinction that keeps a proxy answering 200 with an HTML error page from
+ * reading as a deployment with passkeys switched off.
+ *
+ * Both fields are required rather than defaulted. A body carrying only
+ * `enabled` is not this route's envelope, and guessing `passwordless` from a
+ * response that did not state it is exactly the kind of inference this route
+ * was added to remove.
+ */
+function availabilityOf(body: unknown): PasskeyAvailability | undefined {
   if (typeof body !== 'object' || body === null) {
     return undefined;
   }
-  const code = (body as { error_code?: unknown }).error_code;
-  return typeof code === 'string' ? code : undefined;
+  const { enabled, passwordless } = body as Record<string, unknown>;
+  if (typeof enabled !== 'boolean' || typeof passwordless !== 'boolean') {
+    return undefined;
+  }
+  return { enabled, passwordless };
 }
 
 /**
- * Probes the login options route.
+ * Fetches the availability route and returns what it says.
  *
- * Exported for the test, which drives it directly rather than through the
- * cache: the cache is the thing that makes a second call unobservable, and a
- * test of the classification needs each case to actually run.
+ * Exported for the test, which drives it against a stubbed `fetch` rather than
+ * going through the cache: the cache is the thing that makes a second call
+ * unobservable, and a test of the parsing needs each case to actually run.
  */
-export async function probePasskeyLogin(
-  optionsUrl: string,
+export async function fetchPasskeyAvailability(
+  availabilityUrl: string,
   fetchImpl: typeof fetch = fetch
-): Promise<Availability> {
+): Promise<PasskeyAvailability | undefined> {
   let response: Response;
   try {
-    response = await fetchImpl(optionsUrl, {
-      method: 'POST',
-      // Anonymous. A sign-in options call has no session by definition, and
-      // sending the refresh cookie to a route that does not read it is a habit
-      // worth not forming.
+    response = await fetchImpl(availabilityUrl, {
+      method: 'GET',
+      // Anonymous. A sign-in page has no session by definition, and the route
+      // reads nothing off one.
       credentials: 'omit',
-      headers: {
-        accept: 'application/json',
-        'content-type': 'application/json',
-      },
-      // No email. See the file note: the question is about the deployment.
-      body: '{}',
+      headers: { accept: 'application/json' },
     });
   } catch {
     // A network failure, or the request being blocked. Nothing was learned.
-    return 'unknown';
+    return undefined;
   }
 
-  if (response.status === 200) {
-    return 'available';
+  if (response.status !== 200) {
+    // Including a 404, which means something worth not guessing about: the
+    // backend is older than 0.17.0. Rendering no passkey affordance is the
+    // right outcome there, but it is reached by there being nothing to render
+    // rather than by reading a 404 as "switched off".
+    return undefined;
   }
-  if (response.status === 404) {
-    // The route is not mounted. This is the case the brief names, and the one
-    // that has to hide the button rather than render an error.
-    return 'unavailable';
+
+  try {
+    return availabilityOf(await response.json());
+  } catch {
+    return undefined;
   }
-  if (
-    response.status === 400 ||
-    response.status === 403 ||
-    response.status === 503
-  ) {
-    // The identity service is there and the capability is not. The envelope
-    // says which, and a refusal that is not one of those two codes is
-    // something else this probe should not read as "unavailable".
-    try {
-      const body: unknown = await response.json();
-      const code = errorCodeOf(body);
-      return code !== undefined && UNAVAILABLE_CODES.has(code)
-        ? 'unavailable'
-        : 'unknown';
-    } catch {
-      return 'unknown';
-    }
-  }
-  if (response.status === 429) {
-    // Rate limited, which says nothing about configuration. Treated as unknown
-    // so a user who reloaded a few times is not told the feature is gone.
-    return 'unknown';
-  }
-  return 'unknown';
 }
 
 /**
- * Whether passwordless passkey sign-in is offered, probing at most once per
- * page load.
+ * The answers this deployment gave, held beside the shared availability cache.
  *
- * Shares `services/availabilityCache.ts` with the OAuth gate, so the two
- * capability probes have one eviction rule and one story about `unknown`.
+ * The cache stores a three-state string and this answer is two booleans, so
+ * the pair lives here keyed by the same URL. It is the arrangement
+ * `oauthAvailability.ts` uses for its provider list and it keeps one cache and
+ * one eviction rule rather than two.
  */
-export function passkeyLoginAvailability(
-  optionsUrl: string,
+const resolved = new Map<string, PasskeyAvailability>();
+
+/**
+ * Empties the answer map. For tests only.
+ *
+ * `resetAvailabilityCache` clears the shared promise cache; this clears what
+ * sits beside it. A test that renders a sign-in page calls both.
+ */
+export function resetPasskeyAvailabilityCache(): void {
+  resolved.clear();
+}
+
+/**
+ * What this deployment offers, fetched at most once per page load.
+ *
+ * Returns both fields, because the two callers want different ones: a sign-in
+ * page reads `passwordless` and an account settings page reads `enabled`.
+ * Returns both false for a question that could not be answered, which renders
+ * nothing and is the same conclusion the probe gate reached from an `unknown`.
+ */
+export async function passkeyAvailability(
+  identityOrigin: string,
   fetchImpl: typeof fetch = fetch
-): Promise<Availability> {
-  return cachedAvailability(
-    optionsUrl,
-    () => probePasskeyLogin(optionsUrl, fetchImpl),
-    // Remembered for the tab's session, not just the page load. This is the
-    // expensive probe of the two and the only one whose answer is complete on
-    // its own. See `availabilityCache.ts`.
-    { persist: true }
-  );
+): Promise<PasskeyAvailability> {
+  const url = `${identityOrigin}${PASSKEY_AVAILABILITY_PATH}`;
+
+  await cachedAvailability(url, async () => {
+    const answer = await fetchPasskeyAvailability(url, fetchImpl);
+    if (answer === undefined) {
+      // Not cached, so the next caller asks again rather than the affordance
+      // being silenced for the life of the page by one blip.
+      return 'unknown';
+    }
+    resolved.set(url, answer);
+    // `available` and `unavailable` are both real answers and both stay. Which
+    // one it is does not matter to any caller, since the booleans beside it
+    // carry the whole answer; what matters is that it is not `unknown`.
+    return answer.enabled ? 'available' : 'unavailable';
+  });
+
+  return resolved.get(url) ?? UNKNOWN;
+}
+
+/**
+ * Whether passwordless passkey sign-in is offered here.
+ *
+ * The sign-in page's question, kept as its own function because that page
+ * should not have to know that the answer arrives beside another field.
+ */
+export async function passkeyLoginOffered(
+  identityOrigin: string,
+  fetchImpl: typeof fetch = fetch
+): Promise<boolean> {
+  return (await passkeyAvailability(identityOrigin, fetchImpl)).passwordless;
 }

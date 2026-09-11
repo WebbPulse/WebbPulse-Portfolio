@@ -282,7 +282,55 @@
 #
 # NO SHARED INTERFACE CHANGES. `IdentityHooks` is byte identical to 0.15.0, so
 # `PortfolioIdentityHooks` satisfies the protocol unchanged.
-webbpulse[fastapi,dynamodb,otel,aws-otel,security,identity,oauth,passkeys]==0.16.0
+# 0.17.0 adds public passkey availability discovery:
+# `GET <prefix>/passkeys/availability`. No new extra, no new store, no new
+# setting, and the same shape as 0.16.0's bump: one unconditional route and
+# nothing else.
+#
+# THE ROUTE MOUNTS IN EVERY DEPLOYMENT, on the same reasoning
+# `oauth/providers` mounts in every deployment. The other seven passkey routes
+# mount only when `passkeys_enabled` is on and both stores are supplied,
+# because a route that can only answer 503 is worse than an absent one. This
+# one can always answer: with passkeys off it says
+# `{"enabled": false, "passwordless": false}`, which is the correct answer
+# rather than a degraded one. An absent route would answer 404, and a 404 is
+# the ambiguous signal this route exists to replace, indistinguishable from a
+# routing mistake, a gateway misconfiguration or a backend older than 0.17.0.
+#
+# `passwordless` IS FALSE WHENEVER `enabled` IS FALSE, gated in the route
+# itself. `passkeys_passwordless` defaults true and is read against
+# `passkeys_enabled` nowhere else, so a deployment with passkeys off still
+# holds `passwordless=True` and means nothing by it. Reporting that pair would
+# tell a sign-in page to draw a passkey button against login routes that do not
+# exist. The gate being in the route is what lets this frontend read
+# `passwordless` alone.
+#
+# It carries `Cache-Control: public, max-age=300`, the same number
+# `oauth/providers` and the JWKS carry, so repeat sign-in page loads mostly do
+# not reach the function at all.
+#
+# WHAT IT REPLACES ON THE FRONTEND: `services/passkeyAvailability.ts` probed
+# `POST /api/auth/login/passkey/options` and read the status code. That was
+# wrong twice over. It spent that route's rate limit budget, 30 per 15 minutes
+# per IP, on sign-in page loads rather than on sign-ins, so a user who reloaded
+# enough times was refused the passkey sign-in they then attempted. And the
+# probe was not a read: `begin_passkey_login` writes a WebAuthn challenge row
+# per call, so every sign-in page load left a row in the challenge table to
+# expire, a storage cost paid to answer a question about configuration. PR 182
+# added a `sessionStorage` cache as a stopgap and asked for this route; this
+# bump is what lets that file become one cached GET and two field reads, and
+# what lets the stopgap be removed.
+#
+# NO SHARED INTERFACE CHANGES. `IdentityHooks` is byte identical to 0.16.0, so
+# `PortfolioIdentityHooks` satisfies the protocol unchanged.
+#
+# A GATEWAY ROUTE KEY IS REQUIRED IN THE SAME PULL REQUEST. The route mounts
+# unconditionally, `terraform/apigateway.tf` sets
+# `default_integration = null`, and a served path with no key is API Gateway's
+# own 404 reaching no function.
+# `test_every_identity_path_the_package_mounts_has_a_gateway_route_key` fails
+# on this bump until the key is added, which is the mechanism working.
+webbpulse[fastapi,dynamodb,otel,aws-otel,security,identity,oauth,passkeys]==0.17.0
 
 fastapi==0.115.12
 boto3==1.38.46

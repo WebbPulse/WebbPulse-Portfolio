@@ -129,9 +129,10 @@ export const LoginForm: React.FC<LoginFormProps> = ({
         return;
       }
       if (outcome.reason === 'unavailable') {
-        // The probe said the capability was on and the ceremony says it is
-        // not, which is a deployment that changed under the page. Nothing the
-        // user can act on, so the affordance goes quiet rather than shouting.
+        // The availability route said the capability was on and the ceremony
+        // says it is not, which is a deployment that changed under the page.
+        // Nothing the user can act on, so the affordance goes quiet rather
+        // than shouting.
         return;
       }
       setPasskeyError(
