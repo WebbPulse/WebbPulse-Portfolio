@@ -539,6 +539,106 @@ Passkey routes will not be present, because `passkeys_enabled` derives to
 accepts the token, and the three public routes are unchanged. Otherwise roll back
 before touching the frontend.
 
+## Addendum 2026-09-11
+
+**This section was added after the runbook above was written, and it inserts a
+step between step 9 and step 10.** It is marked off rather than folded into the
+numbering because the steps either side kept their numbers and anyone following
+a printed copy needs to see that something landed in the middle.
+
+### Why it exists
+
+The runbook above promotes the identity stack and then flips the frontend. That
+sequence is correct for `/api/auth`, which was built against identity from the
+start. It is not sufficient for the `/api/v1` admin routes: those verified only
+the legacy HS256 token, so an administrator signed in through the identity path
+held a credential they could not read. Step 9 would pass, step 10 would flip the
+frontend, and the admin panel would sign in and then answer 401 on every write.
+
+The backend now accepts either credential, and the gateway has to be told which
+route keys carry the claims it falls back to. That is what this step does. See
+"Admin routes in identity mode" in `docs/identity-cutover.md` for the mechanism.
+
+### Step 9a. Apply the admin route keys, then enforce them
+
+Two applies, in this order. Both are on the production workspace.
+
+**First, merge this change to `main` and apply with `domain_jwt_enforced`
+absent.** The variable defaults to false, so do not set it yet.
+
+Expected plan: **adds only.** 24 `aws_apigatewayv2_route` additions, one per
+flagged admin route key, and nothing else. No changes and no destroys. If the
+plan shows a change or a destroy, stop: the keys are meant to route exactly where
+the existing greedy keys already routed, and anything else means a key is
+colliding with one that exists.
+
+This apply changes no behaviour. The new keys are more specific than the greedy
+ones so they win route selection, but they point at the same integration, and
+without the flag the gateway asks the caller for nothing new. It is safe to land
+while the frontend is still in bearer mode, and safe to leave sitting here.
+
+**Then set `domain_jwt_enforced = true` on the production workspace and apply
+again.**
+
+```bash
+# Production workspace: ws-JpNLUhFzVCzMDgAN
+```
+
+Expected plan depends on the mode production is in by this point:
+
+| `identity_jwt_mode` | Expected plan | What moved |
+|---|---|---|
+| `gate` | `0 add 1 change 0 destroy` | the access gate authorizer's Lambda environment only |
+| `native` | 24 route changes | each flagged key moves onto the JWT authorizer |
+
+Production reaches step 9 in `native` mode, per step 8, so expect the second
+shape there. Count the changed routes and confirm it is 24, not more: a larger
+number means a key that should have stayed anonymous is being enforced, and the
+public site is about to start asking visitors for a token.
+
+**Gate:** the second apply has finished and the plan matched one of the two
+shapes above. Then, and only then, go to step 10.
+
+### The window between the flag and the frontend
+
+**Between this step's second apply and step 10's frontend deploy, admin writes
+from the browser fail.** The gateway now requires an identity access token on
+those 24 routes, and the deployed bundle is still in bearer mode, so it sends the
+legacy token and the gateway refuses the request before the application sees it.
+
+This is a real window and it is worth stating plainly rather than discovering it:
+
+- It lasts from the second apply to the end of the frontend deploy.
+- It affects admin writes only. Every public read is unflagged and unaffected, so
+  the site stays up for visitors throughout.
+- The fix is to finish step 10, not to roll anything back.
+
+Keep the window short by having step 10 ready to run before starting the second
+apply. If something goes wrong mid-window, rolling back the flag is faster than
+rolling forward.
+
+### Rollback for this step
+
+Set `domain_jwt_enforced` back to false and apply. That is the whole of it for
+the gateway half: the route keys stay, enforcement stops, and admin writes work
+again against the legacy token.
+
+If the frontend has already been flipped, roll that back too by removing the
+`AUTH_MODE` variable and redeploying:
+
+```bash
+gh variable delete AUTH_MODE --env production --repo WebbPulse/WebbPulse-Portfolio
+gh workflow run deploy-frontend.yml --ref main
+```
+
+The backend needs no rollback either way. It accepts both credentials, so it is
+correct in every combination of the two flags.
+
+**This rollback stops working once step 11 has run.** Clearing the legacy column
+removes the password the bearer path verifies against, so after that point the
+identity path is the only way in and the rollback is fix-forward. That is the
+same constraint the "Rollback" section below describes for step 11.
+
 ### Step 10. Flip the frontend to identity mode
 
 The production GitHub Environment has no `AUTH_MODE` variable today, so the
