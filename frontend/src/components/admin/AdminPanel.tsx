@@ -308,7 +308,6 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
 
     switch (result.kind) {
       case 'signed-in':
-        session.clearSessionEnded();
         return;
       case 'mfa-required':
         setMfaTicket(result.ticket);
@@ -413,7 +412,6 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
     try {
       const r = await apiService.login({ username, password });
       if (r.status === 'authenticated') {
-        session.clearSessionEnded();
         session.markAuthenticated();
       } else if (r.status === 'mfa-required') setMfaTicket(r.ticket);
       else setError(r.error);
@@ -437,7 +435,6 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       return;
     }
     setError(null);
-    session.clearSessionEnded();
   };
 
   /**
@@ -453,7 +450,6 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       const r = await apiService.completeTotp({ ticket: mfaTicket, code });
       if (r.status === 'authenticated') {
         setMfaTicket(null);
-        session.clearSessionEnded();
         session.markAuthenticated();
       } else if (r.status === 'mfa-required') {
         setMfaTicket(r.ticket);

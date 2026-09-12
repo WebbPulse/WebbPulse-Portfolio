@@ -103,12 +103,6 @@ describe('AdminPanel session, lifted onto AuthProvider', () => {
   });
 
   it('returns to the sign-in screen when a live session ends', async () => {
-    const listeners = new Set<() => void>();
-    vi.spyOn(apiService, 'onSessionEnded').mockImplementation(listener => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    });
-
     let authorized = true;
     const client = stubAuthClient({
       fetch: (input: RequestInfo | URL) => {
@@ -123,9 +117,6 @@ describe('AdminPanel session, lifted onto AuthProvider', () => {
         return Promise.resolve(jsonResponse({}));
       },
       user: { id: 1, username: 'admin' },
-      onSessionEnded: () => {
-        for (const listener of [...listeners]) listener();
-      },
     });
 
     renderPanel(client);
@@ -158,36 +149,69 @@ describe('AdminPanel session, lifted onto AuthProvider', () => {
   });
 });
 
-describe('useAdminSession, the session-ended fan-out', () => {
+describe('useAdminSession, the session-ended reading', () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('reports the expiry sentence to every subscriber', async () => {
-    const subscribed = new Set<() => void>();
-    vi.spyOn(apiService, 'onSessionEnded').mockImplementation(listener => {
-      subscribed.add(listener);
-      return () => subscribed.delete(listener);
-    });
+  function Probe() {
+    const { sessionEndedMessage } = useAdminSession();
+    return <span data-testid="ended">{sessionEndedMessage ?? 'none'}</span>;
+  }
 
-    function Probe() {
-      const { sessionEndedMessage } = useAdminSession();
-      return <span data-testid="ended">{sessionEndedMessage ?? 'none'}</span>;
-    }
-
+  it('stays quiet when the startup refresh found no cookie', async () => {
     renderWithAuth(<Probe />, stubAuthClient());
 
     await waitFor(() => {
-      expect(subscribed.size).toBeGreaterThan(0);
+      expect(screen.getByTestId('ended').textContent).toBe('none');
     });
-    expect(screen.getByTestId('ended').textContent).toBe('none');
+  });
 
-    for (const listener of [...subscribed]) listener();
+  it('reports the expiry sentence when a live session ends', async () => {
+    let authorized = true;
+    const client = stubAuthClient({
+      fetch: () =>
+        Promise.resolve(
+          authorized
+            ? jsonResponse({ access_token: 'a1', expires_in: 600 })
+            : unauthorizedResponse()
+        ),
+      user: { id: 1, username: 'admin' },
+    });
+
+    renderWithAuth(<Probe />, client);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ended').textContent).toBe('none');
+    });
+
+    authorized = false;
+    await client.refresh();
 
     await waitFor(() => {
       expect(screen.getByTestId('ended').textContent).toMatch(
         /your session expired/i
       );
+    });
+  });
+
+  it('stays quiet when the user signed out deliberately', async () => {
+    const client = stubAuthClient({
+      fetch: () =>
+        Promise.resolve(jsonResponse({ access_token: 'a1', expires_in: 600 })),
+      user: { id: 1, username: 'admin' },
+    });
+
+    renderWithAuth(<Probe />, client);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ended').textContent).toBe('none');
+    });
+
+    await client.logout();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ended').textContent).toBe('none');
     });
   });
 });
