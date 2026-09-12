@@ -450,13 +450,10 @@ describe('ApiService', () => {
       );
     });
 
-    it('notifies session-ended subscribers when a refresh on a 401 is refused', async () => {
+    it('records the ending on the auth client when a refresh on a 401 is refused', async () => {
       fetchMock.mockResolvedValueOnce(tokenResponse('memory-token'));
       const service = new ApiService(BASE, 'identity');
       await service.login({ username: 'admin', password: 'secret' });
-
-      const ended = vi.fn();
-      service.onSessionEnded(ended);
 
       fetchMock.mockResolvedValueOnce(
         jsonResponse({ message: 'Unauthorized' }, { status: 401 })
@@ -468,27 +465,10 @@ describe('ApiService', () => {
       const response = await service.getSiteContent();
 
       expect(response.error).not.toBeNull();
-      expect(ended).toHaveBeenCalledTimes(1);
       expect(service.isAuthenticated()).toBe(false);
-    });
-
-    it('stops notifying a session-ended subscriber once it unsubscribes', async () => {
-      fetchMock.mockResolvedValueOnce(tokenResponse('memory-token'));
-      const service = new ApiService(BASE, 'identity');
-      await service.login({ username: 'admin', password: 'secret' });
-
-      const ended = vi.fn();
-      service.onSessionEnded(ended)();
-
-      fetchMock.mockResolvedValueOnce(
-        jsonResponse({ message: 'Unauthorized' }, { status: 401 })
+      expect(service.getIdentityClient()?.getState().sessionEnded?.reason).toBe(
+        'refresh-failed'
       );
-      fetchMock.mockResolvedValueOnce(
-        jsonResponse({ message: 'Unauthorized' }, { status: 401 })
-      );
-      await service.getSiteContent();
-
-      expect(ended).not.toHaveBeenCalled();
     });
 
     it('reports the stored token rather than refreshing in bearer mode', async () => {

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { useAuth } from '@webbpulse/auth/react';
+import { useCallback, useState } from 'react';
+import { useAuth, useSessionEnded } from '@webbpulse/auth/react';
 
 import { apiService } from '../services/api';
 
@@ -15,8 +15,6 @@ export interface AdminSession {
   isLoading: boolean;
   /** Set when a live session ended on its own, cleared on the next sign-in. */
   sessionEndedMessage: string | null;
-  /** Clears {@link AdminSession.sessionEndedMessage}. */
-  clearSessionEnded: () => void;
   /**
    * Records a sign-in the client itself did not observe.
    *
@@ -30,29 +28,16 @@ export interface AdminSession {
 /**
  * The identity session, read off `AuthProvider` rather than kept locally.
  *
- * `useAuth` owns the status, so the bootstrap refresh, the StrictMode double
- * mount and every post-sign-in transition land here with no local mirror to
- * disagree with them. Only the session-ended sentence is local, because the
- * package notifies through the client's `onSessionEnded` constructor option and
- * exposes no React surface for it.
+ * `useAuth` owns the status and `useSessionEnded` owns the ending, so the
+ * bootstrap refresh, the StrictMode double mount and every post-sign-in
+ * transition land here with no local mirror to disagree with them. A deliberate
+ * sign-out also ends the session, so only the involuntary reasons become a
+ * sentence; the panel must not accuse someone of expiring when they clicked
+ * Sign out.
  */
 export function useAdminSession(): AdminSession {
   const { isAuthenticated, isLoading, logout } = useAuth();
-  const [sessionEndedMessage, setSessionEndedMessage] = useState<string | null>(
-    null
-  );
-
-  useEffect(
-    () =>
-      apiService.onSessionEnded(() => {
-        setSessionEndedMessage(SESSION_ENDED_MESSAGE);
-      }),
-    []
-  );
-
-  const clearSessionEnded = useCallback(() => {
-    setSessionEndedMessage(null);
-  }, []);
+  const sessionEnded = useSessionEnded();
 
   const signOut = useCallback(() => {
     void logout();
@@ -61,8 +46,10 @@ export function useAdminSession(): AdminSession {
   return {
     isAuthenticated,
     isLoading,
-    sessionEndedMessage,
-    clearSessionEnded,
+    sessionEndedMessage:
+      sessionEnded !== null && sessionEnded.reason !== 'logged-out'
+        ? SESSION_ENDED_MESSAGE
+        : null,
     markAuthenticated: () => {},
     logout: signOut,
   };
@@ -94,7 +81,6 @@ export function useBearerSession(): AdminSession {
     isAuthenticated,
     isLoading: false,
     sessionEndedMessage: null,
-    clearSessionEnded: () => {},
     markAuthenticated,
     logout,
   };

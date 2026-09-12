@@ -253,9 +253,6 @@ export class ApiService {
   /** The auth client, in `identity` mode only. */
   private readonly auth: AuthClient<unknown> | null;
 
-  /** Subscribers notified when a live session ends on its own. */
-  private readonly sessionEndedListeners = new Set<() => void>();
-
   constructor(baseUrl: string = API_BASE_URL, mode: AuthMode = AUTH_MODE) {
     const credentials = 'include' as const;
 
@@ -264,9 +261,6 @@ export class ApiService {
       this.auth = createAuthClient({
         baseUrl: identityOriginFrom(baseUrl),
         clientOptions: { credentials },
-        onSessionEnded: () => {
-          this.notifySessionEnded();
-        },
       });
       this.client = this.buildClient(baseUrl, {
         credentials,
@@ -415,24 +409,6 @@ export class ApiService {
    */
   getIdentityClient(): AuthClient<unknown> | null {
     return this.auth;
-  }
-
-  /**
-   * Registers a callback for a session that ended without the user asking.
-   * Returns the unsubscribe function. Never fires in `bearer` mode.
-   */
-  onSessionEnded(listener: () => void): () => void {
-    this.sessionEndedListeners.add(listener);
-    return () => {
-      this.sessionEndedListeners.delete(listener);
-    };
-  }
-
-  /** Fans a session-ended event out to every subscriber. */
-  private notifySessionEnded(): void {
-    for (const listener of [...this.sessionEndedListeners]) {
-      listener();
-    }
   }
 
   /**
