@@ -27,14 +27,15 @@ async def sitemap() -> Response:
         {"loc": f"{base}/blog", "changefreq": "weekly", "priority": "0.8"},
     ]
     for post in posts.list_published():
-        urls.append(
-            {
-                "loc": f"{base}/blog/{post['slug']}",
-                "lastmod": _lastmod(post),
-                "changefreq": "monthly",
-                "priority": "0.6",
-            }
-        )
+        entry = {
+            "loc": f"{base}/blog/{post['slug']}",
+            "changefreq": "monthly",
+            "priority": "0.6",
+        }
+        lastmod = _lastmod(post)
+        if lastmod:
+            entry["lastmod"] = lastmod
+        urls.append(entry)
 
     lines = ['<?xml version="1.0" encoding="UTF-8"?>']
     lines.append('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')

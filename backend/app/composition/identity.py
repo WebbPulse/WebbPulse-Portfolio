@@ -6,10 +6,12 @@ under the issuer's path. Clients are constructed lazily so no import calls AWS.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from fastapi import APIRouter
+    from webbpulse.identity import KmsClient
+    from webbpulse.identity.email import SesV2Client
 
     from .settings import Settings
 
@@ -94,7 +96,7 @@ def build_router(settings: Settings) -> APIRouter:
         identity_settings,
         PortfolioIdentityHooks(),
         stores,
-        kms_client=boto3.client("kms"),
+        kms_client=cast("KmsClient", boto3.client("kms")),
         service="webbpulse-portfolio-identity",
         version=VERSION,
         attempts=DynamoLoginAttemptStore(repository(LOGIN_ATTEMPTS)),
@@ -139,4 +141,4 @@ def build_email_sender(identity_settings: Any) -> Any:
     import boto3
     from webbpulse.identity.email import SesV2EmailSender
 
-    return SesV2EmailSender.from_settings(identity_settings, boto3.client("sesv2"))
+    return SesV2EmailSender.from_settings(identity_settings, cast("SesV2Client", boto3.client("sesv2")))

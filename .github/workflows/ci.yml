@@ -47,7 +47,15 @@ jobs:
     with:
       python-version: "3.13"
       working-directory: backend
+      install-command: >-
+        python -m pip install --upgrade pip &&
+        pip install -r requirements-dev.txt &&
+        pip install pyright bandit pip-audit
       ruff-target: "app tests"
+      typecheck-command: pyright
+      security-commands: |
+        bandit -r app -ll
+        pip-audit -r requirements.txt
       coverage-source: app
       pytest-args: ""
       codeartifact-domain: webbpulse

@@ -3,6 +3,7 @@
 One configuration object per collection supplies the repository, the schemas,
 the ordering and the message wording, so the five differ only in data."""
 
+import inspect
 from dataclasses import dataclass
 from typing import Callable, List, Type
 
@@ -28,6 +29,20 @@ class CrudConfig:
     order: Callable[[list], list]
     default_limit: int = 50
     max_limit: int = 100
+
+
+def _annotate_body(endpoint: Callable, parameter: str, model: Type[BaseModel]) -> None:
+    """Point one parameter's annotation at a model chosen at runtime.
+
+    FastAPI reads the signature to build the request body, and the concrete model
+    is only known here, so the annotation is set on the signature rather than
+    written as a static type the checker would have to accept a variable in.
+    """
+    signature = inspect.signature(endpoint)
+    parameters = [
+        value.replace(annotation=model) if name == parameter else value for name, value in signature.parameters.items()
+    ]
+    endpoint.__signature__ = signature.replace(parameters=parameters)
 
 
 def build_crud_router(config: CrudConfig, include_list: bool = True) -> APIRouter:
@@ -58,19 +73,20 @@ def build_crud_router(config: CrudConfig, include_list: bool = True) -> APIRoute
             raise HTTPException(status_code=404, detail=config.not_found)
         return item
 
-    @router.post("/", response_model=config.schema)
     async def create_item(
-        payload: config.create_schema,
+        payload: BaseModel,
         current_user: dict = Depends(CurrentUser),
     ):
         """Create one item. Admin only."""
         require_admin(current_user, forbidden("create"))
         return repository.create(payload.model_dump())
 
-    @router.put("/{item_id}", response_model=config.schema)
+    _annotate_body(create_item, "payload", config.create_schema)
+    router.post("/", response_model=config.schema)(create_item)
+
     async def update_item(
         item_id: int,
-        payload: config.update_schema,
+        payload: BaseModel,
         current_user: dict = Depends(CurrentUser),
     ):
         """Apply a partial edit to one item. Admin only."""
@@ -79,6 +95,9 @@ def build_crud_router(config: CrudConfig, include_list: bool = True) -> APIRoute
         if item is None:
             raise HTTPException(status_code=404, detail=config.not_found)
         return item
+
+    _annotate_body(update_item, "payload", config.update_schema)
+    router.put("/{item_id}", response_model=config.schema)(update_item)
 
     @router.delete("/{item_id}")
     async def delete_item(
