@@ -1,12 +1,12 @@
-"""The envelope's `error_code` and `details`, and what turning them on did not
-change.
+"""The envelope's `error_code` and `details`, and what the `"detailed"` shape did
+not change.
 """
 
 import pytest
 from starlette.testclient import TestClient
 
 from app.composition.app import build_app
-from app.composition.wiring import DOMAINS, ERROR_ENVELOPE_OPTIONS, build_domain_app
+from app.composition.wiring import DOMAINS, ERROR_ENVELOPE, build_domain_app
 
 UNAUTHORIZED_MESSAGE = "Invalid authentication credentials"
 LOGIN_FAILED_MESSAGE = "Incorrect username or password"
@@ -157,15 +157,12 @@ def test_a_422_carries_one_details_entry_per_offending_field(client: TestClient)
 
 
 @pytest.mark.api
-def test_the_older_errors_key_is_untouched(client: TestClient):
-    """`details` is added beside `errors`, not instead of it."""
+def test_the_legacy_errors_key_is_gone(client: TestClient):
+    """`details` replaces `errors`; the `"detailed"` shape drops the legacy key."""
     response = client.post("/api/v1/admin/login", json={"username": 5})
 
     body = envelope(response)
-    assert [entry["loc"] for entry in body["errors"]] == [
-        ["body", "username"],
-        ["body", "password"],
-    ]
+    assert "errors" not in body
 
 
 @pytest.mark.api
@@ -177,12 +174,9 @@ def test_a_non_validation_error_carries_no_details(client: TestClient):
 
 
 @pytest.mark.unit
-def test_the_options_are_on():
-    """The switch itself, so turning it off is a visible edit to this file."""
-    assert ERROR_ENVELOPE_OPTIONS == {
-        "error_codes": True,
-        "validation_details": True,
-    }
+def test_the_envelope_shape_is_detailed():
+    """The switch itself, so changing it is a visible edit to this file."""
+    assert ERROR_ENVELOPE == "detailed"
 
 
 @pytest.mark.unit

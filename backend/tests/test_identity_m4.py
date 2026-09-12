@@ -481,14 +481,14 @@ def _enrolled_app(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> tuple[An
 
     from webbpulse.http import create_app
 
-    from app.composition.wiring import ERROR_ENVELOPE_OPTIONS
+    from app.composition.wiring import ERROR_ENVELOPE
 
     app = create_app(
         title="identity-under-test",
         version=VERSION,
         service_name="webbpulse-portfolio-identity",
         include_health=False,
-        **ERROR_ENVELOPE_OPTIONS,
+        error_envelope=ERROR_ENVELOPE,
     )
     app.include_router(router)
 
