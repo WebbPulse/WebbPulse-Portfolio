@@ -20,12 +20,11 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 API_PREFIX = "/api/v1"
 
-ERROR_ENVELOPE_OPTIONS: dict[str, bool] = {
-    "error_codes": True,
-    "validation_details": True,
-}
-"""Error envelope options shared by both composition roots, so the same failure
-renders the same body whichever root served it."""
+ERROR_ENVELOPE = "detailed"
+"""Error envelope shape shared by both composition roots, so the same failure
+renders the same body whichever root served it. The named shape implies the
+`error_codes` and `validation_details` options it replaced, and drops the legacy
+top-level `errors` key from a 422."""
 
 SERVICE_NAME_TEMPLATE = "webbpulse-portfolio-{domain}"
 """Service name pattern. Terraform sets `SERVICE_NAME` to the same string, which
@@ -183,7 +182,7 @@ def build_domain_app(
         settings=resolved,
         include_health=domain.name != "public",
         redirect_slashes=False,
-        **ERROR_ENVELOPE_OPTIONS,
+        error_envelope=ERROR_ENVELOPE,
         **domain.extra,
     )
 
