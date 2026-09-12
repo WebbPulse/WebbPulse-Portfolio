@@ -6,7 +6,7 @@ The unauthenticated surface: `GET /`, `/health`, `/sitemap.xml` and
 
 from webbpulse.lambda_entry import run_uvicorn
 from webbpulse.logging import configure_logging
-from webbpulse.otel import configure_tracing, instrument_fastapi, resolve_sample_ratio
+from webbpulse.otel import configure_tracing, resolve_sample_ratio
 
 from ..composition.settings import get_settings
 from ..composition.wiring import DOMAINS, build_domain_app, check_required_secrets
@@ -24,6 +24,10 @@ def main() -> None:
 
     Logging first, then tracing, then the secret check, so a misconfigured
     function fails at cold start with the failure already in JSON.
+
+    Tracing is configured before the app is built because `create_app`
+    instruments the app for us, and that instrumentation is skipped unless
+    tracing is already enabled.
     """
     settings = get_settings()
     configure_logging(
@@ -38,7 +42,6 @@ def main() -> None:
     )
     check_required_secrets([DOMAIN], settings=settings)
     app = build_app()
-    instrument_fastapi(app)
     run_uvicorn(app)
 
 

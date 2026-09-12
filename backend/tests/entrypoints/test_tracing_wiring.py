@@ -1,11 +1,46 @@
 """What `instrument_fastapi` leaves on a domain app, and where the ratio comes from."""
 
+import logging
+
 import pytest
 from webbpulse.otel import SAMPLE_RATIO_ENV, instrument_fastapi, resolve_sample_ratio
 
 from app.composition.wiring import DOMAIN_NAMES, build_domain_app
 
 FLUSH_WRAPPED_ATTR = "_webbpulse_flush_wrapped"
+OTEL_INSTRUMENTED_ATTR = "_is_instrumented_by_opentelemetry"
+SHUTDOWN_WRAPPED_ATTR = "_webbpulse_shutdown_flush_wrapped"
+ALREADY_INSTRUMENTED = "Attempting to instrument FastAPI app while already instrumented"
+
+
+@pytest.mark.parametrize("domain", sorted(DOMAIN_NAMES))
+def test_building_a_domain_app_instruments_it_exactly_once(domain, caplog):
+    """`create_app` instruments the app, so no entrypoint may instrument it again.
+
+    A second call logs a warning on every cold start and installs nothing, so the
+    sentinel being set by the build and the log staying clean is the contract.
+    """
+    with caplog.at_level(logging.WARNING):
+        app = build_domain_app(domain)
+
+    assert getattr(app, OTEL_INSTRUMENTED_ATTR, False), (
+        "create_app instruments the app it builds; an entrypoint must not repeat it"
+    )
+    assert getattr(app, SHUTDOWN_WRAPPED_ATTR, False), (
+        "the shutdown flush wrapper is installed while the app is being built"
+    )
+    assert ALREADY_INSTRUMENTED not in caplog.text
+
+
+@pytest.mark.parametrize("domain", sorted(DOMAIN_NAMES))
+def test_instrumenting_a_built_domain_app_again_warns(domain, caplog):
+    """The regression this guards: the warning a duplicate entrypoint call produced."""
+    app = build_domain_app(domain)
+
+    with caplog.at_level(logging.WARNING):
+        instrument_fastapi(app)
+
+    assert ALREADY_INSTRUMENTED in caplog.text
 
 
 @pytest.mark.parametrize("domain", sorted(DOMAIN_NAMES))
@@ -13,7 +48,7 @@ def test_instrumenting_a_domain_app_installs_the_flush_wrapper_once(domain):
     """One wrapper after one call, and still one after a second call."""
     app = build_domain_app(domain)
     assert not getattr(app, FLUSH_WRAPPED_ATTR, False), (
-        "build_domain_app should not instrument; the entrypoint's main does that"
+        "the per-request flush wrapper is for Lambda, and the suite is not Lambda"
     )
 
     instrument_fastapi(app, flush_per_request=True)
