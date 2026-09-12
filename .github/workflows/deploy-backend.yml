@@ -55,7 +55,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: WebbPulse/.github/.github/workflows/container-image.yml@v1
+    uses: WebbPulse/.github/.github/workflows/container-image.yml@v2
     with:
       environment: ${{ needs.resolve-env.outputs.name }}
       ecr-repository: webbpulse-${{ needs.resolve-env.outputs.name }}/${{ matrix.domain }}
@@ -154,7 +154,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: WebbPulse/.github/.github/workflows/lambda-image-deploy.yml@v1
+    uses: WebbPulse/.github/.github/workflows/lambda-image-deploy.yml@v2
     with:
       environment: ${{ needs.resolve-env.outputs.name }}
       aws-region: us-west-2
