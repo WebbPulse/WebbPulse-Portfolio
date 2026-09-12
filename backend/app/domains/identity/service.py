@@ -21,6 +21,21 @@ LEGACY_HASH_FIELD = "hashed_password"
 must not touch it are greppable."""
 
 
+def _admin_password() -> str:
+    """The configured admin password, raising when none resolved.
+
+    `ADMIN_PASSWORD` is optional so a checkout with no AWS still imports. Seeding
+    an account with an empty password would leave it reachable, so it raises.
+    """
+    password = settings.ADMIN_PASSWORD
+    if not password:
+        raise ValueError(
+            "ADMIN_PASSWORD is not configured. Set it as an environment variable "
+            "or as a key of the APP_SECRETS_ARN secret."
+        )
+    return password
+
+
 def _ensure_credential(credential_store: Any, user_id: Any) -> None:
     """Create the admin's password credential, once, and never overwrite one.
 
@@ -37,7 +52,7 @@ def _ensure_credential(credential_store: Any, user_id: Any) -> None:
         CredentialRecord(
             user_id=subject,
             credential_type=PASSWORD_CREDENTIAL_TYPE,
-            secret=get_password_hash(settings.ADMIN_PASSWORD),
+            secret=get_password_hash(_admin_password()),
         )
     )
     logger.info(
@@ -63,7 +78,7 @@ def seed_admin_user(credential_store: Any = None) -> None:
             "is_active": True,
         }
         if not identity_mode:
-            record[LEGACY_HASH_FIELD] = get_password_hash(settings.ADMIN_PASSWORD)
+            record[LEGACY_HASH_FIELD] = get_password_hash(_admin_password())
         try:
             user = users.create(record)
             logger.info("Seeded admin user", extra={"username": settings.ADMIN_USERNAME})
@@ -80,8 +95,8 @@ def seed_admin_user(credential_store: Any = None) -> None:
     if user.get("email") != settings.ADMIN_EMAIL:
         changes["email"] = settings.ADMIN_EMAIL
     legacy_hash = user.get(LEGACY_HASH_FIELD) or ""
-    if not identity_mode and not verify_password(settings.ADMIN_PASSWORD, legacy_hash):
-        changes[LEGACY_HASH_FIELD] = get_password_hash(settings.ADMIN_PASSWORD)
+    if not identity_mode and not verify_password(_admin_password(), legacy_hash):
+        changes[LEGACY_HASH_FIELD] = get_password_hash(_admin_password())
     if not user.get("is_admin"):
         changes["is_admin"] = True
     if not user.get("is_active", True):

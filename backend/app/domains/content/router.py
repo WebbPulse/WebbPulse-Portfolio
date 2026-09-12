@@ -3,15 +3,17 @@
 The two halves are exported alongside the combined router so a composition root
 can mount them separately."""
 
+from enum import Enum
+
 from fastapi import APIRouter
 
 from .posts import router as posts_router
 from .site_content import router as site_content_router
 
 POSTS_PREFIX = "/posts"
-POSTS_TAGS = ["posts"]
+POSTS_TAGS: list[str | Enum] = ["posts"]
 SITE_CONTENT_PREFIX = "/site-content"
-SITE_CONTENT_TAGS = ["site-content"]
+SITE_CONTENT_TAGS: list[str | Enum] = ["site-content"]
 
 router = APIRouter()
 
