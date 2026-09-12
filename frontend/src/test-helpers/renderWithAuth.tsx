@@ -65,6 +65,11 @@ export function stubAuthClient(
  *
  * The panel and its sign-in screens both need the two, so every admin test that
  * mounts them goes through here rather than repeating the wrapper.
+ *
+ * `useAuth` binds client methods lazily, so a partial stub passed here needs
+ * only `initialize`, `getState`, `subscribe` and whatever the component calls.
+ * The tests that drive session transitions still pass {@link stubAuthClient},
+ * since they assert on the real state machine rather than on a double.
  */
 export function renderWithAuth(
   children: ReactNode,

@@ -44,11 +44,9 @@ function passkeyProbeCount(fetchMock: ReturnType<typeof vi.fn>): number {
   ).length;
 }
 
-/** The slice of `AuthClient` this form touches. */
+/** The one `AuthClient` method these passkey tests reach. */
 function stubIdentity(overrides: Record<string, unknown> = {}) {
   return {
-    requestPasswordReset: vi.fn(),
-    oauthStartUrl: (provider: string) => `https://api.test/oauth/${provider}`,
     signInWithPasskey: vi.fn(),
     ...overrides,
   } as unknown as ReturnType<typeof apiService.getIdentityClient>;
