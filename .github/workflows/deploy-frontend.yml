@@ -60,9 +60,13 @@ jobs:
       s3-bucket: ${{ needs.resolve-env.outputs.s3-bucket }}
       cloudfront-distribution-id: ${{ needs.resolve-env.outputs.cloudfront-distribution-id }}
       aws-region: us-west-2
+      codeartifact-domain: webbpulse
+      codeartifact-repository: npm
+      codeartifact-namespace: "@webbpulse"
       concurrency-group: frontend-deploy-${{ github.ref_name }}
       tfc-organization: WebbPulse
       tfc-workspace: ${{ github.ref_name == 'main' && 'WebbPulse-Portfolio' || 'WebbPulse-Portfolio-staging' }}
     secrets:
       role-to-assume: ${{ needs.resolve-env.outputs.role-to-assume }}
+      codeartifact-domain-owner: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
       tfc-api-token: ${{ secrets.TFC_API_TOKEN }}
