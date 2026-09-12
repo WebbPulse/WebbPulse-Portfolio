@@ -53,13 +53,9 @@ class FakeKms:
             "SigningAlgorithms": [KMS_SIGNING_ALGORITHM],
         }
 
-    def sign(
-        self, *, KeyId: str, Message: bytes, MessageType: str, SigningAlgorithm: str
-    ) -> dict[str, Any]:
+    def sign(self, *, KeyId: str, Message: bytes, MessageType: str, SigningAlgorithm: str) -> dict[str, Any]:
         """Sign a prehashed message the way KMS would."""
-        signature = self._key.sign(
-            Message, padding.PKCS1v15(), utils.Prehashed(hashes.SHA256())
-        )
+        signature = self._key.sign(Message, padding.PKCS1v15(), utils.Prehashed(hashes.SHA256()))
         return {
             "KeyId": KeyId,
             "Signature": signature,
@@ -85,9 +81,7 @@ def identity_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def client(
-    identity_env: None, private_key: rsa.RSAPrivateKey, monkeypatch: pytest.MonkeyPatch
-) -> TestClient:
+def client(identity_env: None, private_key: rsa.RSAPrivateKey, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     """The identity router mounted the way the composition root mounts it."""
     import boto3
 

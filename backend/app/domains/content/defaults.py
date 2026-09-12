@@ -8,10 +8,7 @@ SITE_CONTENT_DEFAULTS = {
         "in network engineering and full-stack web."
     ),
     "about_paragraphs": [
-        (
-            "Hi, I'm Tyler. I'm a software engineer who enjoys building "
-            "reliable, well-crafted systems."
-        ),
+        ("Hi, I'm Tyler. I'm a software engineer who enjoys building reliable, well-crafted systems."),
         (
             "Outside of work I build personal projects (this site included), "
             "usually full-stack TypeScript and React on the frontend, Python and "
@@ -22,24 +19,19 @@ SITE_CONTENT_DEFAULTS = {
         {
             "title": "Clean Code",
             "description": (
-                "Writing maintainable, well-documented code that others can easily "
-                "understand and build upon."
+                "Writing maintainable, well-documented code that others can easily understand and build upon."
             ),
             "icon": "✨",
         },
         {
             "title": "User Experience",
-            "description": (
-                "Creating intuitive, accessible interfaces that provide delightful "
-                "user experiences."
-            ),
+            "description": ("Creating intuitive, accessible interfaces that provide delightful user experiences."),
             "icon": "🎨",
         },
         {
             "title": "Continuous Learning",
             "description": (
-                "Staying up-to-date with the latest technologies and best practices "
-                "in software engineering."
+                "Staying up-to-date with the latest technologies and best practices in software engineering."
             ),
             "icon": "📚",
         },
@@ -49,8 +41,6 @@ SITE_CONTENT_DEFAULTS = {
     "email": "tyler@webbpulse.com",
     "github_url": "https://github.com/TW-WebbPulse",
     "linkedin_url": "https://www.linkedin.com/in/tylert2610/",
-    "footer_tagline": (
-        "Software engineer focused on building reliable, maintainable systems."
-    ),
+    "footer_tagline": ("Software engineer focused on building reliable, maintainable systems."),
     "project_sort_mode": "manual",
 }

@@ -68,9 +68,7 @@ class PortfolioIdentityHooks:
         """No side effects to run. The verification email is the flow's job."""
         del user, via
 
-    def create_user(
-        self, *, email: str, attributes: Mapping[str, Any]
-    ) -> Mapping[str, Any]:
+    def create_user(self, *, email: str, attributes: Mapping[str, Any]) -> Mapping[str, Any]:
         """Create a Portfolio user row for a registration and return it.
 
         `is_admin` is `False`, so a self registered account exists and cannot
@@ -95,8 +93,7 @@ class PortfolioIdentityHooks:
             numeric_id = int(user_id)
         except (TypeError, ValueError) as exc:
             raise ValueError(
-                f"mark_email_verified was given {user_id!r}, which is not one of "
-                "this product's integer user ids."
+                f"mark_email_verified was given {user_id!r}, which is not one of this product's integer user ids."
             ) from exc
 
         if users.update(numeric_id, {"email_verified": True}) is None:

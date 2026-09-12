@@ -16,9 +16,7 @@ SITE_CONTENT_TAGS = ["site-content"]
 router = APIRouter()
 
 router.include_router(posts_router, prefix=POSTS_PREFIX, tags=POSTS_TAGS)
-router.include_router(
-    site_content_router, prefix=SITE_CONTENT_PREFIX, tags=SITE_CONTENT_TAGS
-)
+router.include_router(site_content_router, prefix=SITE_CONTENT_PREFIX, tags=SITE_CONTENT_TAGS)
 
 __all__ = [
     "POSTS_PREFIX",

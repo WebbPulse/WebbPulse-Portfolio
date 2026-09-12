@@ -29,9 +29,7 @@ def _bare_app(domain: str) -> Starlette:
         """Route raising a handled 503."""
         raise HTTPException(status_code=503, detail="down")
 
-    app = Starlette(
-        routes=[Route("/ok", ok), Route("/boom", boom), Route("/down", down)]
-    )
+    app = Starlette(routes=[Route("/ok", ok), Route("/boom", boom), Route("/down", down)])
     app.add_middleware(DomainHeaderMiddleware, domain=domain)
     return app
 

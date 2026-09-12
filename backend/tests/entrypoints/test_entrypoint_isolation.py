@@ -45,9 +45,7 @@ def _probe(domain, env=None):
         text=True,
         timeout=180,
     )
-    assert result.returncode == 0, (
-        f"{domain} failed to build with an empty environment:\n{result.stderr}"
-    )
+    assert result.returncode == 0, f"{domain} failed to build with an empty environment:\n{result.stderr}"
     return json.loads(result.stdout.strip().splitlines()[-1])
 
 
@@ -90,9 +88,7 @@ def test_an_entrypoint_exposes_the_runtime_wiring(domain):
 def test_an_entrypoint_leaves_instrumentation_to_create_app(domain):
     """`create_app` instruments every app it builds, so a second call only warns."""
     source = (BACKEND / "app" / "entrypoints" / f"{domain}.py").read_text()
-    assert "instrument_fastapi" not in source, (
-        f"{domain} entrypoint instruments an already instrumented app"
-    )
+    assert "instrument_fastapi" not in source, f"{domain} entrypoint instruments an already instrumented app"
 
 
 def test_no_entrypoint_imports_a_whole_surface_root():

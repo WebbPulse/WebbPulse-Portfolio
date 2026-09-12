@@ -73,10 +73,7 @@ def _fetch_with(client: Any, secret_arn: str) -> dict[str, Any]:
     except json.JSONDecodeError as exc:
         raise ValueError(f"Secret {secret_arn} is not valid JSON: {exc}") from exc
     if not isinstance(payload, dict):
-        raise ValueError(
-            f"Secret {secret_arn} parsed as {type(payload).__name__}, "
-            "expected a JSON object."
-        )
+        raise ValueError(f"Secret {secret_arn} parsed as {type(payload).__name__}, expected a JSON object.")
     return payload
 
 

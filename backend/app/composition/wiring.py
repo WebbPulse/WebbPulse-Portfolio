@@ -135,9 +135,7 @@ ENFORCED_ENVIRONMENTS = ("staging", "production")
 Elsewhere a checkout with no AWS has to stay runnable."""
 
 
-def check_required_secrets(
-    domains: "Iterable[Domain]", *, settings: Settings | None = None
-) -> None:
+def check_required_secrets(domains: "Iterable[Domain]", *, settings: Settings | None = None) -> None:
     """Fail fast on a missing secret, once at startup, per the domains served.
 
     Resolution stays lazy, so a root serving no domain that names a secret makes
@@ -161,9 +159,7 @@ def check_required_secrets(
         )
 
 
-def build_domain_app(
-    domain: Domain | str, *, settings: Settings | None = None
-) -> "FastAPI":
+def build_domain_app(domain: Domain | str, *, settings: Settings | None = None) -> "FastAPI":
     """Build one domain's application: root B's whole job, and root A's unit.
 
     Both roots go through here, so the middleware stack is identical locally, in
@@ -187,9 +183,7 @@ def build_domain_app(
     )
 
     for router in domain.load_routers():
-        app.include_router(
-            router, prefix=domain.router_prefix, tags=list(domain.router_tags)
-        )
+        app.include_router(router, prefix=domain.router_prefix, tags=list(domain.router_tags))
 
     if domain.name == "identity" and resolved.IDENTITY_ISSUER:
         from .identity import build_router

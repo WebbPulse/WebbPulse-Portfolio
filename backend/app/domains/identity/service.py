@@ -66,9 +66,7 @@ def seed_admin_user(credential_store: Any = None) -> None:
             record[LEGACY_HASH_FIELD] = get_password_hash(settings.ADMIN_PASSWORD)
         try:
             user = users.create(record)
-            logger.info(
-                "Seeded admin user", extra={"username": settings.ADMIN_USERNAME}
-            )
+            logger.info("Seeded admin user", extra={"username": settings.ADMIN_USERNAME})
         except UniqueViolation:
             user = users.find_by_unique("username", settings.ADMIN_USERNAME)
             if user is None:

@@ -46,9 +46,7 @@ class TestSiteContentSeeding:
     @pytest.mark.admin
     def test_lost_race_keeps_existing_content(self, test_site_content):
         """Losing the seed race keeps the row the winner wrote."""
-        with patch.object(
-            entities.site_content, "get", side_effect=[None, test_site_content]
-        ):
+        with patch.object(entities.site_content, "get", side_effect=[None, test_site_content]):
             seed_site_content()
         content = entities.site_content.get(entities.SITE_CONTENT_ID)
         assert content["hero_title"] == "Hi, I'm Test"
@@ -104,9 +102,7 @@ class TestSiteContentAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_update_site_content_admin(
-        self, client: TestClient, admin_auth_headers, test_site_content
-    ):
+    def test_update_site_content_admin(self, client: TestClient, admin_auth_headers, test_site_content):
         """An admin can update a field, leaving the others alone."""
         response = client.put(
             "/api/v1/site-content/",
@@ -120,9 +116,7 @@ class TestSiteContentAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_update_site_content_replaces_arrays(
-        self, client: TestClient, admin_auth_headers, test_site_content
-    ):
+    def test_update_site_content_replaces_arrays(self, client: TestClient, admin_auth_headers, test_site_content):
         """List fields are replaced wholesale rather than merged."""
         new_paragraphs = ["Only one paragraph now."]
         new_values = [
@@ -144,9 +138,7 @@ class TestSiteContentAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_update_site_content_unauthorized(
-        self, client: TestClient, auth_headers, test_site_content
-    ):
+    def test_update_site_content_unauthorized(self, client: TestClient, auth_headers, test_site_content):
         """A non-admin user cannot update site content."""
         response = client.put(
             "/api/v1/site-content/",
@@ -164,9 +156,7 @@ class TestSiteContentAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_update_site_content_uninitialized(
-        self, client: TestClient, admin_auth_headers
-    ):
+    def test_update_site_content_uninitialized(self, client: TestClient, admin_auth_headers):
         """PUT without a seeded row should fail."""
         client.get("/health")
         entities.site_content.hard_delete(entities.SITE_CONTENT_ID)

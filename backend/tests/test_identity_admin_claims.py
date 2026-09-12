@@ -55,9 +55,7 @@ class TestIdentityClaimsAreAccepted:
         response = client.get(
             PROTECTED,
             headers={
-                "x-amzn-request-context": _gate_context(
-                    test_admin_user["id"], exp="4102444800", roles='["admin"]'
-                )
+                "x-amzn-request-context": _gate_context(test_admin_user["id"], exp="4102444800", roles='["admin"]')
             },
         )
         assert response.status_code == 200
@@ -77,35 +75,25 @@ class TestIdentityClaimsAreRefused:
 
     def test_an_empty_request_context_is_refused(self, client):
         """A header that is present but carries no authorizer section."""
-        response = client.get(
-            PROTECTED, headers={"x-amzn-request-context": json.dumps({})}
-        )
+        response = client.get(PROTECTED, headers={"x-amzn-request-context": json.dumps({})})
         assert response.status_code in (401, 403)
 
     def test_an_unparseable_request_context_is_refused(self, client):
         """A header that is not JSON is refused rather than raising."""
-        response = client.get(
-            PROTECTED, headers={"x-amzn-request-context": "not json at all"}
-        )
+        response = client.get(PROTECTED, headers={"x-amzn-request-context": "not json at all"})
         assert response.status_code in (401, 403)
 
     def test_a_subject_that_is_not_an_integer_is_refused(self, client):
         """A `sub` this product could not have minted."""
         response = client.get(
             PROTECTED,
-            headers={
-                "x-amzn-request-context": _native_context(
-                    "c7c0f5de-0000-4000-8000-000000000000"
-                )
-            },
+            headers={"x-amzn-request-context": _native_context("c7c0f5de-0000-4000-8000-000000000000")},
         )
         assert response.status_code == 401
 
     def test_a_subject_naming_no_row_is_refused(self, client):
         """A well formed id that resolves to nothing."""
-        response = client.get(
-            PROTECTED, headers={"x-amzn-request-context": _native_context(99999999)}
-        )
+        response = client.get(PROTECTED, headers={"x-amzn-request-context": _native_context(99999999)})
         assert response.status_code == 401
 
     def test_an_inactive_account_is_refused(self, client, test_admin_user):
@@ -139,23 +127,17 @@ class TestTheLegacyPathIsUnchanged:
         """The path every request takes in bearer mode today."""
         assert client.get(PROTECTED, headers=admin_auth_headers).status_code == 200
 
-    def test_a_legacy_token_works_with_no_request_context(
-        self, client, admin_auth_headers
-    ):
+    def test_a_legacy_token_works_with_no_request_context(self, client, admin_auth_headers):
         """No claims section is needed for the legacy path to resolve."""
         assert "x-amzn-request-context" not in admin_auth_headers
         assert client.get(PROTECTED, headers=admin_auth_headers).status_code == 200
 
     def test_a_bad_legacy_token_is_still_refused(self, client):
         """A forged or malformed bearer token is the same 401 it always was."""
-        response = client.get(
-            PROTECTED, headers={"Authorization": "Bearer not-a-real-token"}
-        )
+        response = client.get(PROTECTED, headers={"Authorization": "Bearer not-a-real-token"})
         assert response.status_code == 401
 
-    def test_a_bad_legacy_token_does_not_shadow_valid_claims(
-        self, client, test_admin_user
-    ):
+    def test_a_bad_legacy_token_does_not_shadow_valid_claims(self, client, test_admin_user):
         """An unusable bearer token alongside verified claims resolves the claims."""
         response = client.get(
             PROTECTED,

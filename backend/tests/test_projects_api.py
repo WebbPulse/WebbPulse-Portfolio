@@ -86,13 +86,9 @@ class TestProjectsAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_create_project_admin(
-        self, client: TestClient, admin_auth_headers, sample_project_data
-    ):
+    def test_create_project_admin(self, client: TestClient, admin_auth_headers, sample_project_data):
         """Test creating a new project as admin"""
-        response = client.post(
-            "/api/v1/projects/", json=sample_project_data, headers=admin_auth_headers
-        )
+        response = client.post("/api/v1/projects/", json=sample_project_data, headers=admin_auth_headers)
         assert response.status_code == 200
         data = response.json()
         assert data["title"] == sample_project_data["title"]
@@ -104,13 +100,9 @@ class TestProjectsAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_create_project_unauthorized(
-        self, client: TestClient, auth_headers, sample_project_data
-    ):
+    def test_create_project_unauthorized(self, client: TestClient, auth_headers, sample_project_data):
         """Test creating a project without admin privileges"""
-        response = client.post(
-            "/api/v1/projects/", json=sample_project_data, headers=auth_headers
-        )
+        response = client.post("/api/v1/projects/", json=sample_project_data, headers=auth_headers)
         assert response.status_code == 403
         assert "Not enough permissions" in error_message(response)
 
@@ -123,9 +115,7 @@ class TestProjectsAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_update_project_admin(
-        self, client: TestClient, admin_auth_headers, test_project
-    ):
+    def test_update_project_admin(self, client: TestClient, admin_auth_headers, test_project):
         """Test updating a project as admin"""
         update_data = {
             "title": "Updated Test Project",
@@ -145,9 +135,7 @@ class TestProjectsAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_update_project_unauthorized(
-        self, client: TestClient, auth_headers, test_project
-    ):
+    def test_update_project_unauthorized(self, client: TestClient, auth_headers, test_project):
         """Test updating a project without admin privileges"""
         update_data = {"title": "Updated Title"}
         response = client.put(
@@ -163,21 +151,15 @@ class TestProjectsAdminAPI:
     def test_update_nonexistent_project(self, client: TestClient, admin_auth_headers):
         """Test updating a project that doesn't exist"""
         update_data = {"title": "Updated Title"}
-        response = client.put(
-            "/api/v1/projects/999", json=update_data, headers=admin_auth_headers
-        )
+        response = client.put("/api/v1/projects/999", json=update_data, headers=admin_auth_headers)
         assert response.status_code == 404
         assert "Project not found" in error_message(response)
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_delete_project_admin(
-        self, client: TestClient, admin_auth_headers, test_project
-    ):
+    def test_delete_project_admin(self, client: TestClient, admin_auth_headers, test_project):
         """Test soft deleting a project as admin"""
-        response = client.delete(
-            f"/api/v1/projects/{test_project['id']}", headers=admin_auth_headers
-        )
+        response = client.delete(f"/api/v1/projects/{test_project['id']}", headers=admin_auth_headers)
         assert response.status_code == 200
         assert "deleted successfully" in response.json()["message"]
 
@@ -186,13 +168,9 @@ class TestProjectsAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_delete_project_unauthorized(
-        self, client: TestClient, auth_headers, test_project
-    ):
+    def test_delete_project_unauthorized(self, client: TestClient, auth_headers, test_project):
         """Test deleting a project without admin privileges"""
-        response = client.delete(
-            f"/api/v1/projects/{test_project['id']}", headers=auth_headers
-        )
+        response = client.delete(f"/api/v1/projects/{test_project['id']}", headers=auth_headers)
         assert response.status_code == 403
         assert "Not enough permissions" in error_message(response)
 
@@ -232,9 +210,7 @@ class TestProjectsAPIValidation:
             "description": "Test description",
             "github_url": "invalid-url",
         }
-        response = client.post(
-            "/api/v1/projects/", json=project_data, headers=admin_auth_headers
-        )
+        response = client.post("/api/v1/projects/", json=project_data, headers=admin_auth_headers)
         assert response.status_code == 200
 
     @pytest.mark.api
@@ -245,9 +221,7 @@ class TestProjectsAPIValidation:
             "title": "Minimal Project",
             "description": "A minimal project description",
         }
-        response = client.post(
-            "/api/v1/projects/", json=project_data, headers=admin_auth_headers
-        )
+        response = client.post("/api/v1/projects/", json=project_data, headers=admin_auth_headers)
         assert response.status_code == 200
         data = response.json()
         assert data["title"] == project_data["title"]

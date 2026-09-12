@@ -16,9 +16,7 @@ from app.composition.wiring import DOMAINS, check_required_secrets
 
 BACKEND = Path(__file__).resolve().parents[1]
 
-MISSING_SECRET_ARN = (
-    "arn:aws:secretsmanager:us-west-2:123456789012:secret:webbpulse-test/missing-AbCdEf"
-)
+MISSING_SECRET_ARN = "arn:aws:secretsmanager:us-west-2:123456789012:secret:webbpulse-test/missing-AbCdEf"
 
 
 @pytest.fixture(autouse=True)
@@ -48,9 +46,7 @@ def run_probe(source, env=None):
     """Run a snippet in a fresh interpreter with an empty environment."""
     environment = {
         "PATH": "/usr/bin:/bin",
-        "PYTHONPATH": os.pathsep.join(
-            [str(BACKEND), *(p for p in sys.path if p and Path(p).is_dir())]
-        ),
+        "PYTHONPATH": os.pathsep.join([str(BACKEND), *(p for p in sys.path if p and Path(p).is_dir())]),
         "PYTHONDONTWRITEBYTECODE": "1",
     }
     environment.update(env or {})
@@ -84,9 +80,7 @@ print(json.dumps({"routes": len(built.routes), "arn": config.settings.APP_SECRET
 @pytest.mark.parametrize("domain", sorted(DOMAINS))
 def test_building_a_domain_app_makes_no_secrets_manager_call(domain):
     """The contract every domain image's cold start depends on."""
-    result = run_probe(
-        IMPORT_PROBE % domain, env={"APP_SECRETS_ARN": MISSING_SECRET_ARN}
-    )
+    result = run_probe(IMPORT_PROBE % domain, env={"APP_SECRETS_ARN": MISSING_SECRET_ARN})
 
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout.strip().splitlines()[-1])
@@ -177,9 +171,7 @@ def test_require_secrets_names_every_missing_field(clear_secret_env, monkeypatch
     monkeypatch.setenv("APP_SECRETS_ARN", arn)
 
     with pytest.raises(ValueError) as excinfo:
-        Settings(_env_file=None).require_secrets(
-            "SECRET_KEY", "ADMIN_USERNAME", "ADMIN_EMAIL"
-        )
+        Settings(_env_file=None).require_secrets("SECRET_KEY", "ADMIN_USERNAME", "ADMIN_EMAIL")
 
     message = str(excinfo.value)
     assert "ADMIN_USERNAME" in message and "ADMIN_EMAIL" in message
@@ -204,9 +196,7 @@ def test_cache_reset_makes_a_rotated_secret_visible():
 
 @pytest.mark.unit
 @pytest.mark.parametrize("environment", ["staging", "production"])
-def test_a_deployed_environment_raises_on_a_missing_secret(
-    clear_secret_env, monkeypatch, environment
-):
+def test_a_deployed_environment_raises_on_a_missing_secret(clear_secret_env, monkeypatch, environment):
     """The startup failure. Without it the first request that verifies a token
     is what discovers the misconfiguration, which reads as a random 500."""
     monkeypatch.setenv("ENVIRONMENT", environment)
@@ -240,9 +230,7 @@ def test_public_never_asks_for_a_secret(clear_secret_env, monkeypatch, environme
 
 
 @pytest.mark.unit
-def test_a_deployed_environment_passes_when_the_secret_resolves(
-    clear_secret_env, monkeypatch
-):
+def test_a_deployed_environment_passes_when_the_secret_resolves(clear_secret_env, monkeypatch):
     """A deployed domain whose secrets resolve warns about nothing."""
     arn = create_app_secret("webbpulse-ok/app", {"SECRET_KEY": "sm-secret"})
     monkeypatch.setenv("APP_SECRETS_ARN", arn)
@@ -255,9 +243,7 @@ def test_a_deployed_environment_passes_when_the_secret_resolves(
 
 
 @pytest.mark.unit
-def test_identity_requires_the_admin_credentials_the_seed_reads(
-    clear_secret_env, monkeypatch
-):
+def test_identity_requires_the_admin_credentials_the_seed_reads(clear_secret_env, monkeypatch):
     """`identity` owns `users` and seeds the admin from the blob, so the three
     admin fields are startup requirements for it and for nothing else."""
     arn = create_app_secret("webbpulse-identity/app", {"SECRET_KEY": "k"})

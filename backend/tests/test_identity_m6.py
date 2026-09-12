@@ -47,9 +47,7 @@ def test_the_state_table_is_keyed_on_the_state_and_nothing_else() -> None:
     spec = TABLES["oauth-states"]
 
     assert spec["KeySchema"] == [{"AttributeName": "state", "KeyType": "HASH"}]
-    assert spec["AttributeDefinitions"] == [
-        {"AttributeName": "state", "AttributeType": "S"}
-    ]
+    assert spec["AttributeDefinitions"] == [{"AttributeName": "state", "AttributeType": "S"}]
     assert "GlobalSecondaryIndexes" not in spec
 
 
@@ -59,9 +57,7 @@ def test_the_link_table_is_keyed_on_the_provider_identity() -> None:
 
     spec = TABLES["oauth-links"]
 
-    assert spec["KeySchema"] == [
-        {"AttributeName": "provider_subject", "KeyType": "HASH"}
-    ]
+    assert spec["KeySchema"] == [{"AttributeName": "provider_subject", "KeyType": "HASH"}]
     assert spec["AttributeDefinitions"] == [
         {"AttributeName": "provider_subject", "AttributeType": "S"},
         {"AttributeName": "user_id", "AttributeType": "S"},
@@ -296,9 +292,7 @@ def test_only_the_providers_whose_secret_is_present_are_returned(
 
     settings = Settings(APP_SECRETS_ARN="arn:aws:secretsmanager:us-west-2:1:secret:x")
 
-    assert composition.build_oauth_client_secrets(settings) == {
-        "google": "google-secret"
-    }
+    assert composition.build_oauth_client_secrets(settings) == {"google": "google-secret"}
 
 
 def test_a_secret_with_no_oauth_keys_yields_an_empty_mapping(
@@ -350,11 +344,7 @@ def test_no_oauth_route_mounts_without_a_client_id(
     """THE DEPLOYED STATE. Both stores supplied, neither client id set, no routes."""
     paths = _all_paths(identity_app_without_providers)
 
-    mounted = [
-        path
-        for path in paths
-        if path.startswith("/api/auth/oauth") and path != OAUTH_PROVIDERS_PATH_FULL
-    ]
+    mounted = [path for path in paths if path.startswith("/api/auth/oauth") and path != OAUTH_PROVIDERS_PATH_FULL]
 
     assert not mounted
 
@@ -407,9 +397,7 @@ def test_provider_discovery_mounts_with_no_client_id_set(
     identity_app_without_providers: FastAPI,
 ) -> None:
     """THE DEPLOYED STATE, and the one OAuth route that is in it."""
-    assert OAUTH_PROVIDERS_PATH_FULL in _paths_for_method(
-        identity_app_without_providers, "GET"
-    )
+    assert OAUTH_PROVIDERS_PATH_FULL in _paths_for_method(identity_app_without_providers, "GET")
 
 
 def test_provider_discovery_answers_an_empty_list_when_unconfigured(
@@ -443,9 +431,7 @@ def test_provider_discovery_lists_nothing_without_the_client_secrets(
     """Both client ids set, no secret in the blob, and still an empty list."""
     from fastapi.testclient import TestClient
 
-    assert "/api/auth/oauth/{provider}/start" in _paths_for_method(
-        identity_app_with_providers, "GET"
-    )
+    assert "/api/auth/oauth/{provider}/start" in _paths_for_method(identity_app_with_providers, "GET")
 
     with TestClient(identity_app_with_providers) as client:
         response = client.get(OAUTH_PROVIDERS_PATH_FULL)
@@ -461,13 +447,9 @@ def test_the_discovery_path_is_the_packages_own_constant() -> None:
     assert f"/api/auth{OAUTH_PROVIDERS_PATH}" == OAUTH_PROVIDERS_PATH_FULL
 
 
-def test_one_provider_is_enough_to_mount_the_routes(
-    monkeypatch: pytest.MonkeyPatch, private_key: Any
-) -> None:
+def test_one_provider_is_enough_to_mount_the_routes(monkeypatch: pytest.MonkeyPatch, private_key: Any) -> None:
     """Google alone mounts all five, which is the likely first state."""
-    app = _build_identity_app(
-        monkeypatch, private_key, google=GOOGLE_CLIENT_ID, github=""
-    )
+    app = _build_identity_app(monkeypatch, private_key, google=GOOGLE_CLIENT_ID, github="")
 
     assert "/api/auth/oauth/{provider}/start" in _paths_for_method(app, "GET")
 
@@ -494,9 +476,7 @@ def _logical_name_of(store: Any) -> str:
     return str(store._repo.logical_name)
 
 
-def _capture_build(
-    monkeypatch: pytest.MonkeyPatch, boto3: Any, package: Any
-) -> dict[str, Any]:
+def _capture_build(monkeypatch: pytest.MonkeyPatch, boto3: Any, package: Any) -> dict[str, Any]:
     """Intercept `build_identity_router` and record what the root passed it."""
     captured: dict[str, Any] = {}
 
@@ -533,9 +513,7 @@ def private_key() -> Any:
     return rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
 
-def _build_identity_app(
-    monkeypatch: pytest.MonkeyPatch, private_key: Any, *, google: str, github: str
-) -> FastAPI:
+def _build_identity_app(monkeypatch: pytest.MonkeyPatch, private_key: Any, *, google: str, github: str) -> FastAPI:
     """The identity router as the composition root builds it, with these ids set."""
     import boto3
 
@@ -557,21 +535,15 @@ def _build_identity_app(
 
 
 @pytest.fixture
-def identity_app_without_providers(
-    private_key: Any, monkeypatch: pytest.MonkeyPatch
-) -> FastAPI:
+def identity_app_without_providers(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     """The router exactly as staging and production serve it today."""
     return _build_identity_app(monkeypatch, private_key, google="", github="")
 
 
 @pytest.fixture
-def identity_app_with_providers(
-    private_key: Any, monkeypatch: pytest.MonkeyPatch
-) -> FastAPI:
+def identity_app_with_providers(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     """The router once the owner has registered both OAuth apps."""
-    return _build_identity_app(
-        monkeypatch, private_key, google=GOOGLE_CLIENT_ID, github=GITHUB_CLIENT_ID
-    )
+    return _build_identity_app(monkeypatch, private_key, google=GOOGLE_CLIENT_ID, github=GITHUB_CLIENT_ID)
 
 
 def _paths_for_method(app: FastAPI, method: str) -> set[str]:

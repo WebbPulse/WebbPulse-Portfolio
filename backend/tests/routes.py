@@ -15,9 +15,7 @@ than on the type.
 
 from fastapi.routing import iter_route_contexts
 
-DOCUMENTATION_PATHS = frozenset(
-    {"/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json"}
-)
+DOCUMENTATION_PATHS = frozenset({"/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json"})
 """The paths FastAPI declares for its own documentation."""
 
 
@@ -26,9 +24,7 @@ def served_routes(app):
     return list(iter_route_contexts(app.routes))
 
 
-def method_path_pairs(
-    app, *, skip_documentation=True, skip_methods=("HEAD", "OPTIONS")
-):
+def method_path_pairs(app, *, skip_documentation=True, skip_methods=("HEAD", "OPTIONS")):
     """`(method, path)` for every route, one entry per method."""
     pairs = set()
     for route in served_routes(app):
@@ -48,17 +44,11 @@ def paths_for_method(app, method):
     """Every path the application serves for one method."""
     return {
         path
-        for served_method, path in method_path_pairs(
-            app, skip_documentation=False, skip_methods=()
-        )
+        for served_method, path in method_path_pairs(app, skip_documentation=False, skip_methods=())
         if served_method == method
     }
 
 
 def all_paths(app):
     """Every path the application serves, whatever the method."""
-    return {
-        path
-        for path in (getattr(route, "path", None) for route in served_routes(app))
-        if path is not None
-    }
+    return {path for path in (getattr(route, "path", None) for route in served_routes(app)) if path is not None}

@@ -15,8 +15,7 @@ CONTRACT = json.loads(CONTRACT_PATH.read_text())
 CONTRACT_PAIRS = {(entry["method"], entry["path"]) for entry in CONTRACT["routes"]}
 
 CONTRACT_OPERATIONS = {
-    (entry["method"], entry["path"], entry["operationId"], tuple(entry["tags"]))
-    for entry in CONTRACT["operations"]
+    (entry["method"], entry["path"], entry["operationId"], tuple(entry["tags"])) for entry in CONTRACT["operations"]
 }
 
 EXPECTED_COUNTS = CONTRACT["counts"]

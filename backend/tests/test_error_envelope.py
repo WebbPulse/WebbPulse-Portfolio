@@ -27,9 +27,7 @@ def envelope(response):
 @pytest.mark.api
 def test_a_rejected_token_carries_unauthorized(client: TestClient):
     """A rejected bearer token answers 401 with the UNAUTHORIZED code."""
-    response = client.get(
-        "/api/v1/posts/admin", headers={"Authorization": "Bearer invalid_token"}
-    )
+    response = client.get("/api/v1/posts/admin", headers={"Authorization": "Bearer invalid_token"})
 
     assert response.status_code == 401
     body = envelope(response)
@@ -40,9 +38,7 @@ def test_a_rejected_token_carries_unauthorized(client: TestClient):
 @pytest.mark.api
 def test_a_failed_login_carries_unauthorized(client: TestClient, test_admin_user):
     """The other 401, and the one a form actually shows a user."""
-    response = client.post(
-        "/api/v1/admin/login", json={"username": "adminuser", "password": "wrong"}
-    )
+    response = client.post("/api/v1/admin/login", json={"username": "adminuser", "password": "wrong"})
 
     assert response.status_code == 401
     body = envelope(response)
@@ -113,14 +109,10 @@ def test_an_unhandled_exception_carries_internal_error():
         (422, VALIDATION_MESSAGE, "VALIDATION_ERROR"),
     ],
 )
-def test_messages_are_unchanged(
-    client: TestClient, status, expected_message, expected_code
-):
+def test_messages_are_unchanged(client: TestClient, status, expected_message, expected_code):
     """Every message is the string it was before the codes were turned on."""
     responses = {
-        401: lambda: client.get(
-            "/api/v1/posts/admin", headers={"Authorization": "Bearer invalid_token"}
-        ),
+        401: lambda: client.get("/api/v1/posts/admin", headers={"Authorization": "Bearer invalid_token"}),
         404: lambda: client.get("/api/v1/no-such-route"),
         422: lambda: client.post("/api/v1/admin/login", json={"username": 5}),
     }

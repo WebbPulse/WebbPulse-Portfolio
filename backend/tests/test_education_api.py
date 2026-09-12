@@ -60,9 +60,7 @@ class TestEducationAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_create_education_admin(
-        self, client: TestClient, admin_auth_headers, sample_education_data
-    ):
+    def test_create_education_admin(self, client: TestClient, admin_auth_headers, sample_education_data):
         """An admin can create an education entry."""
         response = client.post(
             "/api/v1/education/",
@@ -76,13 +74,9 @@ class TestEducationAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_create_education_unauthorized(
-        self, client: TestClient, auth_headers, sample_education_data
-    ):
+    def test_create_education_unauthorized(self, client: TestClient, auth_headers, sample_education_data):
         """A non-admin user cannot create an education entry."""
-        response = client.post(
-            "/api/v1/education/", json=sample_education_data, headers=auth_headers
-        )
+        response = client.post("/api/v1/education/", json=sample_education_data, headers=auth_headers)
         assert response.status_code == 403
 
     @pytest.mark.api
@@ -94,9 +88,7 @@ class TestEducationAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_update_education_admin(
-        self, client: TestClient, admin_auth_headers, test_education
-    ):
+    def test_update_education_admin(self, client: TestClient, admin_auth_headers, test_education):
         """An admin can update an education entry."""
         response = client.put(
             f"/api/v1/education/{test_education['id']}",
@@ -109,13 +101,9 @@ class TestEducationAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_delete_education_admin(
-        self, client: TestClient, admin_auth_headers, test_education
-    ):
+    def test_delete_education_admin(self, client: TestClient, admin_auth_headers, test_education):
         """An admin can delete an education entry, after which it reads as gone."""
-        response = client.delete(
-            f"/api/v1/education/{test_education['id']}", headers=admin_auth_headers
-        )
+        response = client.delete(f"/api/v1/education/{test_education['id']}", headers=admin_auth_headers)
         assert response.status_code == 200
         get_response = client.get(f"/api/v1/education/{test_education['id']}")
         assert get_response.status_code == 404

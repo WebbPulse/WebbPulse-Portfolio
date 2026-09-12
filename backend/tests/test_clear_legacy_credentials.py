@@ -14,9 +14,7 @@ from app.db import entities
 
 def load_script():
     """Import the clear script by path, since scripts is not a package."""
-    path = (
-        Path(__file__).resolve().parents[1] / "scripts" / "clear_legacy_credentials.py"
-    )
+    path = Path(__file__).resolve().parents[1] / "scripts" / "clear_legacy_credentials.py"
     spec = importlib.util.spec_from_file_location("clear_legacy_credentials", path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -170,9 +168,7 @@ class TestTheRefusals:
         assert reload(good)["hashed_password"] == good["hashed_password"]
         assert reload(bad)["hashed_password"] == bad["hashed_password"]
 
-    def test_a_row_with_neither_a_column_nor_a_credential_is_a_refusal(
-        self, script, store
-    ):
+    def test_a_row_with_neither_a_column_nor_a_credential_is_a_refusal(self, script, store):
         """Not `already_clear`. A user with no password at all wants a human."""
         user = make_user()
         entities.users.update(user["id"], {"hashed_password": None})

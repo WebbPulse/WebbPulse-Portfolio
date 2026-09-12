@@ -49,9 +49,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
         data,
         settings.SECRET_KEY,
         expires_in=(
-            expires_delta
-            if expires_delta is not None
-            else timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+            expires_delta if expires_delta is not None else timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         ),
         algorithm=settings.ALGORITHM,
     )
@@ -63,9 +61,7 @@ def verify_token(token: str) -> Optional[str]:
     Every failure answers `None`; the reason reaches the log line only.
     """
     try:
-        payload = decode_token(
-            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
-        )
+        payload = decode_token(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
     except TokenError as exc:
         logger.debug("Rejected bearer token", extra={"reason": type(exc).__name__})
         return None
@@ -80,9 +76,7 @@ class IdentityAwareHTTPBearer(HTTPBearer):
     so returning `None` lets the resolver that reads those claims run.
     """
 
-    async def __call__(
-        self, request: Request
-    ) -> Optional[HTTPAuthorizationCredentials]:
+    async def __call__(self, request: Request) -> Optional[HTTPAuthorizationCredentials]:
         """The bearer credential, or `None` when verified claims are present."""
         if request.headers.get("authorization"):
             return await super().__call__(request)
@@ -138,13 +132,9 @@ async def get_current_user(
         )
     user = users.find_by_unique("username", username)
     if not user or not user.get("is_admin"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
     if not user.get("is_active", True):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="User account is inactive"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is inactive")
     return user
 
 
