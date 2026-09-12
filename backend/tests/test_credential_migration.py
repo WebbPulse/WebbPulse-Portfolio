@@ -14,14 +14,8 @@ from app.db import entities
 
 def load_script():
     """Import the migration script by path, since scripts is not a package."""
-    path = (
-        Path(__file__).resolve().parents[1]
-        / "scripts"
-        / "migrate_credentials_to_identity.py"
-    )
-    spec = importlib.util.spec_from_file_location(
-        "migrate_credentials_to_identity", path
-    )
+    path = Path(__file__).resolve().parents[1] / "scripts" / "migrate_credentials_to_identity.py"
+    spec = importlib.util.spec_from_file_location("migrate_credentials_to_identity", path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)

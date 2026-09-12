@@ -207,13 +207,9 @@ def _documented_operations():
 def test_openapi_operations_are_unchanged():
     """Same 42 operations, same ids, same tags. Order is asserted separately."""
     documented = _documented_operations()
-    hashable = {
-        (method, path, operation_id, tuple(tags))
-        for method, path, operation_id, tags in documented
-    }
+    hashable = {(method, path, operation_id, tuple(tags)) for method, path, operation_id, tags in documented}
     assert hashable == {
-        (method, path, operation_id, tuple(tags))
-        for method, path, operation_id, tags in EXPECTED_OPERATIONS
+        (method, path, operation_id, tuple(tags)) for method, path, operation_id, tags in EXPECTED_OPERATIONS
     }
     assert len(documented) == len(hashable) == len(EXPECTED_OPERATIONS) == 42
 
@@ -247,11 +243,7 @@ def test_the_whole_surface_orders_paths_by_domain():
 
     for name in ("content", "resume", "identity", "public"):
         served = [p for p in paths if domain_of(p) == name]
-        own = [
-            p
-            for p in build_domain_app(name).openapi()["paths"]
-            if p not in ("/docs", "/redoc", "/openapi.json")
-        ]
+        own = [p for p in build_domain_app(name).openapi()["paths"] if p not in ("/docs", "/redoc", "/openapi.json")]
         assert served == own, name
 
 
@@ -275,11 +267,7 @@ def test_route_count_matches_the_domain_map():
     application = pairs - documentation
     assert len(application) == 44
 
-    content = {
-        p
-        for _, p in application
-        if p.startswith(("/api/v1/posts", "/api/v1/site-content"))
-    }
+    content = {p for _, p in application if p.startswith(("/api/v1/posts", "/api/v1/site-content"))}
     resume_prefixes = (
         "/api/v1/projects",
         "/api/v1/experience",
@@ -288,13 +276,7 @@ def test_route_count_matches_the_domain_map():
         "/api/v1/certifications",
     )
     counts = {
-        "content": len(
-            [
-                1
-                for _, p in application
-                if p.startswith(("/api/v1/posts", "/api/v1/site-content"))
-            ]
-        ),
+        "content": len([1 for _, p in application if p.startswith(("/api/v1/posts", "/api/v1/site-content"))]),
         "resume": len([1 for _, p in application if p.startswith(resume_prefixes)]),
         "identity": len([1 for _, p in application if p.startswith("/api/v1/admin")]),
         "public": len([1 for _, p in application if not p.startswith("/api/v1/")]),
@@ -321,8 +303,5 @@ def test_the_split_serves_this_exact_contract():
                     )
                 )
 
-    expected = {
-        (method, path, operation_id, tuple(tags))
-        for method, path, operation_id, tags in EXPECTED_OPERATIONS
-    }
+    expected = {(method, path, operation_id, tuple(tags)) for method, path, operation_id, tags in EXPECTED_OPERATIONS}
     assert union == expected

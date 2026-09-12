@@ -82,9 +82,7 @@ class TestExperienceAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_create_experience_admin(
-        self, client: TestClient, admin_auth_headers, sample_experience_data
-    ):
+    def test_create_experience_admin(self, client: TestClient, admin_auth_headers, sample_experience_data):
         """Test creating a new experience entry as admin"""
         response = client.post(
             "/api/v1/experience/",
@@ -101,21 +99,15 @@ class TestExperienceAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_create_experience_unauthorized(
-        self, client: TestClient, auth_headers, sample_experience_data
-    ):
+    def test_create_experience_unauthorized(self, client: TestClient, auth_headers, sample_experience_data):
         """Test creating an experience entry without admin privileges"""
-        response = client.post(
-            "/api/v1/experience/", json=sample_experience_data, headers=auth_headers
-        )
+        response = client.post("/api/v1/experience/", json=sample_experience_data, headers=auth_headers)
         assert response.status_code == 403
         assert "Not enough permissions" in error_message(response)
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_create_experience_no_auth(
-        self, client: TestClient, sample_experience_data
-    ):
+    def test_create_experience_no_auth(self, client: TestClient, sample_experience_data):
         """Test creating an experience entry without authentication"""
         response = client.post("/api/v1/experience/", json=sample_experience_data)
         assert response.status_code == 401
@@ -145,9 +137,7 @@ class TestExperienceAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_update_experience_admin(
-        self, client: TestClient, admin_auth_headers, test_experience
-    ):
+    def test_update_experience_admin(self, client: TestClient, admin_auth_headers, test_experience):
         """Test updating an experience entry as admin"""
         update_data = {
             "title": "Updated Test Position",
@@ -167,9 +157,7 @@ class TestExperienceAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_update_experience_unauthorized(
-        self, client: TestClient, auth_headers, test_experience
-    ):
+    def test_update_experience_unauthorized(self, client: TestClient, auth_headers, test_experience):
         """Test updating an experience entry without admin privileges"""
         update_data = {"title": "Updated Title"}
         response = client.put(
@@ -182,26 +170,18 @@ class TestExperienceAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_update_nonexistent_experience(
-        self, client: TestClient, admin_auth_headers
-    ):
+    def test_update_nonexistent_experience(self, client: TestClient, admin_auth_headers):
         """Test updating an experience entry that doesn't exist"""
         update_data = {"title": "Updated Title"}
-        response = client.put(
-            "/api/v1/experience/999", json=update_data, headers=admin_auth_headers
-        )
+        response = client.put("/api/v1/experience/999", json=update_data, headers=admin_auth_headers)
         assert response.status_code == 404
         assert "Experience entry not found" in error_message(response)
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_delete_experience_admin(
-        self, client: TestClient, admin_auth_headers, test_experience
-    ):
+    def test_delete_experience_admin(self, client: TestClient, admin_auth_headers, test_experience):
         """Test soft deleting an experience entry as admin"""
-        response = client.delete(
-            f"/api/v1/experience/{test_experience['id']}", headers=admin_auth_headers
-        )
+        response = client.delete(f"/api/v1/experience/{test_experience['id']}", headers=admin_auth_headers)
         assert response.status_code == 200
         assert "deleted successfully" in response.json()["message"]
 
@@ -210,21 +190,15 @@ class TestExperienceAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_delete_experience_unauthorized(
-        self, client: TestClient, auth_headers, test_experience
-    ):
+    def test_delete_experience_unauthorized(self, client: TestClient, auth_headers, test_experience):
         """Test deleting an experience entry without admin privileges"""
-        response = client.delete(
-            f"/api/v1/experience/{test_experience['id']}", headers=auth_headers
-        )
+        response = client.delete(f"/api/v1/experience/{test_experience['id']}", headers=auth_headers)
         assert response.status_code == 403
         assert "Not enough permissions" in error_message(response)
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_delete_nonexistent_experience(
-        self, client: TestClient, admin_auth_headers
-    ):
+    def test_delete_nonexistent_experience(self, client: TestClient, admin_auth_headers):
         """Test deleting an experience entry that doesn't exist"""
         response = client.delete("/api/v1/experience/999", headers=admin_auth_headers)
         assert response.status_code == 404
@@ -248,13 +222,9 @@ class TestExperienceAPIValidation:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_create_experience_invalid_data(
-        self, client: TestClient, admin_auth_headers
-    ):
+    def test_create_experience_invalid_data(self, client: TestClient, admin_auth_headers):
         """Test creating an experience entry with invalid data"""
-        response = client.post(
-            "/api/v1/experience/", json={}, headers=admin_auth_headers
-        )
+        response = client.post("/api/v1/experience/", json={}, headers=admin_auth_headers)
         assert response.status_code == 422
 
         experience_data = {
@@ -262,9 +232,7 @@ class TestExperienceAPIValidation:
             "company": "Test Company",
             "start_date": "invalid-date",
         }
-        response = client.post(
-            "/api/v1/experience/", json=experience_data, headers=admin_auth_headers
-        )
+        response = client.post("/api/v1/experience/", json=experience_data, headers=admin_auth_headers)
         assert response.status_code == 422
 
         experience_data = {
@@ -273,16 +241,12 @@ class TestExperienceAPIValidation:
             "start_date": "2023-01-01",
             "end_date": "2022-12-31",
         }
-        response = client.post(
-            "/api/v1/experience/", json=experience_data, headers=admin_auth_headers
-        )
+        response = client.post("/api/v1/experience/", json=experience_data, headers=admin_auth_headers)
         assert response.status_code == 422
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_create_experience_minimal_data(
-        self, client: TestClient, admin_auth_headers
-    ):
+    def test_create_experience_minimal_data(self, client: TestClient, admin_auth_headers):
         """Test creating an experience entry with minimal required data"""
         experience_data = {
             "title": "Minimal Position",
@@ -292,9 +256,7 @@ class TestExperienceAPIValidation:
             "start_date": "2023-01-01",
             "description": "A minimal position",
         }
-        response = client.post(
-            "/api/v1/experience/", json=experience_data, headers=admin_auth_headers
-        )
+        response = client.post("/api/v1/experience/", json=experience_data, headers=admin_auth_headers)
         assert response.status_code == 200
         data = response.json()
         assert data["title"] == experience_data["title"]
@@ -304,9 +266,7 @@ class TestExperienceAPIValidation:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_update_experience_date_validation(
-        self, client: TestClient, admin_auth_headers, test_experience
-    ):
+    def test_update_experience_date_validation(self, client: TestClient, admin_auth_headers, test_experience):
         """Test updating experience entry with date validation"""
         update_data = {"end_date": "2024-12-31"}
         response = client.put(
@@ -362,8 +322,5 @@ class TestExperienceAPIPerformance:
         assert response.status_code == 200
         data = response.json()
         if len(data) > 1:
-            dates = [
-                datetime.fromisoformat(exp["start_date"].replace("Z", "+00:00"))
-                for exp in data
-            ]
+            dates = [datetime.fromisoformat(exp["start_date"].replace("Z", "+00:00")) for exp in data]
             assert dates == sorted(dates, reverse=True)

@@ -59,9 +59,7 @@ class TestCertificationsAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_create_certification_admin(
-        self, client: TestClient, admin_auth_headers, sample_certification_data
-    ):
+    def test_create_certification_admin(self, client: TestClient, admin_auth_headers, sample_certification_data):
         """An admin can create a certification."""
         response = client.post(
             "/api/v1/certifications/",
@@ -75,9 +73,7 @@ class TestCertificationsAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_create_certification_unauthorized(
-        self, client: TestClient, auth_headers, sample_certification_data
-    ):
+    def test_create_certification_unauthorized(self, client: TestClient, auth_headers, sample_certification_data):
         """A non-admin user cannot create a certification."""
         response = client.post(
             "/api/v1/certifications/",
@@ -88,9 +84,7 @@ class TestCertificationsAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_update_certification_admin(
-        self, client: TestClient, admin_auth_headers, test_certification
-    ):
+    def test_update_certification_admin(self, client: TestClient, admin_auth_headers, test_certification):
         """An admin can rename a certification."""
         response = client.put(
             f"/api/v1/certifications/{test_certification['id']}",
@@ -102,9 +96,7 @@ class TestCertificationsAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_delete_certification_admin(
-        self, client: TestClient, admin_auth_headers, test_certification
-    ):
+    def test_delete_certification_admin(self, client: TestClient, admin_auth_headers, test_certification):
         """An admin can delete a certification, after which it reads as gone."""
         response = client.delete(
             f"/api/v1/certifications/{test_certification['id']}",

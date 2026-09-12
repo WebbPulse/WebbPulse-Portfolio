@@ -67,9 +67,7 @@ def test_the_passkey_table_carries_the_credential_index_the_package_names() -> N
     indexes = TABLES["passkeys"]["GlobalSecondaryIndexes"]
     assert len(indexes) == 1
     assert indexes[0]["IndexName"] == package.PASSKEY_CREDENTIAL_INDEX
-    assert indexes[0]["KeySchema"] == [
-        {"AttributeName": "credential_id", "KeyType": "HASH"}
-    ]
+    assert indexes[0]["KeySchema"] == [{"AttributeName": "credential_id", "KeyType": "HASH"}]
     assert indexes[0]["Projection"] == {"ProjectionType": "ALL"}
 
 
@@ -446,9 +444,7 @@ def _logical_name_of(store: Any) -> str:
     return str(store._repo.logical_name)
 
 
-def _capture_build(
-    monkeypatch: pytest.MonkeyPatch, boto3: Any, package: Any
-) -> dict[str, Any]:
+def _capture_build(monkeypatch: pytest.MonkeyPatch, boto3: Any, package: Any) -> dict[str, Any]:
     """Intercept `build_identity_router` and record what the root passed it."""
     captured: dict[str, Any] = {}
 
@@ -488,9 +484,7 @@ def private_key() -> Any:
     return rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
 
-def _build_identity_app(
-    monkeypatch: pytest.MonkeyPatch, private_key: Any, *, enabled: bool
-) -> FastAPI:
+def _build_identity_app(monkeypatch: pytest.MonkeyPatch, private_key: Any, *, enabled: bool) -> FastAPI:
     """The identity router as the composition root builds it, at this flag value."""
     import boto3
 
@@ -509,17 +503,13 @@ def _build_identity_app(
 
 
 @pytest.fixture
-def identity_app_passkeys_off(
-    private_key: Any, monkeypatch: pytest.MonkeyPatch
-) -> FastAPI:
+def identity_app_passkeys_off(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     """The router exactly as staging and production serve it today."""
     return _build_identity_app(monkeypatch, private_key, enabled=False)
 
 
 @pytest.fixture
-def identity_app_passkeys_on(
-    private_key: Any, monkeypatch: pytest.MonkeyPatch
-) -> FastAPI:
+def identity_app_passkeys_on(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     """The router once the owner flips the one variable, after the frontend lands."""
     return _build_identity_app(monkeypatch, private_key, enabled=True)
 

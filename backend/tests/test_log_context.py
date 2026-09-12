@@ -27,9 +27,7 @@ def json_lines(monkeypatch):
             lines.append(json.loads(self.format(record)))
 
     handler = Collector()
-    handler.setFormatter(
-        JsonFormatter(service="webbpulse-portfolio", environment="test")
-    )
+    handler.setFormatter(JsonFormatter(service="webbpulse-portfolio", environment="test"))
     root = logging.getLogger()
     root.addHandler(handler)
     previous = root.level
@@ -105,9 +103,7 @@ def test_the_context_does_not_leak_between_requests(client):
     assert request_id_var.get() == UNSET
 
 
-def test_an_authenticated_request_logs_the_user_id(
-    client, json_lines, admin_auth_headers, test_admin_user
-):
+def test_an_authenticated_request_logs_the_user_id(client, json_lines, admin_auth_headers, test_admin_user):
     """`CurrentUser` binds `user_id`, and it lands on the log line."""
 
     @client.app.get("/_test/authenticated")

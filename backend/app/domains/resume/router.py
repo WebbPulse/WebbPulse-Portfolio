@@ -16,6 +16,4 @@ router.include_router(projects_router, prefix="/projects", tags=["projects"])
 router.include_router(experience_router, prefix="/experience", tags=["experience"])
 router.include_router(skills_router, prefix="/skills", tags=["skills"])
 router.include_router(education_router, prefix="/education", tags=["education"])
-router.include_router(
-    certifications_router, prefix="/certifications", tags=["certifications"]
-)
+router.include_router(certifications_router, prefix="/certifications", tags=["certifications"])

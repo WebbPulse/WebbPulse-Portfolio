@@ -107,9 +107,7 @@ class Repository:
         return {
             "Put": {
                 "TableName": self.meta_table_name,
-                "Item": marshal(
-                    {"pk": self.unique_key(field, value), "ref_id": ref_id}
-                ),
+                "Item": marshal({"pk": self.unique_key(field, value), "ref_id": ref_id}),
                 "ConditionExpression": "attribute_not_exists(pk)",
             }
         }
@@ -137,10 +135,7 @@ class Repository:
         """Raise `UniqueViolation` for whichever claim the transaction refused."""
         reasons = error.response.get("CancellationReasons") or []
         for index, reason in enumerate(reasons):
-            if (
-                reason.get("Code") == "ConditionalCheckFailed"
-                and index in unique_claims
-            ):
+            if reason.get("Code") == "ConditionalCheckFailed" and index in unique_claims:
                 field, value = unique_claims[index]
                 raise UniqueViolation(field, value)
         for field, value in unique_claims.values():
@@ -203,9 +198,7 @@ class Repository:
         for field in self.unique_fields:
             value = item.get(field)
             if value is not None:
-                self.meta.put_item(
-                    Item={"pk": self.unique_key(field, value), "ref_id": item["id"]}
-                )
+                self.meta.put_item(Item={"pk": self.unique_key(field, value), "ref_id": item["id"]})
         return from_item(item)
 
     def purge(self):
@@ -236,11 +229,7 @@ class Repository:
         """The item, or `None` when soft deleted and inactive rows are excluded."""
         if item is None:
             return None
-        if (
-            self.soft_delete_enabled
-            and not include_inactive
-            and not item.get("is_active", True)
-        ):
+        if self.soft_delete_enabled and not include_inactive and not item.get("is_active", True):
             return None
         return item
 
@@ -254,15 +243,9 @@ class Repository:
         wanted = sorted({int(i) for i in ids if i is not None})
         found = {}
         for start in range(0, len(wanted), 100):
-            request = {
-                self.table_name: {
-                    "Keys": [{"id": i} for i in wanted[start : start + 100]]
-                }
-            }
+            request = {self.table_name: {"Keys": [{"id": i} for i in wanted[start : start + 100]]}}
             while request:
-                response = client.dynamodb_resource().batch_get_item(
-                    RequestItems=request
-                )
+                response = client.dynamodb_resource().batch_get_item(RequestItems=request)
                 for raw in response.get("Responses", {}).get(self.table_name, []):
                     item = self._visible(from_item(raw), include_inactive)
                     if item is not None:

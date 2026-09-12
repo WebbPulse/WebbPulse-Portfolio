@@ -61,9 +61,7 @@ def test_an_active_administrator_may_authenticate(
     ],
     ids=["not-admin", "deactivated", "neither", "empty"],
 )
-def test_anything_but_an_active_administrator_is_refused(
-    hooks: PortfolioIdentityHooks, user: dict[str, Any]
-) -> None:
+def test_anything_but_an_active_administrator_is_refused(hooks: PortfolioIdentityHooks, user: dict[str, Any]) -> None:
     """Section 8.2: this product's policy is `is_admin` and `is_active`, both."""
     from webbpulse.identity import AuthenticationRefused
 
@@ -101,9 +99,7 @@ def test_load_user_by_id_converts_the_string_sub_to_this_products_integer_id(
     hooks: PortfolioIdentityHooks,
 ) -> None:
     """`sub` is a string and Portfolio's ids are integers from the counter."""
-    created = entities.users.create(
-        {"username": "someone", "email": "someone@webbpulse.com", "is_admin": True}
-    )
+    created = entities.users.create({"username": "someone", "email": "someone@webbpulse.com", "is_admin": True})
 
     loaded = hooks.load_user_by_id(str(created["id"]))
 
@@ -112,9 +108,7 @@ def test_load_user_by_id_converts_the_string_sub_to_this_products_integer_id(
 
 
 @pytest.mark.parametrize("sub", ["", "not-an-integer", "1.5", "99999"])
-def test_load_user_by_id_answers_none_rather_than_raising(
-    hooks: PortfolioIdentityHooks, sub: str
-) -> None:
+def test_load_user_by_id_answers_none_rather_than_raising(hooks: PortfolioIdentityHooks, sub: str) -> None:
     """A `sub` this product did not mint is "no such user", not a 500."""
     assert hooks.load_user_by_id(sub) is None
 
@@ -124,9 +118,7 @@ def test_load_user_by_email_finds_a_lowercase_address(
 ) -> None:
     """The ordinary case: the row was stored lowercase and the package sends
     lowercase, so the exact pointer lookup matches."""
-    created = entities.users.create(
-        {"username": "lower", "email": "lower@webbpulse.com"}
-    )
+    created = entities.users.create({"username": "lower", "email": "lower@webbpulse.com"})
 
     found = hooks.load_user_by_email("lower@webbpulse.com")
 
@@ -187,9 +179,7 @@ def test_create_user_never_writes_the_legacy_password_column(
     hooks: PortfolioIdentityHooks,
 ) -> None:
     """The password lives in `credentials`, which the package writes next."""
-    user = hooks.create_user(
-        email="new@webbpulse.com", attributes={"hashed_password": "injected"}
-    )
+    user = hooks.create_user(email="new@webbpulse.com", attributes={"hashed_password": "injected"})
 
     assert "hashed_password" not in user
 
@@ -253,10 +243,7 @@ def test_credentials_is_keyed_the_way_the_store_reads_it() -> None:
         {"AttributeName": "user_id", "KeyType": "HASH"},
         {"AttributeName": "credential_type", "KeyType": "RANGE"},
     ]
-    types = {
-        attribute["AttributeName"]: attribute["AttributeType"]
-        for attribute in spec["AttributeDefinitions"]
-    }
+    types = {attribute["AttributeName"]: attribute["AttributeType"] for attribute in spec["AttributeDefinitions"]}
     assert types == {"user_id": "S", "credential_type": "S"}
 
 

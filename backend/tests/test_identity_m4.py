@@ -22,9 +22,7 @@ MFA_PATHS = (
     "/api/auth/step-up",
 )
 
-DATA_KEY_ARN = (
-    "arn:aws:kms:us-west-2:621554169154:key/99999999-8888-7777-6666-555555555555"
-)
+DATA_KEY_ARN = "arn:aws:kms:us-west-2:621554169154:key/99999999-8888-7777-6666-555555555555"
 
 
 def test_the_mfa_table_names_are_the_packages_own_constants() -> None:
@@ -44,9 +42,7 @@ def test_the_factor_table_is_keyed_on_the_user_and_nothing_else() -> None:
     spec = TABLES["totp-factors"]
 
     assert spec["KeySchema"] == [{"AttributeName": "user_id", "KeyType": "HASH"}]
-    assert spec["AttributeDefinitions"] == [
-        {"AttributeName": "user_id", "AttributeType": "S"}
-    ]
+    assert spec["AttributeDefinitions"] == [{"AttributeName": "user_id", "AttributeType": "S"}]
 
 
 def test_the_recovery_table_is_keyed_on_the_user_and_the_code_hash() -> None:
@@ -349,9 +345,7 @@ def test_the_documents_still_answer_with_the_mfa_routes_mounted(
     assert client.get("/api/auth/.well-known/jwks.json").status_code == 200
 
 
-def test_the_routes_do_not_mount_without_the_factor_store(
-    private_key: Any, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_the_routes_do_not_mount_without_the_factor_store(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     """The other side of the switch, asserted against the package directly."""
     import boto3
     import webbpulse.identity as package
@@ -402,9 +396,7 @@ class _EnvelopeKms:
         """Delegate anything unhandled to the wrapped signing client."""
         return getattr(self._signing, name)
 
-    def generate_data_key(
-        self, *, KeyId: str, NumberOfBytes: int, EncryptionContext: dict[str, str]
-    ) -> dict[str, Any]:
+    def generate_data_key(self, *, KeyId: str, NumberOfBytes: int, EncryptionContext: dict[str, str]) -> dict[str, Any]:
         """Issue a random data key and remember its encryption context."""
         import os
 
@@ -413,9 +405,7 @@ class _EnvelopeKms:
         self._keys[blob] = (plaintext, dict(EncryptionContext))
         return {"Plaintext": plaintext, "CiphertextBlob": blob}
 
-    def decrypt(
-        self, *, CiphertextBlob: bytes, EncryptionContext: dict[str, str]
-    ) -> dict[str, Any]:
+    def decrypt(self, *, CiphertextBlob: bytes, EncryptionContext: dict[str, str]) -> dict[str, Any]:
         """Return the remembered plaintext, refusing a mismatched encryption context."""
         plaintext, context = self._keys[bytes(CiphertextBlob)]
         if context != dict(EncryptionContext):
@@ -500,9 +490,7 @@ def _enrolled_app(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> tuple[An
     mfa = MfaService(settings, stores, tokens, kms_client=fake)
 
     enrolment = mfa.begin_enrolment(user_id, account_name="admin@example.com")
-    codes = mfa.confirm_enrolment(
-        user_id, generate_code(enrolment.secret, step=current_step())
-    )
+    codes = mfa.confirm_enrolment(user_id, generate_code(enrolment.secret, step=current_step()))
 
     access = tokens.mint_access_token(user_id, claims={"email": "admin@example.com"})
 
@@ -539,33 +527,25 @@ def test_a_wrong_code_is_a_401_invalid_mfa_code_on_both_routes(
 
     app, _mfa, _uid, access, _codes, _secret = _enrolled_app(private_key, monkeypatch)
 
-    response = TestClient(app).post(
-        path, json={"code": "000000"}, headers=_auth(access)
-    )
+    response = TestClient(app).post(path, json={"code": "000000"}, headers=_auth(access))
 
     assert response.status_code == 401, response.text
     assert response.json()["error_code"] == "INVALID_MFA_CODE"
 
 
-def test_a_refused_disable_leaves_the_factor_active(
-    private_key: Any, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_refused_disable_leaves_the_factor_active(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verification happens before anything is deleted."""
     from fastapi.testclient import TestClient
 
     app, mfa, user_id, access, _codes, _secret = _enrolled_app(private_key, monkeypatch)
 
-    refused = TestClient(app).post(
-        "/api/auth/totp/disable", json={"code": "000000"}, headers=_auth(access)
-    )
+    refused = TestClient(app).post("/api/auth/totp/disable", json={"code": "000000"}, headers=_auth(access))
 
     assert refused.status_code == 401
     assert mfa.factors_for(user_id) == ["totp"]
 
 
-def test_a_recovery_code_disables_the_factor_and_is_spent(
-    private_key: Any, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_recovery_code_disables_the_factor_and_is_spent(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     """A recovery code is accepted where a TOTP code is, and is consumed by the use."""
     from fastapi.testclient import TestClient
 
@@ -573,9 +553,7 @@ def test_a_recovery_code_disables_the_factor_and_is_spent(
 
     before = mfa.remaining_recovery_codes(user_id)
 
-    response = TestClient(app).post(
-        "/api/auth/totp/disable", json={"code": codes[0]}, headers=_auth(access)
-    )
+    response = TestClient(app).post("/api/auth/totp/disable", json={"code": codes[0]}, headers=_auth(access))
 
     assert response.status_code == 200, response.text
     assert response.json() == {"disabled": True}
@@ -583,9 +561,7 @@ def test_a_recovery_code_disables_the_factor_and_is_spent(
     assert mfa.remaining_recovery_codes(user_id) < before
 
 
-def test_a_current_totp_code_regenerates_the_recovery_codes(
-    private_key: Any, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_current_totp_code_regenerates_the_recovery_codes(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     """The success path of the second route, with a real code from the real seed."""
     from fastapi.testclient import TestClient
     from webbpulse.identity.totp import current_step, generate_code
@@ -593,9 +569,7 @@ def test_a_current_totp_code_regenerates_the_recovery_codes(
     app, mfa, user_id, access, codes, secret = _enrolled_app(private_key, monkeypatch)
 
     code = generate_code(secret, step=current_step() + 1)
-    response = TestClient(app).post(
-        "/api/auth/recovery-codes", json={"code": code}, headers=_auth(access)
-    )
+    response = TestClient(app).post("/api/auth/recovery-codes", json={"code": code}, headers=_auth(access))
 
     assert response.status_code == 200, response.text
     issued = response.json()["recovery_codes"]
@@ -614,9 +588,7 @@ def test_a_refused_regenerate_leaves_the_existing_codes_working(
 
     app, mfa, user_id, access, codes, _secret = _enrolled_app(private_key, monkeypatch)
 
-    refused = TestClient(app).post(
-        "/api/auth/recovery-codes", json={"code": "000000"}, headers=_auth(access)
-    )
+    refused = TestClient(app).post("/api/auth/recovery-codes", json={"code": "000000"}, headers=_auth(access))
 
     assert refused.status_code == 401
     assert mfa.remaining_recovery_codes(user_id) == len(codes)

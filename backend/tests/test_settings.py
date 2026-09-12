@@ -15,9 +15,7 @@ FULL_PAYLOAD = {
     "ADMIN_EMAIL": "sm@example.com",
 }
 
-MISSING_SECRET_ARN = (
-    "arn:aws:secretsmanager:us-west-2:123456789012:secret:webbpulse-test/missing-AbCdEf"
-)
+MISSING_SECRET_ARN = "arn:aws:secretsmanager:us-west-2:123456789012:secret:webbpulse-test/missing-AbCdEf"
 
 
 def create_app_secret(name, payload):
@@ -68,9 +66,7 @@ def test_environment_overrides_secrets_manager(clear_secret_env, monkeypatch):
 
 
 @pytest.mark.unit
-def test_environment_fills_only_the_keys_the_secret_omits(
-    clear_secret_env, monkeypatch
-):
+def test_environment_fills_only_the_keys_the_secret_omits(clear_secret_env, monkeypatch):
     """Env wins per field, so a blob that carries only some keys is topped up
     from the environment rather than being all-or-nothing."""
     arn = create_app_secret("webbpulse-partial/app", {"SECRET_KEY": "sm-secret"})
@@ -84,9 +80,7 @@ def test_environment_fills_only_the_keys_the_secret_omits(
 
 
 @pytest.mark.unit
-def test_missing_keys_fail_when_required_not_when_constructed(
-    clear_secret_env, monkeypatch
-):
+def test_missing_keys_fail_when_required_not_when_constructed(clear_secret_env, monkeypatch):
     """PR 4 moved this failure from construction to the point of use."""
     arn = create_app_secret("webbpulse-empty/app", {"SECRET_KEY": "sm-secret"})
     monkeypatch.setenv("APP_SECRETS_ARN", arn)
@@ -102,9 +96,7 @@ def test_missing_keys_fail_when_required_not_when_constructed(
 
 
 @pytest.mark.unit
-def test_require_secrets_passes_when_the_named_fields_resolve(
-    clear_secret_env, monkeypatch
-):
+def test_require_secrets_passes_when_the_named_fields_resolve(clear_secret_env, monkeypatch):
     """A domain names only the secrets it needs, and a partial blob suffices."""
     arn = create_app_secret("webbpulse-partial-require/app", {"SECRET_KEY": "sm"})
     monkeypatch.setenv("APP_SECRETS_ARN", arn)
@@ -113,9 +105,7 @@ def test_require_secrets_passes_when_the_named_fields_resolve(
 
 
 @pytest.mark.unit
-def test_unreadable_secret_raises_rather_than_reporting_missing(
-    clear_secret_env, monkeypatch
-):
+def test_unreadable_secret_raises_rather_than_reporting_missing(clear_secret_env, monkeypatch):
     """An ARN pointing at a secret that is not there is a misconfiguration and must
     surface as itself, not as a vague 'missing setting'.
     """
@@ -128,9 +118,7 @@ def test_unreadable_secret_raises_rather_than_reporting_missing(
 
 
 @pytest.mark.unit
-def test_settings_construct_with_no_arn_and_no_environment(
-    clear_secret_env, monkeypatch
-):
+def test_settings_construct_with_no_arn_and_no_environment(clear_secret_env, monkeypatch):
     """The property every domain image's cold start depends on."""
     monkeypatch.delenv("APP_SECRETS_ARN", raising=False)
     settings = Settings(_env_file=None)
@@ -186,15 +174,11 @@ def test_values_are_cached_per_execution_environment():
 @pytest.mark.unit
 def test_cors_origins_include_localhost(monkeypatch):
     """The configured origins are kept and localhost is always added."""
-    monkeypatch.setenv(
-        "CORS_ORIGINS", "https://www.webbpulse.com, https://webbpulse.com"
-    )
+    monkeypatch.setenv("CORS_ORIGINS", "https://www.webbpulse.com, https://webbpulse.com")
     settings = Settings(_env_file=None)
     assert "https://www.webbpulse.com" in settings.CORS_ORIGINS
     assert "https://webbpulse.com" in settings.CORS_ORIGINS
-    assert any(
-        origin.startswith("http://localhost") for origin in settings.CORS_ORIGINS
-    )
+    assert any(origin.startswith("http://localhost") for origin in settings.CORS_ORIGINS)
 
 
 @pytest.mark.unit

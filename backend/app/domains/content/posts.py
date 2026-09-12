@@ -173,9 +173,7 @@ async def publish_post(post_id: int, current_user: dict = Depends(CurrentUser)):
 
 
 @router.post("/categories", response_model=CategorySchema)
-async def create_category(
-    category: CategoryCreate, current_user: dict = Depends(CurrentUser)
-):
+async def create_category(category: CategoryCreate, current_user: dict = Depends(CurrentUser)):
     """Create a category, deriving the slug from the name when omitted. Admin only."""
     require_admin(current_user, "Not authorized to create categories")
     data = category.model_dump()
@@ -198,9 +196,7 @@ async def update_category(
     require_admin(current_user, "Not authorized to update categories")
     _get_category_or_404(category_id)
     try:
-        return categories.update(
-            category_id, category_update.model_dump(exclude_unset=True)
-        )
+        return categories.update(category_id, category_update.model_dump(exclude_unset=True))
     except UniqueViolation:
         raise HTTPException(status_code=400, detail=CATEGORY_SLUG_TAKEN)
 
@@ -213,10 +209,7 @@ async def delete_category(category_id: int, current_user: dict = Depends(Current
     if posts.has_posts_in_category(category_id):
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Cannot delete category that has posts. "
-                "Please reassign or delete the posts first."
-            ),
+            detail=("Cannot delete category that has posts. Please reassign or delete the posts first."),
         )
     categories.hard_delete(category_id)
     return {"message": "Category deleted successfully"}
