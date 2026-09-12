@@ -43,11 +43,25 @@ def get_password_hash(password: str) -> str:
     return hash_password(password)
 
 
+def _signing_key() -> str:
+    """The configured signing key, raising when none resolved.
+
+    `SECRET_KEY` is optional so a checkout with no AWS still imports; signing or
+    verifying without one would silently weaken every token, so it raises here.
+    """
+    secret = settings.SECRET_KEY
+    if not secret:
+        raise RuntimeError(
+            "SECRET_KEY is not configured. Set it as an environment variable or as a key of the APP_SECRETS_ARN secret."
+        )
+    return secret
+
+
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """Sign `data` into an HS256 access token, expiring at the configured default."""
     return create_token(
         data,
-        settings.SECRET_KEY,
+        _signing_key(),
         expires_in=(
             expires_delta if expires_delta is not None else timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         ),
@@ -61,7 +75,7 @@ def verify_token(token: str) -> Optional[str]:
     Every failure answers `None`; the reason reaches the log line only.
     """
     try:
-        payload = decode_token(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        payload = decode_token(token, _signing_key(), algorithms=[settings.ALGORITHM])
     except TokenError as exc:
         logger.debug("Rejected bearer token", extra={"reason": type(exc).__name__})
         return None

@@ -7,10 +7,13 @@ from pydantic import BaseModel, ConfigDict
 
 
 class CategoryBase(BaseModel):
-    """Fields every category representation carries."""
+    """Fields every category representation carries.
+
+    `slug` is not here: it is required on a stored category and optional on a
+    create, so each subclass declares the one it means.
+    """
 
     name: str
-    slug: str
     description: Optional[str] = None
 
 

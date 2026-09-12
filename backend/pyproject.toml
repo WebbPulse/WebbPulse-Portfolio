@@ -14,6 +14,16 @@ ignore = ["E203"]
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
 
+[tool.bandit]
+
+exclude_dirs = [
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+]
+
 [tool.webbpulse.ci]
 test-root = "tests"
 

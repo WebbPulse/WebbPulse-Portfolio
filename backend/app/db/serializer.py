@@ -3,8 +3,10 @@
 Datetimes become UTC ISO strings, floats become Decimals, and `None` is dropped
 rather than stored so a missing attribute and a null are the same thing."""
 
+from collections.abc import Mapping
 from datetime import date, datetime, timezone
 from decimal import Decimal
+from typing import Any, overload
 
 
 def utcnow():
@@ -50,8 +52,20 @@ def decode_value(value):
     return value
 
 
-def from_item(item):
-    """Decode a DynamoDB item, passing `None` through unchanged."""
+@overload
+def from_item(item: Mapping[str, Any]) -> dict[str, Any]: ...
+
+
+@overload
+def from_item(item: None) -> None: ...
+
+
+def from_item(item: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """Decode a DynamoDB item, passing `None` through unchanged.
+
+    Overloaded so a caller holding a real item keeps a non-optional result and
+    does not have to re-check for a `None` that cannot arrive.
+    """
     if item is None:
         return None
     return {k: decode_value(v) for k, v in item.items()}
