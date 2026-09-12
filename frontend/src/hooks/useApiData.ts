@@ -30,7 +30,7 @@ export function useProjects(
   });
 
   const fetchProjects = useCallback(async () => {
-    setState(prev => ({ ...prev, loading: true, error: null }));
+    setState((prev) => ({ ...prev, loading: true, error: null }));
 
     const response = await apiService.getProjects(featuredOnly);
 
@@ -68,7 +68,7 @@ export function useExperience(): UseApiDataReturn<Experience[]> {
   });
 
   const fetchExperience = useCallback(async () => {
-    setState(prev => ({ ...prev, loading: true, error: null }));
+    setState((prev) => ({ ...prev, loading: true, error: null }));
 
     const response = await apiService.getExperience();
 
@@ -106,7 +106,7 @@ export function useProject(id: number): UseApiDataReturn<Project> {
   });
 
   const fetchProject = useCallback(async () => {
-    setState(prev => ({ ...prev, loading: true, error: null }));
+    setState((prev) => ({ ...prev, loading: true, error: null }));
 
     const response = await apiService.getProject(id);
 
@@ -146,7 +146,7 @@ export function useSkills(): UseApiDataReturn<Skill[]> {
   });
 
   const fetchSkills = useCallback(async () => {
-    setState(prev => ({ ...prev, loading: true, error: null }));
+    setState((prev) => ({ ...prev, loading: true, error: null }));
     const response = await apiService.getSkills();
     if (response.error) {
       setState({ data: null, loading: false, error: response.error });
@@ -171,7 +171,7 @@ export function useEducation(): UseApiDataReturn<Education[]> {
   });
 
   const fetchEducation = useCallback(async () => {
-    setState(prev => ({ ...prev, loading: true, error: null }));
+    setState((prev) => ({ ...prev, loading: true, error: null }));
     const response = await apiService.getEducation();
     if (response.error) {
       setState({ data: null, loading: false, error: response.error });
@@ -196,7 +196,7 @@ export function useCertifications(): UseApiDataReturn<Certification[]> {
   });
 
   const fetchCerts = useCallback(async () => {
-    setState(prev => ({ ...prev, loading: true, error: null }));
+    setState((prev) => ({ ...prev, loading: true, error: null }));
     const response = await apiService.getCertifications();
     if (response.error) {
       setState({ data: null, loading: false, error: response.error });
@@ -221,7 +221,7 @@ export function useSiteContent(): UseApiDataReturn<SiteContent> {
   });
 
   const fetchSiteContent = useCallback(async () => {
-    setState(prev => ({ ...prev, loading: true, error: null }));
+    setState((prev) => ({ ...prev, loading: true, error: null }));
     const response = await apiService.getSiteContent();
     if (response.error) {
       setState({ data: null, loading: false, error: response.error });
@@ -246,7 +246,7 @@ export function useExperienceEntry(id: number): UseApiDataReturn<Experience> {
   });
 
   const fetchExperienceEntry = useCallback(async () => {
-    setState(prev => ({ ...prev, loading: true, error: null }));
+    setState((prev) => ({ ...prev, loading: true, error: null }));
 
     const response = await apiService.getExperienceEntry(id);
 

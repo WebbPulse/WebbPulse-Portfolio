@@ -71,7 +71,7 @@ const Header: React.FC<HeaderProps> = ({ navigationItems = [] }) => {
           </Link>
 
           <nav className="hidden md:flex items-center gap-7">
-            {navigationItems.map(item => renderNavigationItem(item))}
+            {navigationItems.map((item) => renderNavigationItem(item))}
             {import.meta.env.DEV && (
               <Link
                 to="/admin"
@@ -84,7 +84,7 @@ const Header: React.FC<HeaderProps> = ({ navigationItems = [] }) => {
 
           <button
             type="button"
-            onClick={() => setIsMobileMenuOpen(prev => !prev)}
+            onClick={() => setIsMobileMenuOpen((prev) => !prev)}
             aria-label={isMobileMenuOpen ? 'Close menu' : 'Open menu'}
             aria-expanded={isMobileMenuOpen}
             className="md:hidden text-surface-200 hover:text-surface-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-cyan-400 rounded-md p-1"
@@ -117,7 +117,7 @@ const Header: React.FC<HeaderProps> = ({ navigationItems = [] }) => {
         {isMobileMenuOpen && (
           <div className="md:hidden pb-4">
             <div className="space-y-1 pt-2 border-t border-surface-800/60">
-              {navigationItems.map(item => renderNavigationItem(item, true))}
+              {navigationItems.map((item) => renderNavigationItem(item, true))}
               {import.meta.env.DEV && (
                 <Link
                   to="/admin"

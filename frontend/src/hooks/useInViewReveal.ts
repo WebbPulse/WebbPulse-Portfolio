@@ -36,8 +36,8 @@ export function useInViewReveal<T extends HTMLElement = HTMLDivElement>({
     }
 
     const observer = new IntersectionObserver(
-      entries => {
-        entries.forEach(entry => {
+      (entries) => {
+        entries.forEach((entry) => {
           if (entry.isIntersecting) {
             setIsInView(true);
             if (!repeat) observer.unobserve(entry.target);

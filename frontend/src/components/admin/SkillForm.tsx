@@ -30,15 +30,15 @@ export const SkillForm: React.FC<SkillFormProps> = ({
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
         {editingSkill ? 'Edit Skill' : 'Add New Skill'}
       </h3>
-      <form onSubmit={e => void onSubmit(e)} className="space-y-4">
+      <form onSubmit={(e) => void onSubmit(e)} className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className={labelClass}>Name *</label>
             <input
               type="text"
               value={form.name}
-              onChange={e =>
-                setForm(prev => ({ ...prev, name: e.target.value }))
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, name: e.target.value }))
               }
               className={inputClass}
               required
@@ -48,8 +48,8 @@ export const SkillForm: React.FC<SkillFormProps> = ({
             <label className={labelClass}>Category *</label>
             <select
               value={form.category}
-              onChange={e =>
-                setForm(prev => ({
+              onChange={(e) =>
+                setForm((prev) => ({
                   ...prev,
                   category: e.target.value as SkillFormData['category'],
                 }))
@@ -73,8 +73,8 @@ export const SkillForm: React.FC<SkillFormProps> = ({
             <input
               type="text"
               value={form.icon}
-              onChange={e =>
-                setForm(prev => ({ ...prev, icon: e.target.value }))
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, icon: e.target.value }))
               }
               placeholder="si:react or 🤖"
               className={inputClass}
@@ -89,8 +89,8 @@ export const SkillForm: React.FC<SkillFormProps> = ({
             <input
               type="number"
               value={form.order}
-              onChange={e =>
-                setForm(prev => ({
+              onChange={(e) =>
+                setForm((prev) => ({
                   ...prev,
                   order: Number(e.target.value) || 0,
                 }))
@@ -102,8 +102,8 @@ export const SkillForm: React.FC<SkillFormProps> = ({
             <label className={labelClass}>Tier</label>
             <select
               value={form.tier}
-              onChange={e =>
-                setForm(prev => ({
+              onChange={(e) =>
+                setForm((prev) => ({
                   ...prev,
                   tier: e.target.value as SkillTier,
                 }))

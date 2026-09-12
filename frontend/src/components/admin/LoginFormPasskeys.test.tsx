@@ -39,7 +39,7 @@ function availabilityFetch(
 
 /** How many times the passkey availability route was asked. */
 function passkeyProbeCount(fetchMock: ReturnType<typeof vi.fn>): number {
-  return fetchMock.mock.calls.filter(call =>
+  return fetchMock.mock.calls.filter((call) =>
     String(call[0]).includes('/api/auth/passkeys/availability')
   ).length;
 }

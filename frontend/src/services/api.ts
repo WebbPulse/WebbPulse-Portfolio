@@ -292,7 +292,7 @@ export class ApiService {
     }
   ): EnvelopeClient {
     return createEnvelopeClient(createApiClient({ baseUrl, ...options }), {
-      onError: error => {
+      onError: (error) => {
         logApiFailure(error);
       },
     });

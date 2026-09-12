@@ -53,7 +53,7 @@ jobs:
       contents: read
     with:
       environment: ${{ needs.resolve-env.outputs.environment }}
-      node-version: "20"
+      node-version: "22"
       working-directory: frontend
       cache-dependency-path: frontend/package-lock.json
       build-env-json: ${{ needs.resolve-env.outputs.build-env-json }}

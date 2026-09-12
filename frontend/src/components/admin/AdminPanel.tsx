@@ -301,7 +301,7 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
    * started one on mount and the client shares that in-flight request, so the
    * status arrives through `useAuth` either way.
    */
-  useOAuthCallback(result => {
+  useOAuthCallback((result) => {
     if (identityClient === null) {
       return;
     }
@@ -313,7 +313,7 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
         setMfaTicket(result.ticket);
         return;
       case 'linked':
-        setLinksEpoch(epoch => epoch + 1);
+        setLinksEpoch((epoch) => epoch + 1);
         return;
       case 'error':
         setError(describeOAuthCallbackError(result));
@@ -384,7 +384,7 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
         hero_subtitle: r.data.hero_subtitle || '',
         hero_description: r.data.hero_description || '',
         about_paragraphs: r.data.about_paragraphs || [],
-        about_values: (r.data.about_values || []).map(v => ({
+        about_values: (r.data.about_values || []).map((v) => ({
           title: v.title,
           description: v.description,
           icon: v.icon || '',
@@ -805,7 +805,7 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
 
           <div className="px-6 py-3 border-b border-gray-200 dark:border-gray-700 overflow-x-auto">
             <nav className="flex gap-1 min-w-max">
-              {TABS.map(tab => (
+              {TABS.map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
@@ -887,7 +887,7 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   />
                 )}
                 <div className="space-y-4">
-                  {projects.map(project => (
+                  {projects.map((project) => (
                     <div
                       key={project.id}
                       className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4"
@@ -976,7 +976,7 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   />
                 )}
                 <div className="space-y-4">
-                  {experience.map(exp => (
+                  {experience.map((exp) => (
                     <div
                       key={exp.id}
                       className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4"
@@ -1059,7 +1059,7 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   />
                 )}
                 <div className="space-y-2">
-                  {skills.map(skill => (
+                  {skills.map((skill) => (
                     <div
                       key={skill.id}
                       className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 flex items-center gap-4"
@@ -1140,7 +1140,7 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   />
                 )}
                 <div className="space-y-4">
-                  {education.map(ed => (
+                  {education.map((ed) => (
                     <div
                       key={ed.id}
                       className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4"
@@ -1222,7 +1222,7 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   />
                 )}
                 <div className="space-y-4">
-                  {certifications.map(c => (
+                  {certifications.map((c) => (
                     <div
                       key={c.id}
                       className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4"
@@ -1306,7 +1306,7 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   />
                 )}
                 <div className="space-y-4">
-                  {blogPosts.map(post => (
+                  {blogPosts.map((post) => (
                     <div
                       key={post.id}
                       className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4"
@@ -1392,7 +1392,7 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   <CategoryForm
                     form={categoryForm}
                     setForm={setCategoryForm}
-                    onSubmit={e => void handleCategorySubmit(e)}
+                    onSubmit={(e) => void handleCategorySubmit(e)}
                     onCancel={() => {
                       setShowCategoryForm(false);
                       setEditingCategory(null);
@@ -1403,7 +1403,7 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   />
                 )}
                 <div className="space-y-4">
-                  {categories.map(category => (
+                  {categories.map((category) => (
                     <div
                       key={category.id}
                       className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4"

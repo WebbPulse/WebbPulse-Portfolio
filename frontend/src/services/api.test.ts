@@ -306,10 +306,10 @@ describe('ApiService', () => {
 
       expect(response.error).toBeUndefined();
       expect(response.data).toEqual({ id: 1 });
-      const urls = fetchMock.mock.calls.map(call => (call as [string])[0]);
+      const urls = fetchMock.mock.calls.map((call) => (call as [string])[0]);
       expect(urls[2]).toBe(`${ORIGIN}/api/auth/refresh`);
       expect(
-        urls.filter(url => url.endsWith('/api/auth/refresh'))
+        urls.filter((url) => url.endsWith('/api/auth/refresh'))
       ).toHaveLength(1);
       const replay = fetchMock.mock.calls[3] as [string, RequestInit];
       expect((replay[1].headers as Headers).get('authorization')).toBe(

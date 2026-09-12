@@ -36,9 +36,9 @@ const CATEGORY_TECHS: Record<string, string[]> = {
 
 const matchesCategory = (project: Project, category: string): boolean => {
   if (category === 'all') return true;
-  const techs = project.technologies.map(t => t.toLowerCase());
+  const techs = project.technologies.map((t) => t.toLowerCase());
   const target = CATEGORY_TECHS[category] ?? [];
-  return target.some(c => techs.some(p => p.includes(c)));
+  return target.some((c) => techs.some((p) => p.includes(c)));
 };
 
 const ProjectCard: React.FC<{ project: Project; index: number }> = ({
@@ -85,7 +85,7 @@ const ProjectCard: React.FC<{ project: Project; index: number }> = ({
         </p>
 
         <div className="flex flex-wrap gap-1.5 mb-5">
-          {project.technologies.slice(0, 4).map(tech => (
+          {project.technologies.slice(0, 4).map((tech) => (
             <span
               key={tech}
               className="px-2.5 py-0.5 text-xs rounded-full bg-surface-800 border border-surface-700 text-surface-200"
@@ -146,7 +146,7 @@ export const Projects: React.FC = () => {
   const [showAll, setShowAll] = useState(false);
 
   const projects = data ?? [];
-  const filtered = projects.filter(p => matchesCategory(p, filter));
+  const filtered = projects.filter((p) => matchesCategory(p, filter));
   const displayed = showAll ? filtered : filtered.slice(0, 6);
 
   return (
@@ -171,7 +171,7 @@ export const Projects: React.FC = () => {
 
         {/* Filters */}
         <div className="flex flex-wrap justify-center gap-2 mb-12">
-          {CATEGORIES.map(cat => {
+          {CATEGORIES.map((cat) => {
             const active = filter === cat.id;
             return (
               <button
@@ -223,7 +223,7 @@ export const Projects: React.FC = () => {
           <div className="text-center mt-10">
             <button
               type="button"
-              onClick={() => setShowAll(prev => !prev)}
+              onClick={() => setShowAll((prev) => !prev)}
               className="px-6 py-2 rounded-full surface-glass surface-glass-hover text-surface-100 text-sm"
             >
               {showAll ? 'Show fewer' : `Show ${filtered.length - 6} more`}
@@ -243,7 +243,7 @@ export const Projects: React.FC = () => {
             </p>
             <a
               href="#contact"
-              onClick={e => {
+              onClick={(e) => {
                 e.preventDefault();
                 document
                   .querySelector('#contact')
