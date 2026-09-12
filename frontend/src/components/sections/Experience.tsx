@@ -57,7 +57,7 @@ const ExperienceCard: React.FC<{ item: ExperienceType; index: number }> = ({
           <div
             className={`flex flex-wrap gap-1.5 mb-4 ${isEven ? 'md:justify-end' : ''}`}
           >
-            {item.technologies.map(tech => (
+            {item.technologies.map((tech) => (
               <span
                 key={tech}
                 className="px-2.5 py-0.5 text-xs rounded-full bg-surface-800 border border-surface-700 text-surface-200"

@@ -36,7 +36,7 @@ export function useOAuthProviders(
     void oauthProviders(
       identityUrl(identityOrigin, OAUTH_PROVIDERS_PATH),
       fetchImpl
-    ).then(providers => {
+    ).then((providers) => {
       if (!live) return;
       setAvailable(providers);
     });

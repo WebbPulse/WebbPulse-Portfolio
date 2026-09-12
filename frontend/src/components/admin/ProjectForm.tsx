@@ -23,7 +23,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
   const addTechnology = () => {
     const tech = prompt('Enter technology:');
     if (tech) {
-      setForm(prev => ({
+      setForm((prev) => ({
         ...prev,
         technologies: [...prev.technologies, tech],
       }));
@@ -31,7 +31,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
   };
 
   const removeTechnology = (index: number) => {
-    setForm(prev => ({
+    setForm((prev) => ({
       ...prev,
       technologies: prev.technologies.filter((_, i) => i !== index),
     }));
@@ -42,7 +42,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
         {editingProject ? 'Edit Project' : 'Add New Project'}
       </h3>
-      <form onSubmit={e => void onSubmit(e)} className="space-y-4">
+      <form onSubmit={(e) => void onSubmit(e)} className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -51,8 +51,8 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
             <input
               type="text"
               value={form.title}
-              onChange={e =>
-                setForm(prev => ({
+              onChange={(e) =>
+                setForm((prev) => ({
                   ...prev,
                   title: e.target.value,
                 }))
@@ -68,8 +68,8 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
             <input
               type="text"
               value={form.image}
-              onChange={e =>
-                setForm(prev => ({
+              onChange={(e) =>
+                setForm((prev) => ({
                   ...prev,
                   image: e.target.value,
                 }))
@@ -84,8 +84,8 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
           </label>
           <textarea
             value={form.description}
-            onChange={e =>
-              setForm(prev => ({
+            onChange={(e) =>
+              setForm((prev) => ({
                 ...prev,
                 description: e.target.value,
               }))
@@ -103,8 +103,8 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
             <input
               type="url"
               value={form.github_url}
-              onChange={e =>
-                setForm(prev => ({
+              onChange={(e) =>
+                setForm((prev) => ({
                   ...prev,
                   github_url: e.target.value,
                 }))
@@ -119,8 +119,8 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
             <input
               type="url"
               value={form.live_url}
-              onChange={e =>
-                setForm(prev => ({
+              onChange={(e) =>
+                setForm((prev) => ({
                   ...prev,
                   live_url: e.target.value,
                 }))
@@ -165,8 +165,8 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
               type="checkbox"
               id="featured"
               checked={form.featured}
-              onChange={e =>
-                setForm(prev => ({
+              onChange={(e) =>
+                setForm((prev) => ({
                   ...prev,
                   featured: e.target.checked,
                 }))
@@ -191,8 +191,8 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
               type="number"
               id="display_order"
               value={form.display_order}
-              onChange={e =>
-                setForm(prev => ({
+              onChange={(e) =>
+                setForm((prev) => ({
                   ...prev,
                   display_order: Number(e.target.value),
                 }))

@@ -116,7 +116,7 @@ const CopyButton: React.FC<{ value: string; label: string }> = ({
   const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
 
   const handleClick = useCallback(() => {
-    void copyText(value).then(ok => {
+    void copyText(value).then((ok) => {
       setState(ok ? 'copied' : 'failed');
       window.setTimeout(() => setState('idle'), 2000);
     });
@@ -216,7 +216,7 @@ const RecoveryCodes: React.FC<{
         data-testid="recovery-codes"
         className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-4 bg-gray-100 dark:bg-gray-700 rounded"
       >
-        {codes.map(code => (
+        {codes.map((code) => (
           <li
             key={code}
             className="font-mono text-sm text-gray-900 dark:text-gray-100"
@@ -232,7 +232,7 @@ const RecoveryCodes: React.FC<{
         <input
           type="checkbox"
           checked={saved}
-          onChange={e => setSaved(e.target.checked)}
+          onChange={(e) => setSaved(e.target.checked)}
           className="rounded border-gray-300 dark:border-gray-600"
         />
         I have saved these codes
@@ -259,7 +259,7 @@ const CodePrompt: React.FC<{
   return (
     <form
       className="space-y-3 p-4 border border-gray-200 dark:border-gray-700 rounded"
-      onSubmit={e => {
+      onSubmit={(e) => {
         e.preventDefault();
         onSubmit(code.trim());
       }}
@@ -279,7 +279,7 @@ const CodePrompt: React.FC<{
           id={id}
           type="text"
           value={code}
-          onChange={e => setCode(e.target.value)}
+          onChange={(e) => setCode(e.target.value)}
           autoComplete="one-time-code"
           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
           required
@@ -451,7 +451,7 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
             description="Enter the code your authenticator app shows now. This turns the second factor on and issues your recovery codes."
             submitLabel="Turn on"
             busy={busy}
-            onSubmit={code => void handleActivate(code)}
+            onSubmit={(code) => void handleActivate(code)}
             onCancel={() => {
               setEnrol({ step: 'idle' });
               setError(null);
@@ -466,7 +466,7 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
             description="Enter a current code from the app, or one of your recovery codes. Turning the factor off also voids every recovery code."
             submitLabel="Turn off"
             busy={busy}
-            onSubmit={code => void handleDisable(code)}
+            onSubmit={(code) => void handleDisable(code)}
             onCancel={() => {
               setPrompt('none');
               setError(null);
@@ -481,7 +481,7 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
             description="Enter a current code from the app, or one of your remaining recovery codes. The new set replaces every code in the old one."
             submitLabel="Generate"
             busy={busy}
-            onSubmit={code => void handleRegenerate(code)}
+            onSubmit={(code) => void handleRegenerate(code)}
             onCancel={() => {
               setPrompt('none');
               setError(null);

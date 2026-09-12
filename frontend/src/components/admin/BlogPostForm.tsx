@@ -45,7 +45,7 @@ export const BlogPostForm: React.FC<BlogPostFormProps> = ({
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)/g, '');
-    setForm(prev => ({ ...prev, slug }));
+    setForm((prev) => ({ ...prev, slug }));
   };
 
   return (
@@ -53,7 +53,7 @@ export const BlogPostForm: React.FC<BlogPostFormProps> = ({
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
         {editingPost ? 'Edit Blog Post' : 'Add New Blog Post'}
       </h3>
-      <form onSubmit={e => void onSubmit(e)} className="space-y-4">
+      <form onSubmit={(e) => void onSubmit(e)} className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Title *
@@ -61,8 +61,8 @@ export const BlogPostForm: React.FC<BlogPostFormProps> = ({
           <input
             type="text"
             value={form.title}
-            onChange={e =>
-              setForm(prev => ({
+            onChange={(e) =>
+              setForm((prev) => ({
                 ...prev,
                 title: e.target.value,
               }))
@@ -79,8 +79,8 @@ export const BlogPostForm: React.FC<BlogPostFormProps> = ({
             <input
               type="text"
               value={form.slug}
-              onChange={e =>
-                setForm(prev => ({
+              onChange={(e) =>
+                setForm((prev) => ({
                   ...prev,
                   slug: e.target.value,
                 }))
@@ -104,8 +104,8 @@ export const BlogPostForm: React.FC<BlogPostFormProps> = ({
           </label>
           <select
             value={form.category_id || ''}
-            onChange={e =>
-              setForm(prev => ({
+            onChange={(e) =>
+              setForm((prev) => ({
                 ...prev,
                 category_id: e.target.value
                   ? Number(e.target.value)
@@ -116,7 +116,7 @@ export const BlogPostForm: React.FC<BlogPostFormProps> = ({
             disabled={categoriesLoading}
           >
             <option value="">Select a category</option>
-            {categories.map(category => (
+            {categories.map((category) => (
               <option key={category.id} value={category.id}>
                 {category.name}
               </option>
@@ -129,8 +129,8 @@ export const BlogPostForm: React.FC<BlogPostFormProps> = ({
           </label>
           <textarea
             value={form.excerpt}
-            onChange={e =>
-              setForm(prev => ({
+            onChange={(e) =>
+              setForm((prev) => ({
                 ...prev,
                 excerpt: e.target.value,
               }))
@@ -147,8 +147,8 @@ export const BlogPostForm: React.FC<BlogPostFormProps> = ({
           <input
             type="text"
             value={form.read_time}
-            onChange={e =>
-              setForm(prev => ({
+            onChange={(e) =>
+              setForm((prev) => ({
                 ...prev,
                 read_time: e.target.value,
               }))
@@ -216,8 +216,8 @@ export const BlogPostForm: React.FC<BlogPostFormProps> = ({
                   </label>
                   <textarea
                     value={form.content}
-                    onChange={e =>
-                      setForm(prev => ({
+                    onChange={(e) =>
+                      setForm((prev) => ({
                         ...prev,
                         content: e.target.value,
                       }))
@@ -241,8 +241,8 @@ export const BlogPostForm: React.FC<BlogPostFormProps> = ({
               <div className="animate-in slide-in-from-bottom-2 duration-300">
                 <textarea
                   value={form.content}
-                  onChange={e =>
-                    setForm(prev => ({
+                  onChange={(e) =>
+                    setForm((prev) => ({
                       ...prev,
                       content: e.target.value,
                     }))
