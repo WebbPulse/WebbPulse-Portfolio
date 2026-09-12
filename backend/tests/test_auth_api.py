@@ -120,9 +120,10 @@ class TestTokenValidation:
     @pytest.mark.api
     @pytest.mark.auth
     def test_missing_token_access(self, client: TestClient):
-        """Test accessing protected endpoint without token"""
+        """No credentials is 401 with a challenge, not 403."""
         response = client.get("/api/v1/posts/admin")
-        assert response.status_code == 403
+        assert response.status_code == 401
+        assert response.headers["WWW-Authenticate"] == "Bearer"
 
     @pytest.mark.api
     @pytest.mark.auth

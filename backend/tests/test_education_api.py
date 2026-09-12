@@ -90,7 +90,7 @@ class TestEducationAdminAPI:
     def test_create_education_no_auth(self, client: TestClient, sample_education_data):
         """Creating an education entry without credentials is refused."""
         response = client.post("/api/v1/education/", json=sample_education_data)
-        assert response.status_code == 403
+        assert response.status_code == 401
 
     @pytest.mark.api
     @pytest.mark.auth
