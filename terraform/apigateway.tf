@@ -238,6 +238,7 @@ module "api" {
       "Content-Type",
       "Origin",
       "X-Request-ID",
+      "X-Retry-Attempt",
     ]
     allow_credentials = true
     max_age           = 86400
