@@ -2,7 +2,7 @@
 
 webbpulse[testing]==0.20.0
 moto[dynamodb]==5.1.6
-pytest==8.4.1
+pytest==9.1.1
 pytest-cov==6.2.1
 pytest-xdist==3.8.0
 httpx==0.28.1
