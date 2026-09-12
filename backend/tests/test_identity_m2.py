@@ -16,6 +16,7 @@ from app.composition.identity_hooks import (
 )
 from app.db import entities
 
+from .routes import all_paths, paths_for_method
 from .test_identity_m1 import AUDIENCE, ISSUER, KEY_ARN, FakeKms
 
 FLOW_PATHS = (
@@ -345,9 +346,7 @@ def identity_app(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
 
 def _post_paths(app: FastAPI) -> set[str]:
     """Every path the application serves for POST."""
-    return {
-        route.path for route in app.routes if "POST" in getattr(route, "methods", set())
-    }
+    return paths_for_method(app, "POST")
 
 
 def test_the_six_flow_routes_mount_under_the_issuer_path(
@@ -359,7 +358,7 @@ def test_the_six_flow_routes_mount_under_the_issuer_path(
 
 def test_nothing_is_served_at_the_origin(identity_app: FastAPI) -> None:
     """No route escapes the issuer's path, in either direction."""
-    served = {getattr(route, "path", "") for route in identity_app.routes}
+    served = all_paths(identity_app)
     identity_paths = {
         path
         for path in served
@@ -381,8 +380,7 @@ def test_every_identity_route_sits_under_the_issuer_path(
     assert prefix == "/api/auth"
 
     framework = {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}
-    for route in identity_app.routes:
-        path = getattr(route, "path", "")
+    for path in all_paths(identity_app):
         if path in framework:
             continue
         assert path.startswith(prefix), path

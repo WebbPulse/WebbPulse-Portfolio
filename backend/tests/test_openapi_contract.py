@@ -2,6 +2,8 @@
 
 from app.composition.app import build_app
 
+from .routes import method_path_pairs
+
 app = build_app()
 
 EXPECTED_OPERATIONS = [
@@ -255,11 +257,7 @@ def test_the_whole_surface_orders_paths_by_domain():
 
 def test_undocumented_routes_are_still_served():
     """The deliberately undocumented routes are served but stay out of the schema."""
-    served = {
-        (method, route.path)
-        for route in app.routes
-        for method in getattr(route, "methods", ()) or ()
-    }
+    served = method_path_pairs(app, skip_documentation=False, skip_methods=())
     for method, path in UNDOCUMENTED_ROUTES:
         assert (method, path) in served
         assert path not in app.openapi()["paths"]
@@ -267,12 +265,7 @@ def test_undocumented_routes_are_still_served():
 
 def test_route_count_matches_the_domain_map():
     """44 application routes: 14 content, 25 resume, 1 identity, 4 public."""
-    pairs = {
-        (method, route.path)
-        for route in app.routes
-        for method in getattr(route, "methods", ()) or ()
-        if method not in ("HEAD", "OPTIONS")
-    }
+    pairs = method_path_pairs(app, skip_documentation=False)
     documentation = {
         (method, path)
         for method, path in pairs

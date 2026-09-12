@@ -95,9 +95,10 @@ class TestTokens:
 
     @pytest.mark.auth
     def test_wrong_scheme_rejected(self, client: TestClient):
-        """An Authorization header that is not Bearer is refused."""
+        """A non-Bearer scheme is unauthenticated, so 401 with a challenge."""
         response = client.get(PROTECTED, headers={"Authorization": "Basic abc"})
-        assert response.status_code == 403
+        assert response.status_code == 401
+        assert response.headers["WWW-Authenticate"] == "Bearer"
 
 
 class TestAdminSeeding:

@@ -160,7 +160,7 @@ class TestSiteContentAdminAPI:
     def test_update_site_content_no_auth(self, client: TestClient, test_site_content):
         """Updating site content without credentials is refused."""
         response = client.put("/api/v1/site-content/", json={"hero_title": "X"})
-        assert response.status_code == 403
+        assert response.status_code == 401
 
     @pytest.mark.api
     @pytest.mark.auth

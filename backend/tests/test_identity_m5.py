@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 
+from .routes import all_paths, paths_for_method
 from .test_identity_m1 import AUDIENCE, ISSUER, KEY_ARN, FakeKms
 
 PASSKEY_MANAGEMENT_POST_PATHS = (
@@ -525,11 +526,9 @@ def identity_app_passkeys_on(
 
 def _paths_for_method(app: FastAPI, method: str) -> set[str]:
     """Every path the application serves for the given method."""
-    return {
-        route.path for route in app.routes if method in getattr(route, "methods", set())
-    }
+    return paths_for_method(app, method)
 
 
 def _all_paths(app: FastAPI) -> set[str]:
     """Every path the application serves, whatever the method."""
-    return {route.path for route in app.routes if hasattr(route, "path")}
+    return all_paths(app)

@@ -118,7 +118,7 @@ class TestExperienceAdminAPI:
     ):
         """Test creating an experience entry without authentication"""
         response = client.post("/api/v1/experience/", json=sample_experience_data)
-        assert response.status_code == 403
+        assert response.status_code == 401
 
     @pytest.mark.api
     @pytest.mark.auth

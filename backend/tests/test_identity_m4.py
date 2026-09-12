@@ -10,6 +10,7 @@ from fastapi import FastAPI
 
 from app.composition.identity_hooks import PortfolioIdentityHooks
 
+from .routes import paths_for_method, served_routes
 from .test_identity_m1 import AUDIENCE, ISSUER, KEY_ARN, FakeKms
 
 MFA_PATHS = (
@@ -280,9 +281,7 @@ def identity_app(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
 
 def _post_paths(app: FastAPI) -> set[str]:
     """Every path the application serves for POST."""
-    return {
-        route.path for route in app.routes if "POST" in getattr(route, "methods", set())
-    }
+    return paths_for_method(app, "POST")
 
 
 def test_the_six_mfa_routes_mount_under_the_issuer_path(
@@ -640,7 +639,7 @@ def test_the_code_does_not_substitute_for_the_bearer_token(
 
 def _limit_namespaces(app: FastAPI, path: str) -> set[str]:
     """The rate limit namespaces on one route, read off its dependencies."""
-    for route in app.routes:
+    for route in served_routes(app):
         if getattr(route, "path", "") != path:
             continue
         found: set[str] = set()

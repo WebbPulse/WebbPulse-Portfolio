@@ -119,7 +119,7 @@ class TestProjectsAdminAPI:
     def test_create_project_no_auth(self, client: TestClient, sample_project_data):
         """Test creating a project without authentication"""
         response = client.post("/api/v1/projects/", json=sample_project_data)
-        assert response.status_code == 403
+        assert response.status_code == 401
 
     @pytest.mark.api
     @pytest.mark.auth
