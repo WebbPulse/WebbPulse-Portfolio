@@ -1,11 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '../common';
-import {
-  describeOAuthCallbackError,
-  readOAuthCallback,
-  stripOAuthParams,
-} from '@webbpulse/auth';
+import { describeOAuthCallbackError } from '@webbpulse/auth';
 import type { PasskeySignInOutcome } from '@webbpulse/auth';
+import { useOAuthCallback } from '@webbpulse/auth/react';
 import {
   API_BASE_URL,
   apiService,
@@ -217,27 +214,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
   const [linksEpoch, setLinksEpoch] = useState(0);
 
   /**
-   * Reads whatever the OAuth callback left in the address bar.
+   * Whether an OAuth callback owns this load, so the plain restore does not also
+   * run and race it.
    *
-   * Parameters are stripped before any await, so a live MFA ticket does not reach
-   * the history or the next `Referer`. Runs once on mount, identity mode only.
+   * A ref rather than state, because both reads happen in mount effects before
+   * any render could carry the answer.
    */
-  useEffect(() => {
+  const landedFromCallback = useRef(false);
+
+  /**
+   * Settles whatever the OAuth callback left in the address bar.
+   *
+   * The hook strips the single-use parameters before this runs, so a live MFA
+   * ticket does not reach the history or the next `Referer`. A no-op on every
+   * ordinary load, and in bearer mode, where there is no identity client.
+   */
+  useOAuthCallback(result => {
     if (identityClient === null) {
-      if (apiService.isAuthenticated()) setIsAuthenticated(true);
       return;
     }
+    landedFromCallback.current = true;
 
-    const result = readOAuthCallback(window.location.href);
-    if (result !== null) {
-      window.history.replaceState(
-        null,
-        '',
-        stripOAuthParams(window.location.href)
-      );
-    }
-
-    switch (result?.kind) {
+    switch (result.kind) {
       case 'signed-in':
         setLoading(true);
         void identityClient
@@ -263,17 +261,32 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
         setError(describeOAuthCallbackError(result));
         setIsAuthenticated(apiService.isAuthenticated());
         return;
-      default:
-        setLoading(true);
-        void apiService
-          .restoreSession()
-          .then(restored => {
-            setIsAuthenticated(restored);
-          })
-          .finally(() => {
-            setLoading(false);
-          });
     }
+  });
+
+  /**
+   * Spends the refresh cookie on an ordinary load, where no callback landed.
+   *
+   * Bearer mode has no cookie to spend, so it only reads the token it already
+   * holds.
+   */
+  useEffect(() => {
+    if (identityClient === null) {
+      if (apiService.isAuthenticated()) setIsAuthenticated(true);
+      return;
+    }
+    if (landedFromCallback.current) {
+      return;
+    }
+    setLoading(true);
+    void apiService
+      .restoreSession()
+      .then(restored => {
+        setIsAuthenticated(restored);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

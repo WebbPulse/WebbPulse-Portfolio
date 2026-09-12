@@ -1,15 +1,14 @@
 import React from 'react';
 import { FaGithub, FaGoogle } from 'react-icons/fa';
 import { GITHUB_PROVIDER, GOOGLE_PROVIDER } from '@webbpulse/auth';
-
-import type { OAuthProvider } from '../../services/oauthAvailability';
+import type { OAuthProviderInfo } from '@webbpulse/discovery';
 
 /**
  * The "Sign in with ..." row under the password form.
  *
  * Anchors rather than buttons, because a start is a 302 a fetch cannot follow.
  * Renders nothing for an empty list, and labels come from the backend's
- * `display_name` so a new provider needs no change here.
+ * `displayName` so a new provider needs no change here.
  */
 
 /** The mark for each provider, keyed by the package's own constants. */
@@ -20,7 +19,7 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
 
 interface OAuthButtonsProps {
   /** The providers to offer, in backend order. Empty renders nothing at all. */
-  providers: readonly OAuthProvider[];
+  providers: readonly OAuthProviderInfo[];
   /**
    * Builds the start URL for one provider.
    *
@@ -55,7 +54,7 @@ export const OAuthButtons: React.FC<OAuthButtonsProps> = ({
       </div>
 
       <div className="mt-4 space-y-3">
-        {providers.map(({ id, display_name: label }) => {
+        {providers.map(({ id, displayName: label }) => {
           const Icon = ICONS[id];
           return (
             <a

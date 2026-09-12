@@ -9,6 +9,7 @@ import {
 } from '@webbpulse/api-client';
 import { ConfigReader, loadAppConfig } from '@webbpulse/config';
 import { createAuthClient, type AuthClient } from '@webbpulse/auth';
+import { identityOriginFrom as packageIdentityOriginFrom } from '@webbpulse/discovery';
 
 import { AUTH_MODES, AUTH_MODE_ENV_KEY, type AuthMode } from './authMode';
 import { BearerTokenStore } from './bearerTokenStore';
@@ -31,14 +32,11 @@ export const API_BASE_URL = config.apiBaseUrl;
  * The origin the identity routes hang off, derived from the API base URL.
  *
  * Identity mounts at `/api/auth` on the origin while this application's routes
- * live under `/api/v1`. Falls back to the unmodified base when it will not parse.
+ * live under `/api/v1`. `passthrough` keeps a root relative base unchanged, which
+ * is what this application's callers already depend on.
  */
 export function identityOriginFrom(apiBaseUrl: string): string {
-  try {
-    return new URL(apiBaseUrl).origin;
-  } catch {
-    return apiBaseUrl;
-  }
+  return packageIdentityOriginFrom(apiBaseUrl, { relativeAs: 'passthrough' });
 }
 
 /**
