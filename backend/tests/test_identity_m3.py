@@ -168,9 +168,7 @@ def test_the_token_table_is_keyed_on_the_hash_and_nothing_else() -> None:
     spec = TABLES["identity-tokens"]
 
     assert spec["KeySchema"] == [{"AttributeName": "token_hash", "KeyType": "HASH"}]
-    assert spec["AttributeDefinitions"] == [
-        {"AttributeName": "token_hash", "AttributeType": "S"}
-    ]
+    assert spec["AttributeDefinitions"] == [{"AttributeName": "token_hash", "AttributeType": "S"}]
 
 
 def test_the_token_table_has_no_secondary_index() -> None:
@@ -310,18 +308,12 @@ def test_the_documents_still_answer_where_the_authorizer_looks(
 def test_no_email_route_is_served_at_the_origin(identity_app: FastAPI) -> None:
     """No route escapes the issuer's path."""
     served = all_paths(identity_app)
-    leaked = {
-        path
-        for path in served
-        if path in {name[len("/api/auth") :] for name in EMAIL_PATHS}
-    }
+    leaked = {path for path in served if path in {name[len("/api/auth") :] for name in EMAIL_PATHS}}
 
     assert leaked == set(), sorted(leaked)
 
 
-def test_the_email_routes_do_not_mount_without_a_sender(
-    private_key: Any, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_the_email_routes_do_not_mount_without_a_sender(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     """The switch, from the off side, through this product's own builder."""
     import boto3
 

@@ -39,14 +39,10 @@ class TestIssuedTokensStayValid:
         assert verify_token(LEGACY_JOSE_TOKEN) == LEGACY_JOSE_TOKEN_SUBJECT
 
     @pytest.mark.auth
-    def test_legacy_jose_token_authenticates_a_real_request(
-        self, client, test_admin_user
-    ):
+    def test_legacy_jose_token_authenticates_a_real_request(self, client, test_admin_user):
         """End to end, not just the decode helper."""
         token = create_access_token({"sub": test_admin_user["username"]})
-        response = client.get(
-            "/api/v1/posts/admin", headers={"Authorization": f"Bearer {token}"}
-        )
+        response = client.get("/api/v1/posts/admin", headers={"Authorization": f"Bearer {token}"})
         assert response.status_code == 200
 
     @pytest.mark.auth
@@ -60,9 +56,7 @@ class TestIssuedTokensStayValid:
     @pytest.mark.auth
     def test_default_expiry_still_comes_from_settings(self):
         """`create_access_token` with no delta uses ACCESS_TOKEN_EXPIRE_MINUTES."""
-        claims = pyjwt.decode(
-            create_access_token({"sub": "x"}), settings.SECRET_KEY, algorithms=["HS256"]
-        )
+        claims = pyjwt.decode(create_access_token({"sub": "x"}), settings.SECRET_KEY, algorithms=["HS256"])
         window = claims["exp"] - claims["iat"]
         assert window == settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
 

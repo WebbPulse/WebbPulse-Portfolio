@@ -13,11 +13,7 @@ from app.db import entities
 
 def load_script():
     """Import the migration script by path, since scripts is not a package."""
-    path = (
-        Path(__file__).resolve().parents[1]
-        / "scripts"
-        / "migrate_postgres_to_dynamo.py"
-    )
+    path = Path(__file__).resolve().parents[1] / "scripts" / "migrate_postgres_to_dynamo.py"
     spec = importlib.util.spec_from_file_location("migrate_postgres_to_dynamo", path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -315,10 +311,6 @@ def test_api_serves_migrated_data(script, postgres_rows, client: TestClient):
     assert content["project_sort_mode"] == "newest"
     assert content["about_values"][0]["title"] == "v"
     project = client.get("/api/v1/projects/5").json()
-    assert project["featured"] is False and project["created_at"].startswith(
-        "2023-01-01T12:00:00"
-    )
-    login = client.post(
-        "/api/v1/admin/login", json={"username": "legacy-admin", "password": "nope"}
-    )
+    assert project["featured"] is False and project["created_at"].startswith("2023-01-01T12:00:00")
+    login = client.post("/api/v1/admin/login", json={"username": "legacy-admin", "password": "nope"})
     assert login.status_code == 401

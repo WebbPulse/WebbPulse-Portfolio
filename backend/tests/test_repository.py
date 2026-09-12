@@ -40,25 +40,19 @@ class TestSerializer:
     @pytest.mark.unit
     def test_naive_datetimes_are_treated_as_utc(self):
         """A datetime with no tzinfo encodes as UTC."""
-        assert (
-            encode_datetime(datetime(2024, 1, 2)) == "2024-01-02T00:00:00.000000+00:00"
-        )
+        assert encode_datetime(datetime(2024, 1, 2)) == "2024-01-02T00:00:00.000000+00:00"
 
     @pytest.mark.unit
     def test_from_item_decodes_decimals(self):
         """Reading turns Decimals back into ints and floats."""
-        item = from_item(
-            {"id": Decimal("3"), "ratio": Decimal("1.5"), "xs": [Decimal("2")]}
-        )
+        item = from_item({"id": Decimal("3"), "ratio": Decimal("1.5"), "xs": [Decimal("2")]})
         assert item == {"id": 3, "ratio": 1.5, "xs": [2]}
         assert isinstance(item["id"], int)
 
     @pytest.mark.unit
     def test_parse_helpers(self):
         """The datetime and date parsers round-trip, and pass None through."""
-        assert parse_datetime("2024-01-02T03:04:05.000000+00:00") == datetime(
-            2024, 1, 2, 3, 4, 5, tzinfo=timezone.utc
-        )
+        assert parse_datetime("2024-01-02T03:04:05.000000+00:00") == datetime(2024, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
         assert parse_datetime(None) is None
         assert parse_date("2024-01-02") == date(2024, 1, 2)
         assert parse_date(None) is None
@@ -155,9 +149,7 @@ class TestRepository:
     @pytest.mark.unit
     def test_update_with_none_removes_attribute(self):
         """Updating a field to None removes the attribute from the stored item."""
-        created = entities.categories.create(
-            {"name": "One", "slug": "one", "description": "desc"}
-        )
+        created = entities.categories.create({"name": "One", "slug": "one", "description": "desc"})
         updated = entities.categories.update(created["id"], {"description": None})
         assert "description" not in updated
         raw = entities.categories.table.get_item(Key={"id": created["id"]})["Item"]
@@ -169,10 +161,7 @@ class TestRepository:
         skill = entities.skills.create({"name": "A", "category": "frontend"})
         assert entities.skills.soft_delete(skill["id"]) is True
         assert entities.skills.get(skill["id"]) is None
-        assert (
-            entities.skills.get(skill["id"], include_inactive=True)["is_active"]
-            is False
-        )
+        assert entities.skills.get(skill["id"], include_inactive=True)["is_active"] is False
         assert entities.skills.list_all() == []
         assert len(entities.skills.list_all(include_inactive=True)) == 1
         assert entities.skills.get_many([skill["id"]]) == {}
@@ -191,10 +180,7 @@ class TestRepository:
     @pytest.mark.unit
     def test_get_many_batches(self):
         """get_many spans more than one batch and skips ids that are not there."""
-        ids = [
-            entities.skills.create({"name": str(i), "category": "x"})["id"]
-            for i in range(120)
-        ]
+        ids = [entities.skills.create({"name": str(i), "category": "x"})["id"] for i in range(120)]
         found = entities.skills.get_many(ids + [None, 9999])
         assert sorted(found) == ids
 

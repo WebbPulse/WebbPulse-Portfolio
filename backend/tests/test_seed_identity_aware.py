@@ -21,9 +21,7 @@ def store():
     from webbpulse.dynamodb import Repository
     from webbpulse.identity import DynamoCredentialStore
 
-    return DynamoCredentialStore(
-        Repository(CREDENTIALS, prefix=settings.DYNAMODB_TABLE_PREFIX)
-    )
+    return DynamoCredentialStore(Repository(CREDENTIALS, prefix=settings.DYNAMODB_TABLE_PREFIX))
 
 
 def make_admin(**overrides):
@@ -108,9 +106,7 @@ class TestExistingCredentialIsNotOverwritten:
 
         credential = store.get(str(user["id"]), PASSWORD_CREDENTIAL_TYPE)
         assert credential.secret == chosen
-        assert verify_password(
-            "the-password-the-admin-actually-chose", credential.secret
-        )
+        assert verify_password("the-password-the-admin-actually-chose", credential.secret)
         assert not verify_password(settings.ADMIN_PASSWORD, credential.secret)
 
     def test_created_at_is_not_refreshed_by_a_seed(self, store):
@@ -199,9 +195,7 @@ class TestTheStoreResolution:
     def test_an_identity_issuer_builds_the_credential_store(self, monkeypatch):
         """An identity issuer builds a DynamoDB credential store."""
         middleware.reset_admin_credential_store()
-        monkeypatch.setattr(
-            settings, "IDENTITY_ISSUER", "https://api.example.test/api/auth"
-        )
+        monkeypatch.setattr(settings, "IDENTITY_ISSUER", "https://api.example.test/api/auth")
         try:
             resolved = middleware._admin_credential_store()
             assert resolved is not None
@@ -214,9 +208,7 @@ class TestTheStoreResolution:
     def test_the_seed_middleware_hook_runs_in_the_resolved_mode(self, monkeypatch):
         """`_seed_admin` is the zero-argument callable `SEEDERS` holds."""
         middleware.reset_admin_credential_store()
-        monkeypatch.setattr(
-            settings, "IDENTITY_ISSUER", "https://api.example.test/api/auth"
-        )
+        monkeypatch.setattr(settings, "IDENTITY_ISSUER", "https://api.example.test/api/auth")
         reset_seed_state()
         try:
             middleware.SEEDERS["admin"]()

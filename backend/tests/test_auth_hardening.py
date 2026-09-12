@@ -29,20 +29,14 @@ PROTECTED = "/api/v1/posts/admin"
 
 def request_context_headers(ip, payload_format="2.0"):
     """The `x-amzn-request-context` header the Lambda Web Adapter forwards."""
-    section = (
-        {"http": {"sourceIp": ip}}
-        if payload_format == "2.0"
-        else {"identity": {"sourceIp": ip}}
-    )
+    section = {"http": {"sourceIp": ip}} if payload_format == "2.0" else {"identity": {"sourceIp": ip}}
     return {REQUEST_CONTEXT_HEADER: json.dumps(section)}
 
 
 def attempt(client, password="wrong", ip=None, username="adminuser"):
     """Post a login attempt, optionally from a given source IP."""
     headers = request_context_headers(ip) if ip else {}
-    return client.post(
-        LOGIN, json={"username": username, "password": password}, headers=headers
-    )
+    return client.post(LOGIN, json={"username": username, "password": password}, headers=headers)
 
 
 class TestTokens:
@@ -51,9 +45,7 @@ class TestTokens:
     @pytest.mark.auth
     def test_expired_token_rejected(self, client: TestClient, test_admin_user):
         """An expired token answers 401 and asks for Bearer."""
-        token = create_access_token(
-            {"sub": test_admin_user["username"]}, expires_delta=timedelta(minutes=-1)
-        )
+        token = create_access_token({"sub": test_admin_user["username"]}, expires_delta=timedelta(minutes=-1))
         response = client.get(PROTECTED, headers={"Authorization": f"Bearer {token}"})
         assert response.status_code == 401
         assert response.headers["WWW-Authenticate"] == "Bearer"
@@ -63,24 +55,16 @@ class TestTokens:
         """A token with an edited signature answers 401."""
         token = create_access_token({"sub": test_admin_user["username"]})
         head, payload, signature = token.split(".")
-        tampered = ".".join(
-            [head, payload, signature[:-2] + ("AA" if signature[-2:] != "AA" else "BB")]
-        )
-        response = client.get(
-            PROTECTED, headers={"Authorization": f"Bearer {tampered}"}
-        )
+        tampered = ".".join([head, payload, signature[:-2] + ("AA" if signature[-2:] != "AA" else "BB")])
+        response = client.get(PROTECTED, headers={"Authorization": f"Bearer {tampered}"})
         assert response.status_code == 401
 
     @pytest.mark.auth
-    def test_token_signed_with_other_key_rejected(
-        self, client: TestClient, test_admin_user
-    ):
+    def test_token_signed_with_other_key_rejected(self, client: TestClient, test_admin_user):
         """A token signed with a foreign key answers 401."""
         import jwt
 
-        token = jwt.encode(
-            {"sub": test_admin_user["username"]}, "other-key", algorithm="HS256"
-        )
+        token = jwt.encode({"sub": test_admin_user["username"]}, "other-key", algorithm="HS256")
         response = client.get(PROTECTED, headers={"Authorization": f"Bearer {token}"})
         assert response.status_code == 401
 
@@ -107,16 +91,12 @@ class TestAdminSeeding:
     @pytest.mark.admin
     def test_first_request_seeds_admin_from_settings(self, client: TestClient):
         """The first request seeds the admin from settings and that admin can log in."""
-        assert (
-            entities.users.find_by_unique("username", settings.ADMIN_USERNAME) is None
-        )
+        assert entities.users.find_by_unique("username", settings.ADMIN_USERNAME) is None
         client.get("/health")
         user = entities.users.find_by_unique("username", settings.ADMIN_USERNAME)
         assert user["is_admin"] is True and user["is_active"] is True
         assert user["email"] == settings.ADMIN_EMAIL
-        response = attempt(
-            client, settings.ADMIN_PASSWORD, username=settings.ADMIN_USERNAME
-        )
+        response = attempt(client, settings.ADMIN_PASSWORD, username=settings.ADMIN_USERNAME)
         assert response.status_code == 200
 
     @pytest.mark.admin
@@ -241,11 +221,7 @@ class TestClientIp:
     @pytest.mark.unit
     def test_adapter_header_payload_2_0(self):
         """HTTP APIs use payload format 2.0, where the IP is under `http`."""
-        request = self.request(
-            headers=[
-                (REQUEST_CONTEXT_HEADER, json.dumps({"http": {"sourceIp": "1.1.1.1"}}))
-            ]
-        )
+        request = self.request(headers=[(REQUEST_CONTEXT_HEADER, json.dumps({"http": {"sourceIp": "1.1.1.1"}}))])
         assert client_ip(request) == "1.1.1.1"
 
     @pytest.mark.unit
@@ -295,17 +271,13 @@ class TestClientIp:
     @pytest.mark.unit
     def test_mangum_scope_still_works(self):
         """Nothing runs under Mangum now, but `client_ip` still reads the scope."""
-        request = self.request(
-            {"aws.event": {"requestContext": {"http": {"sourceIp": "1.1.1.1"}}}}
-        )
+        request = self.request({"aws.event": {"requestContext": {"http": {"sourceIp": "1.1.1.1"}}}})
         assert client_ip(request) == "1.1.1.1"
 
     @pytest.mark.unit
     def test_mangum_scope_rest_shape(self):
         """The Mangum scope is read in the payload 1.0 shape too."""
-        request = self.request(
-            {"aws.event": {"requestContext": {"identity": {"sourceIp": "3.3.3.3"}}}}
-        )
+        request = self.request({"aws.event": {"requestContext": {"identity": {"sourceIp": "3.3.3.3"}}}})
         assert client_ip(request) == "3.3.3.3"
 
     @pytest.mark.unit
@@ -313,9 +285,7 @@ class TestClientIp:
         """The adapter header takes precedence over the Mangum scope."""
         request = self.request(
             {"aws.event": {"requestContext": {"http": {"sourceIp": "3.3.3.3"}}}},
-            headers=[
-                (REQUEST_CONTEXT_HEADER, json.dumps({"http": {"sourceIp": "1.1.1.1"}}))
-            ],
+            headers=[(REQUEST_CONTEXT_HEADER, json.dumps({"http": {"sourceIp": "1.1.1.1"}}))],
         )
         assert client_ip(request) == "1.1.1.1"
 
@@ -330,9 +300,7 @@ class TestClientIp:
         )
         assert client_ip(with_context) == "1.1.1.1"
 
-        without_context = self.request(
-            headers=[("x-forwarded-for", "2.2.2.2, 5.5.5.5")]
-        )
+        without_context = self.request(headers=[("x-forwarded-for", "2.2.2.2, 5.5.5.5")])
         assert client_ip(without_context) == "9.9.9.9", "the peer, never the header"
 
     @pytest.mark.unit
@@ -389,9 +357,7 @@ class TestLimiterTable:
         limiter = limiter_module.LoginLimiter(3, 60)
         limiter.record_failure("10.0.0.7")
 
-        item = db_client.table(RATE_LIMITS).get_item(Key=limiter.key("10.0.0.7"))[
-            "Item"
-        ]
+        item = db_client.table(RATE_LIMITS).get_item(Key=limiter.key("10.0.0.7"))["Item"]
         assert RATE_LIMIT_TTL_ATTRIBUTE in item
         assert "ttl" not in item
 
@@ -414,9 +380,7 @@ class TestLimiterFailsOpen:
         limiter = limiter_module.LoginLimiter(3, 60)
         resource = boto3.resource("dynamodb", region_name="us-west-2")
         absent = resource.Table("webbpulse-test-does-not-exist")
-        monkeypatch.setattr(
-            type(limiter), "table", property(lambda self: absent), raising=False
-        )
+        monkeypatch.setattr(type(limiter), "table", property(lambda self: absent), raising=False)
         return limiter
 
     @pytest.mark.auth
@@ -438,9 +402,7 @@ class TestLimiterFailsOpen:
         limiter.clear("10.0.0.6")
 
     @pytest.mark.auth
-    def test_the_failure_is_logged_as_failed_open(
-        self, aws_tables, monkeypatch, caplog
-    ):
+    def test_the_failure_is_logged_as_failed_open(self, aws_tables, monkeypatch, caplog):
         """The WARNING is the compensating control; an alarm watches for it."""
         with caplog.at_level(logging.WARNING):
             self.missing_table_limiter(monkeypatch).record_failure("10.0.0.6")
@@ -451,9 +413,7 @@ class TestLimiterFailsOpen:
         assert record.error_type == "ResourceNotFoundException"
 
     @pytest.mark.auth
-    def test_login_still_answers_401_with_the_table_missing(
-        self, client: TestClient, test_admin_user, monkeypatch
-    ):
+    def test_login_still_answers_401_with_the_table_missing(self, client: TestClient, test_admin_user, monkeypatch):
         """With the table missing, clearing a key is a no-op rather than an error."""
         resource = boto3.resource("dynamodb", region_name="us-west-2")
         absent = resource.Table("webbpulse-test-does-not-exist")
@@ -463,7 +423,5 @@ class TestLimiterFailsOpen:
             property(lambda self: absent),
         )
         for _ in range(settings.LOGIN_MAX_FAILURES + 2):
-            assert attempt(client, ip="10.0.0.5").status_code == 401, (
-                "a broken limiter must never lock anyone out"
-            )
+            assert attempt(client, ip="10.0.0.5").status_code == 401, "a broken limiter must never lock anyone out"
         assert attempt(client, "adminpassword123", ip="10.0.0.5").status_code == 200

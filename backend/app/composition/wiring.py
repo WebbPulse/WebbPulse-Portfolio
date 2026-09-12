@@ -20,12 +20,11 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 API_PREFIX = "/api/v1"
 
-ERROR_ENVELOPE_OPTIONS: dict[str, bool] = {
-    "error_codes": True,
-    "validation_details": True,
-}
-"""Error envelope options shared by both composition roots, so the same failure
-renders the same body whichever root served it."""
+ERROR_ENVELOPE = "detailed"
+"""Error envelope shape shared by both composition roots, so the same failure
+renders the same body whichever root served it. The named shape implies the
+`error_codes` and `validation_details` options it replaced, and drops the legacy
+top-level `errors` key from a 422."""
 
 SERVICE_NAME_TEMPLATE = "webbpulse-portfolio-{domain}"
 """Service name pattern. Terraform sets `SERVICE_NAME` to the same string, which
@@ -136,9 +135,7 @@ ENFORCED_ENVIRONMENTS = ("staging", "production")
 Elsewhere a checkout with no AWS has to stay runnable."""
 
 
-def check_required_secrets(
-    domains: "Iterable[Domain]", *, settings: Settings | None = None
-) -> None:
+def check_required_secrets(domains: "Iterable[Domain]", *, settings: Settings | None = None) -> None:
     """Fail fast on a missing secret, once at startup, per the domains served.
 
     Resolution stays lazy, so a root serving no domain that names a secret makes
@@ -162,9 +159,7 @@ def check_required_secrets(
         )
 
 
-def build_domain_app(
-    domain: Domain | str, *, settings: Settings | None = None
-) -> "FastAPI":
+def build_domain_app(domain: Domain | str, *, settings: Settings | None = None) -> "FastAPI":
     """Build one domain's application: root B's whole job, and root A's unit.
 
     Both roots go through here, so the middleware stack is identical locally, in
@@ -183,14 +178,12 @@ def build_domain_app(
         settings=resolved,
         include_health=domain.name != "public",
         redirect_slashes=False,
-        **ERROR_ENVELOPE_OPTIONS,
+        error_envelope=ERROR_ENVELOPE,
         **domain.extra,
     )
 
     for router in domain.load_routers():
-        app.include_router(
-            router, prefix=domain.router_prefix, tags=list(domain.router_tags)
-        )
+        app.include_router(router, prefix=domain.router_prefix, tags=list(domain.router_tags))
 
     if domain.name == "identity" and resolved.IDENTITY_ISSUER:
         from .identity import build_router

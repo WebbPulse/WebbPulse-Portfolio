@@ -23,9 +23,7 @@ ANONYMOUS_ROUTE_ENTRY = re.compile(
     r'authorization_type\s*=\s*"NONE"'
 )
 
-COLLECTION_LIST = re.compile(
-    r"^\s*(?P<name>\w+)\s*=\s*\[(?P<body>[^\]]*)\]", re.MULTILINE
-)
+COLLECTION_LIST = re.compile(r"^\s*(?P<name>\w+)\s*=\s*\[(?P<body>[^\]]*)\]", re.MULTILINE)
 
 IDENTITY_JWT_ROUTE_ENTRY = re.compile(
     r'"((?:ANY|GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) /[^"]*)"\s*='
@@ -46,16 +44,13 @@ def _terraform_source() -> str:
 
 def _strip_comments(source: str) -> str:
     """The file with `#` comment lines removed, for checks about configuration."""
-    return "\n".join(
-        line for line in source.splitlines() if not line.lstrip().startswith("#")
-    )
+    return "\n".join(line for line in source.splitlines() if not line.lstrip().startswith("#"))
 
 
 def _locals_lists(source: str) -> dict[str, list[str]]:
     """Every `name = [ "a", "b" ]` list in the file, as plain Python lists."""
     return {
-        match.group("name"): re.findall(r'"([^"]+)"', match.group("body"))
-        for match in COLLECTION_LIST.finditer(source)
+        match.group("name"): re.findall(r'"([^"]+)"', match.group("body")) for match in COLLECTION_LIST.finditer(source)
     }
 
 
@@ -79,9 +74,7 @@ def gateway_route_keys() -> dict[str, set[str]]:
 
         (name,) = set(interpolations)
         for value in lists[name]:
-            keys.setdefault(integration, set()).add(
-                key.replace("${local.%s}" % name, value)
-            )
+            keys.setdefault(integration, set()).add(key.replace("${local.%s}" % name, value))
     return keys
 
 
@@ -114,9 +107,7 @@ def expand_for_expression_keys(integration: str) -> set[str]:
             if match.group("integration") != integration:
                 continue
             for value in values:
-                expanded.add(
-                    match.group("key").replace("${%s}" % block.group("var"), value)
-                )
+                expanded.add(match.group("key").replace("${%s}" % block.group("var"), value))
     return expanded
 
 
@@ -173,9 +164,7 @@ def test_resume_has_two_route_keys_per_collection():
     collections = resume_collections()
     keys = expand_for_expression_keys("resume")
 
-    assert sorted(collections) == sorted(
-        ["projects", "experience", "skills", "education", "certifications"]
-    )
+    assert sorted(collections) == sorted(["projects", "experience", "skills", "education", "certifications"])
     for collection in collections:
         assert f"ANY /api/v1/{collection}" in keys
         assert f"ANY /api/v1/{collection}/{{proxy+}}" in keys
@@ -216,11 +205,7 @@ def test_the_bare_collection_key_covers_the_trailing_slash_under_normalisation()
 def test_every_resume_route_the_app_serves_has_a_gateway_route_key():
     """The cut is complete: no resume path is left falling through to $default."""
     keys = expand_for_expression_keys("resume")
-    unrouted = sorted(
-        path
-        for path in domain_paths("resume")
-        if not any(matches(k, path) for k in keys)
-    )
+    unrouted = sorted(path for path in domain_paths("resume") if not any(matches(k, path) for k in keys))
     assert unrouted == []
 
 
@@ -252,8 +237,7 @@ def test_no_default_route():
     source = _terraform_source()
 
     assert re.search(r"^\s*default_integration\s*=\s*null\s*$", source, re.MULTILINE), (
-        "default_integration must be null: the monolith is retired and there is "
-        "no integration left to serve $default."
+        "default_integration must be null: the monolith is retired and there is no integration left to serve $default."
     )
     assert not re.search(r'^\s*default_integration\s*=\s*"', source, re.MULTILINE), (
         "default_integration names an integration, which re-creates $default."
@@ -264,12 +248,8 @@ def test_no_legacy_integration():
     """The monolith's integration is gone from the integrations map."""
     source = _strip_comments(_terraform_source())
 
-    assert "legacy" not in source, (
-        "apigateway.tf still configures `legacy`, the retired monolith integration."
-    )
-    assert "lambda_api" not in source, (
-        "apigateway.tf still references module.lambda_api, the retired monolith."
-    )
+    assert "legacy" not in source, "apigateway.tf still configures `legacy`, the retired monolith integration."
+    assert "lambda_api" not in source, "apigateway.tf still references module.lambda_api, the retired monolith."
 
 
 def test_content_has_two_route_keys_per_mounted_prefix():
@@ -329,22 +309,14 @@ def test_every_content_route_the_app_serves_has_a_gateway_route_key():
     keys = expand_for_expression_keys("content")
     collection_roots = {f"/api/v1/{prefix}/" for prefix in content_prefixes()}
 
-    unrouted = sorted(
-        path
-        for path in domain_paths("content")
-        if not any(matches(k, path) for k in keys)
-    )
+    unrouted = sorted(path for path in domain_paths("content") if not any(matches(k, path) for k in keys))
     assert set(unrouted) <= collection_roots, unrouted
 
 
 def test_the_deep_content_paths_are_routed_under_any_reading():
     """The part of the cut that does not depend on the trailing-slash question."""
     keys = expand_for_expression_keys("content")
-    deep = [
-        path
-        for path in domain_paths("content")
-        if not path.endswith("/") and path.startswith("/api/v1/")
-    ]
+    deep = [path for path in domain_paths("content") if not path.endswith("/") and path.startswith("/api/v1/")]
     assert deep, "content serves no path below a prefix, which cannot be right"
     for path in deep:
         assert any(matches(key, path) for key in keys), path
@@ -484,9 +456,7 @@ def test_no_m2_flow_route_is_anonymous():
     """The staging access gate stays exactly two documents wide."""
     anonymous = set(ANONYMOUS_ROUTE_ENTRY.findall(_terraform_source()))
 
-    assert IDENTITY_M2_ROUTE_KEYS & anonymous == set(), sorted(
-        IDENTITY_M2_ROUTE_KEYS & anonymous
-    )
+    assert IDENTITY_M2_ROUTE_KEYS & anonymous == set(), sorted(IDENTITY_M2_ROUTE_KEYS & anonymous)
 
 
 def test_the_m2_keys_route_to_the_identity_function():
@@ -518,9 +488,7 @@ def test_no_m3_email_route_is_anonymous():
     """The staging access gate stays exactly two documents wide, again."""
     anonymous = set(ANONYMOUS_ROUTE_ENTRY.findall(_terraform_source()))
 
-    assert IDENTITY_M3_ROUTE_KEYS & anonymous == set(), sorted(
-        IDENTITY_M3_ROUTE_KEYS & anonymous
-    )
+    assert IDENTITY_M3_ROUTE_KEYS & anonymous == set(), sorted(IDENTITY_M3_ROUTE_KEYS & anonymous)
 
 
 def test_the_m3_keys_route_to_the_identity_function():
@@ -558,9 +526,7 @@ def test_no_m4_mfa_route_is_anonymous():
     """The staging access gate stays exactly two documents wide, a third time."""
     anonymous = set(ANONYMOUS_ROUTE_ENTRY.findall(_terraform_source()))
 
-    assert IDENTITY_M4_ROUTE_KEYS & anonymous == set(), sorted(
-        IDENTITY_M4_ROUTE_KEYS & anonymous
-    )
+    assert IDENTITY_M4_ROUTE_KEYS & anonymous == set(), sorted(IDENTITY_M4_ROUTE_KEYS & anonymous)
 
 
 def test_the_m4_keys_route_to_the_identity_function():
@@ -634,11 +600,7 @@ def test_identity_serves_exactly_one_route_and_it_is_the_login_post():
 def test_every_identity_route_the_app_serves_has_a_gateway_route_key():
     """The cut is complete: no identity path falls through to `$default`."""
     keys = identity_route_keys()
-    unrouted = sorted(
-        path
-        for path in domain_paths("identity")
-        if not any(matches(k, path) for k in keys)
-    )
+    unrouted = sorted(path for path in domain_paths("identity") if not any(matches(k, path) for k in keys))
     assert unrouted == []
 
 
@@ -712,10 +674,7 @@ def test_every_identity_path_the_package_mounts_has_a_gateway_route_key(monkeypa
     unrouted = sorted(
         f"{method} {path}"
         for method, path in package_routes
-        if not any(
-            key.split(" ", 1)[0] in (method, "ANY") and matches(key, path)
-            for key in keys
-        )
+        if not any(key.split(" ", 1)[0] in (method, "ANY") and matches(key, path) for key in keys)
     )
     assert unrouted == [], (
         "these identity paths are mounted by the application and have no "
@@ -813,9 +772,7 @@ def test_the_account_management_routes_require_an_identity_token():
     expected = IDENTITY_M5_JWT_ROUTE_KEYS | IDENTITY_M6_JWT_ROUTE_KEYS
 
     missing = sorted(expected - flagged)
-    assert missing == [], (
-        f"these routes read a verified subject but are not flagged: {missing}"
-    )
+    assert missing == [], f"these routes read a verified subject but are not flagged: {missing}"
 
 
 DOMAIN_LIST = re.compile(r"(?P<name>\w+)\s*=\s*\[(?P<body>[^\]]*)\]", re.DOTALL)
@@ -845,8 +802,7 @@ def domain_identity_jwt_route_paths() -> dict[str, set[str]]:
     block = _block(source, "domain_identity_jwt_route_paths = {")
 
     paths = {
-        match.group("name"): set(re.findall(r'"([^"]+)"', match.group("body")))
-        for match in DOMAIN_LIST.finditer(block)
+        match.group("name"): set(re.findall(r'"([^"]+)"', match.group("body"))) for match in DOMAIN_LIST.finditer(block)
     }
     assert paths, "local.domain_identity_jwt_route_paths is empty or was renamed"
     return paths
@@ -912,10 +868,7 @@ def test_every_route_requiring_a_caller_is_flagged_in_terraform(domain):
     flagged = domain_identity_jwt_route_paths()[domain]
 
     missing = sorted(required - flagged)
-    assert missing == [], (
-        f"{domain} routes requiring CurrentUser but not flagged in "
-        f"apigateway.tf: {missing}"
-    )
+    assert missing == [], f"{domain} routes requiring CurrentUser but not flagged in apigateway.tf: {missing}"
 
 
 @pytest.mark.parametrize("domain", PROTECTED_DOMAINS)
@@ -926,24 +879,20 @@ def test_every_flagged_key_is_a_route_that_requires_a_caller(domain):
 
     extra = sorted(flagged - required)
     assert extra == [], (
-        f"{domain} route keys flagged in apigateway.tf that the application "
-        f"serves without requiring a caller: {extra}"
+        f"{domain} route keys flagged in apigateway.tf that the application serves without requiring a caller: {extra}"
     )
 
 
 def test_the_two_sets_are_equal_across_every_domain():
     """The same claim as the two above, stated once as the set equality."""
-    derived = set().union(
-        *(routes_requiring_a_caller(domain) for domain in PROTECTED_DOMAINS)
-    )
+    derived = set().union(*(routes_requiring_a_caller(domain) for domain in PROTECTED_DOMAINS))
     assert derived == flagged_domain_route_keys()
 
 
 def test_every_flagged_key_is_routed_to_the_domain_that_serves_it():
     """Each flagged key reaches the same function it would have without the flag."""
     declared = {
-        domain: gateway_route_keys().get(domain, set())
-        | expand_for_expression_keys(domain)
+        domain: gateway_route_keys().get(domain, set()) | expand_for_expression_keys(domain)
         for domain in ("content", "resume", "identity", "public")
     }
 
@@ -955,14 +904,11 @@ def test_every_flagged_key_is_routed_to_the_domain_that_serves_it():
                 other_domain
                 for other_domain, other_keys in declared.items()
                 for other_key in other_keys
-                if "${" not in other_key
-                and matches(other_key, path)
-                and other_key.split(" ", 1)[0] in ("ANY", method)
+                if "${" not in other_key and matches(other_key, path) and other_key.split(" ", 1)[0] in ("ANY", method)
             }
 
             assert covering == {domain}, (
-                f"{key} is flagged on {domain} but the routes map serves that "
-                f"path from {sorted(covering)}"
+                f"{key} is flagged on {domain} but the routes map serves that path from {sorted(covering)}"
             )
 
 
@@ -980,17 +926,13 @@ def test_no_flagged_domain_key_uses_a_greedy_segment():
 
 def test_no_flagged_domain_key_uses_any_as_its_method():
     """`ANY` would flag the GET alongside the write it was meant for."""
-    method_less = sorted(
-        key for key in flagged_domain_route_keys() if key.startswith("ANY ")
-    )
+    method_less = sorted(key for key in flagged_domain_route_keys() if key.startswith("ANY "))
     assert method_less == []
 
 
 def test_the_domain_flag_is_gated_on_a_variable_rather_than_hardcoded():
     """The keys exist either way; only enforcement moves."""
-    block = _block(
-        _strip_comments(_terraform_source()), "domain_identity_jwt_route_keys = merge("
-    )
+    block = _block(_strip_comments(_terraform_source()), "domain_identity_jwt_route_keys = merge(")
 
     assert "require_identity_jwt = var.domain_jwt_enforced" in block, (
         "the generated entries must take the flag from the variable"

@@ -21,9 +21,7 @@ experience = Repository(
     soft_delete=True,
     defaults={"technologies": list, "achievements": list},
 )
-skills = Repository(
-    "skills", soft_delete=True, defaults={"tier": "working", "order": 0}
-)
+skills = Repository("skills", soft_delete=True, defaults={"tier": "working", "order": 0})
 education = Repository("education", soft_delete=True, defaults={"order": 0})
 certifications = Repository("certifications", soft_delete=True, defaults={"order": 0})
 site_content = Repository(

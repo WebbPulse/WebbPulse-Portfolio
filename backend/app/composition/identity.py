@@ -87,9 +87,7 @@ def build_router(settings: Settings) -> APIRouter:
         oauth_states=DynamoOAuthStateStore(repository(OAUTH_STATES)),
         oauth_links=DynamoOAuthLinkStore(repository(OAUTH_LINKS)),
         passkeys=DynamoPasskeyStore(repository(PASSKEYS)),
-        webauthn_challenges=DynamoWebAuthnChallengeStore(
-            repository(WEBAUTHN_CHALLENGES)
-        ),
+        webauthn_challenges=DynamoWebAuthnChallengeStore(repository(WEBAUTHN_CHALLENGES)),
     )
 
     return build_identity_router(
@@ -126,11 +124,7 @@ def build_oauth_client_secrets(settings: Settings) -> dict[str, str]:
     from app.secrets import load_app_secrets
 
     loaded = load_app_secrets(arn)
-    return {
-        provider: loaded[key]
-        for provider, key in OAUTH_SECRET_KEYS.items()
-        if loaded.get(key)
-    }
+    return {provider: loaded[key] for provider, key in OAUTH_SECRET_KEYS.items() if loaded.get(key)}
 
 
 def build_email_sender(identity_settings: Any) -> Any:

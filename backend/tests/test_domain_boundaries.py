@@ -7,11 +7,7 @@ import pytest
 
 APP = Path(__file__).resolve().parents[1] / "app"
 DOMAINS_DIR = APP / "domains"
-DOMAINS = sorted(
-    path.name
-    for path in DOMAINS_DIR.iterdir()
-    if path.is_dir() and not path.name.startswith("__")
-)
+DOMAINS = sorted(path.name for path in DOMAINS_DIR.iterdir() if path.is_dir() and not path.name.startswith("__"))
 
 COMPOSITION_ROOT = {
     APP / "composition" / "wiring.py",
@@ -87,8 +83,7 @@ def test_only_the_composition_root_assembles_more_than_one_domain():
             domain
             for domain in DOMAINS
             for module in modules
-            if module == f"app.domains.{domain}"
-            or module.startswith(f"app.domains.{domain}.")
+            if module == f"app.domains.{domain}" or module.startswith(f"app.domains.{domain}.")
         }
         if len(touched) > 1:
             offenders.append((str(path.relative_to(APP.parent)), sorted(touched)))
@@ -114,9 +109,6 @@ def test_only_router_modules_import_fastapi(domain):
         str(path.relative_to(APP.parent))
         for path in _domain_files(domain)
         if path.name not in allowed
-        and any(
-            module == "fastapi" or module.startswith("fastapi.")
-            for module in _imported_modules(path)
-        )
+        and any(module == "fastapi" or module.startswith("fastapi.") for module in _imported_modules(path))
     ]
     assert offences == []

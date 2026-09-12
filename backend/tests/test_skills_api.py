@@ -83,9 +83,7 @@ class TestSkillsAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_create_skill_admin(
-        self, client: TestClient, admin_auth_headers, sample_skill_data
-    ):
+    def test_create_skill_admin(self, client: TestClient, admin_auth_headers, sample_skill_data):
         """An admin can create a skill."""
         response = client.post(
             "/api/v1/skills/",
@@ -100,13 +98,9 @@ class TestSkillsAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_create_skill_unauthorized(
-        self, client: TestClient, auth_headers, sample_skill_data
-    ):
+    def test_create_skill_unauthorized(self, client: TestClient, auth_headers, sample_skill_data):
         """A non-admin user cannot create a skill."""
-        response = client.post(
-            "/api/v1/skills/", json=sample_skill_data, headers=auth_headers
-        )
+        response = client.post("/api/v1/skills/", json=sample_skill_data, headers=auth_headers)
         assert response.status_code == 403
 
     @pytest.mark.api
@@ -118,9 +112,7 @@ class TestSkillsAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_create_skill_invalid_category(
-        self, client: TestClient, admin_auth_headers
-    ):
+    def test_create_skill_invalid_category(self, client: TestClient, admin_auth_headers):
         """An unknown category is rejected as a validation error."""
         response = client.post(
             "/api/v1/skills/",
@@ -142,9 +134,7 @@ class TestSkillsAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_update_skill_admin(
-        self, client: TestClient, admin_auth_headers, test_skill
-    ):
+    def test_update_skill_admin(self, client: TestClient, admin_auth_headers, test_skill):
         """An admin can update a skill, leaving unsent fields alone."""
         response = client.put(
             f"/api/v1/skills/{test_skill['id']}",
@@ -159,9 +149,7 @@ class TestSkillsAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_update_skill_unauthorized(
-        self, client: TestClient, auth_headers, test_skill
-    ):
+    def test_update_skill_unauthorized(self, client: TestClient, auth_headers, test_skill):
         """A non-admin user cannot update a skill."""
         response = client.put(
             f"/api/v1/skills/{test_skill['id']}",
@@ -183,13 +171,9 @@ class TestSkillsAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_delete_skill_admin(
-        self, client: TestClient, admin_auth_headers, test_skill
-    ):
+    def test_delete_skill_admin(self, client: TestClient, admin_auth_headers, test_skill):
         """An admin can delete a skill, after which it reads as gone."""
-        response = client.delete(
-            f"/api/v1/skills/{test_skill['id']}", headers=admin_auth_headers
-        )
+        response = client.delete(f"/api/v1/skills/{test_skill['id']}", headers=admin_auth_headers)
         assert response.status_code == 200
         assert "deleted successfully" in response.json()["message"]
 
@@ -198,13 +182,9 @@ class TestSkillsAdminAPI:
 
     @pytest.mark.api
     @pytest.mark.auth
-    def test_delete_skill_unauthorized(
-        self, client: TestClient, auth_headers, test_skill
-    ):
+    def test_delete_skill_unauthorized(self, client: TestClient, auth_headers, test_skill):
         """A non-admin user cannot delete a skill."""
-        response = client.delete(
-            f"/api/v1/skills/{test_skill['id']}", headers=auth_headers
-        )
+        response = client.delete(f"/api/v1/skills/{test_skill['id']}", headers=auth_headers)
         assert response.status_code == 403
 
     @pytest.mark.api

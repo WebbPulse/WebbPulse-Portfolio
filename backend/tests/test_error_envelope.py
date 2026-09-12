@@ -1,12 +1,12 @@
-"""The envelope's `error_code` and `details`, and what turning them on did not
-change.
+"""The envelope's `error_code` and `details`, and what the `"detailed"` shape did
+not change.
 """
 
 import pytest
 from starlette.testclient import TestClient
 
 from app.composition.app import build_app
-from app.composition.wiring import DOMAINS, ERROR_ENVELOPE_OPTIONS, build_domain_app
+from app.composition.wiring import DOMAINS, ERROR_ENVELOPE, build_domain_app
 
 UNAUTHORIZED_MESSAGE = "Invalid authentication credentials"
 LOGIN_FAILED_MESSAGE = "Incorrect username or password"
@@ -27,9 +27,7 @@ def envelope(response):
 @pytest.mark.api
 def test_a_rejected_token_carries_unauthorized(client: TestClient):
     """A rejected bearer token answers 401 with the UNAUTHORIZED code."""
-    response = client.get(
-        "/api/v1/posts/admin", headers={"Authorization": "Bearer invalid_token"}
-    )
+    response = client.get("/api/v1/posts/admin", headers={"Authorization": "Bearer invalid_token"})
 
     assert response.status_code == 401
     body = envelope(response)
@@ -40,9 +38,7 @@ def test_a_rejected_token_carries_unauthorized(client: TestClient):
 @pytest.mark.api
 def test_a_failed_login_carries_unauthorized(client: TestClient, test_admin_user):
     """The other 401, and the one a form actually shows a user."""
-    response = client.post(
-        "/api/v1/admin/login", json={"username": "adminuser", "password": "wrong"}
-    )
+    response = client.post("/api/v1/admin/login", json={"username": "adminuser", "password": "wrong"})
 
     assert response.status_code == 401
     body = envelope(response)
@@ -113,14 +109,10 @@ def test_an_unhandled_exception_carries_internal_error():
         (422, VALIDATION_MESSAGE, "VALIDATION_ERROR"),
     ],
 )
-def test_messages_are_unchanged(
-    client: TestClient, status, expected_message, expected_code
-):
+def test_messages_are_unchanged(client: TestClient, status, expected_message, expected_code):
     """Every message is the string it was before the codes were turned on."""
     responses = {
-        401: lambda: client.get(
-            "/api/v1/posts/admin", headers={"Authorization": "Bearer invalid_token"}
-        ),
+        401: lambda: client.get("/api/v1/posts/admin", headers={"Authorization": "Bearer invalid_token"}),
         404: lambda: client.get("/api/v1/no-such-route"),
         422: lambda: client.post("/api/v1/admin/login", json={"username": 5}),
     }
@@ -157,15 +149,12 @@ def test_a_422_carries_one_details_entry_per_offending_field(client: TestClient)
 
 
 @pytest.mark.api
-def test_the_older_errors_key_is_untouched(client: TestClient):
-    """`details` is added beside `errors`, not instead of it."""
+def test_the_legacy_errors_key_is_gone(client: TestClient):
+    """`details` replaces `errors`; the `"detailed"` shape drops the legacy key."""
     response = client.post("/api/v1/admin/login", json={"username": 5})
 
     body = envelope(response)
-    assert [entry["loc"] for entry in body["errors"]] == [
-        ["body", "username"],
-        ["body", "password"],
-    ]
+    assert "errors" not in body
 
 
 @pytest.mark.api
@@ -177,12 +166,9 @@ def test_a_non_validation_error_carries_no_details(client: TestClient):
 
 
 @pytest.mark.unit
-def test_the_options_are_on():
-    """The switch itself, so turning it off is a visible edit to this file."""
-    assert ERROR_ENVELOPE_OPTIONS == {
-        "error_codes": True,
-        "validation_details": True,
-    }
+def test_the_envelope_shape_is_detailed():
+    """The switch itself, so changing it is a visible edit to this file."""
+    assert ERROR_ENVELOPE == "detailed"
 
 
 @pytest.mark.unit

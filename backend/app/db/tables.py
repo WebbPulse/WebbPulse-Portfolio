@@ -296,9 +296,7 @@ def _webauthn_challenges_table():
         "TableName": WEBAUTHN_CHALLENGES,
         "BillingMode": "PAY_PER_REQUEST",
         "KeySchema": [{"AttributeName": "challenge_id", "KeyType": "HASH"}],
-        "AttributeDefinitions": [
-            {"AttributeName": "challenge_id", "AttributeType": "S"}
-        ],
+        "AttributeDefinitions": [{"AttributeName": "challenge_id", "AttributeType": "S"}],
     }
 
 

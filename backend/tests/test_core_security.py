@@ -140,10 +140,7 @@ class TestTokenSecurity:
     @pytest.mark.unit
     def test_verify_token_wrong_algorithm(self):
         """Test token verification with wrong algorithm"""
-        invalid_token = (
-            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
-            "eyJzdWIiOiJ0ZXN0dXNlciJ9.invalid_signature"
-        )
+        invalid_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0dXNlciJ9.invalid_signature"
         username = verify_token(invalid_token)
         assert username is None
 
@@ -169,9 +166,7 @@ class TestTokenSecurity:
 
         import jwt
 
-        decoded = jwt.decode(
-            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
-        )
+        decoded = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
 
         assert "exp" in decoded
 

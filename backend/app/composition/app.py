@@ -18,7 +18,7 @@ from ..core.middleware import (
 )
 from ..version import VERSION
 from .settings import Settings, get_settings
-from .wiring import DOMAINS, ERROR_ENVELOPE_OPTIONS, check_required_secrets
+from .wiring import DOMAINS, ERROR_ENVELOPE, check_required_secrets
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from fastapi import FastAPI
@@ -42,7 +42,7 @@ def build_app(settings: Settings | None = None) -> "FastAPI":
         include_health=False,
         description="Blog API for Portfolio Website",
         redirect_slashes=False,
-        **ERROR_ENVELOPE_OPTIONS,
+        error_envelope=ERROR_ENVELOPE,
     )
 
     for domain in DOMAINS.values():

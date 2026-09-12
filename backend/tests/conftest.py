@@ -258,9 +258,7 @@ def test_skill():
 @pytest.fixture
 def auth_headers(test_user):
     """Bearer header for test_user."""
-    return {
-        "Authorization": f"Bearer {create_access_token({'sub': test_user['username']})}"
-    }
+    return {"Authorization": f"Bearer {create_access_token({'sub': test_user['username']})}"}
 
 
 @pytest.fixture

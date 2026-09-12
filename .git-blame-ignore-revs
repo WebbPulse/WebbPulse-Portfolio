@@ -1,0 +1,6 @@
+# Revisions listed here are skipped by `git blame`.
+# Enable locally with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# chore: set ruff line-length to 120 and reformat the backend (#234)
+9a116901158d090087e8984906bc51189aa8cb1a

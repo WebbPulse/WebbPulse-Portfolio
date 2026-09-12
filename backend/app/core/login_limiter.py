@@ -141,9 +141,7 @@ class LoginLimiter:
         try:
             response = self.table.update_item(
                 Key=self.key(ip),
-                UpdateExpression=(
-                    "ADD failures :one SET #ttl = if_not_exists(#ttl, :ttl)"
-                ),
+                UpdateExpression=("ADD failures :one SET #ttl = if_not_exists(#ttl, :ttl)"),
                 ConditionExpression="attribute_not_exists(#ttl) OR #ttl > :now",
                 ExpressionAttributeNames={"#ttl": RATE_LIMIT_TTL_ATTRIBUTE},
                 ExpressionAttributeValues={
@@ -182,6 +180,4 @@ class LoginLimiter:
             self._failed_open("clear", error)
 
 
-login_limiter = LoginLimiter(
-    settings.LOGIN_MAX_FAILURES, settings.LOGIN_FAILURE_WINDOW_SECONDS
-)
+login_limiter = LoginLimiter(settings.LOGIN_MAX_FAILURES, settings.LOGIN_FAILURE_WINDOW_SECONDS)
