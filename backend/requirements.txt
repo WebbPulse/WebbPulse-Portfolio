@@ -1,4 +1,4 @@
-webbpulse[fastapi,dynamodb,otel,aws-otel,security,identity,oauth,passkeys]==0.21.0
+webbpulse[fastapi,dynamodb,otel,aws-otel,security,identity,oauth,passkeys]==0.22.0
 
 fastapi==0.141.1
 boto3==1.43.90
