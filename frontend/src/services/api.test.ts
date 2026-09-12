@@ -512,5 +512,9 @@ describe('ApiService', () => {
     it('returns the input unchanged when it will not parse', () => {
       expect(identityOriginFrom('not a url')).toBe('not a url');
     });
+
+    it('keeps a root relative base, rather than emptying it', () => {
+      expect(identityOriginFrom('/api/v1')).toBe('/api/v1');
+    });
   });
 });

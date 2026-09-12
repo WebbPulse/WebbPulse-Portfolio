@@ -6,10 +6,11 @@ import type {
   TotpEnrolmentOutcome,
 } from '@webbpulse/auth';
 
+import { qrCodeSvgPath } from '@webbpulse/qrcode';
+import type { OAuthProviderInfo } from '@webbpulse/discovery';
+
 import { Button } from '../common';
-import { qrCodeSvgPath } from '../../utils/qrCode';
 import { ConnectedAccounts, type OAuthLinksClient } from './ConnectedAccounts';
-import type { OAuthProvider } from '../../services/oauthAvailability';
 import { PasskeysPanel, type PasskeysClient } from './PasskeysPanel';
 
 /**
@@ -54,7 +55,7 @@ interface SecuritySectionProps {
    */
   oauthClient?: OAuthLinksClient | null;
   /** The providers that deployment has configured. See `oauthClient`. */
-  availableProviders?: readonly OAuthProvider[];
+  availableProviders?: readonly OAuthProviderInfo[];
   /**
    * The four passkey management routes, or null where they are not offered.
    *

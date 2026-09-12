@@ -6,11 +6,9 @@ import type {
   OAuthUnlinkOutcome,
 } from '@webbpulse/auth';
 
+import { providerLabel, type OAuthProviderInfo } from '@webbpulse/discovery';
+
 import { Button } from '../common';
-import {
-  type OAuthProvider,
-  providerLabel,
-} from '../../services/oauthAvailability';
 
 /**
  * The provider links on this account, with the link and unlink actions.
@@ -35,10 +33,10 @@ interface ConnectedAccountsProps {
   /**
    * The providers this deployment has configured, in backend order.
    *
-   * Gates the attach buttons only, and carries a `display_name` to label them.
+   * Gates the attach buttons only, and carries a `displayName` to label them.
    * Linked rows go through `providerLabel`, since the links route sends only ids.
    */
-  availableProviders: readonly OAuthProvider[];
+  availableProviders: readonly OAuthProviderInfo[];
   /** Where the link callback should land. Defaults to the current path. */
   returnTo?: string;
   /**
@@ -275,7 +273,7 @@ export const ConnectedAccounts: React.FC<ConnectedAccountsProps> = ({
 
       {connectable.length > 0 && (
         <div className="flex flex-wrap gap-3 mt-4">
-          {connectable.map(({ id, display_name: label }) => (
+          {connectable.map(({ id, displayName: label }) => (
             <Button
               key={id}
               variant="outline"

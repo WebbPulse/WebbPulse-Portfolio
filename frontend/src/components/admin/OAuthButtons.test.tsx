@@ -1,21 +1,21 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import type { AuthClient } from '@webbpulse/auth';
+import { resetAvailabilityCache } from '@webbpulse/discovery';
 
 import { OAuthButtons } from './OAuthButtons';
 import { useOAuthProviders } from '../../hooks/useOAuthProviders';
-import {
-  resetAvailabilityCache,
-  resetProviderCache,
-} from '../../services/oauthAvailability';
 
 const ORIGIN = 'https://api.example.test';
 const START = `${ORIGIN}/api/auth/oauth`;
 const PROVIDERS_URL = `${ORIGIN}/api/auth/oauth/providers`;
 
 /** The wire shape the discovery route answers with. */
-const GOOGLE = { id: 'google', display_name: 'Google' };
-const GITHUB = { id: 'github', display_name: 'GitHub' };
+const GOOGLE_WIRE = { id: 'google', display_name: 'Google' };
+
+/** The normalised shape the package hands a component. */
+const GOOGLE = { id: 'google', displayName: 'Google' };
+const GITHUB = { id: 'github', displayName: 'GitHub' };
 
 describe('OAuthButtons', () => {
   it('renders nothing for an empty provider list', () => {
@@ -58,7 +58,7 @@ describe('OAuthButtons', () => {
   it('renders a provider this build has never heard of', () => {
     render(
       <OAuthButtons
-        providers={[{ id: 'gitlab', display_name: 'GitLab' }]}
+        providers={[{ id: 'gitlab', displayName: 'GitLab' }]}
         startUrl={p => `${START}/${p}/start`}
       />
     );
@@ -72,15 +72,16 @@ describe('OAuthButtons', () => {
 });
 
 /** Renders the hook's result as one testid per offered provider. */
-const Probe: React.FC<{ client: AuthClient<unknown> | null }> = ({
-  client,
-}) => {
-  const providers = useOAuthProviders(client, ORIGIN);
+const Probe: React.FC<{
+  client: AuthClient<unknown> | null;
+  fetchImpl: typeof fetch;
+}> = ({ client, fetchImpl }) => {
+  const providers = useOAuthProviders(client, ORIGIN, fetchImpl);
   return (
     <ul>
       {providers.map(p => (
         <li key={p.id} data-testid={`available-${p.id}`}>
-          {p.display_name}
+          {p.displayName}
         </li>
       ))}
     </ul>
@@ -104,20 +105,12 @@ function stubAuthClient(): AuthClient<unknown> {
 describe('useOAuthProviders', () => {
   beforeEach(() => {
     resetAvailabilityCache();
-    resetProviderCache();
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    resetAvailabilityCache();
-    resetProviderCache();
   });
 
   it('offers nothing in bearer mode, where there is no identity client', async () => {
     const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
 
-    render(<Probe client={null} />);
+    render(<Probe client={null} fetchImpl={fetchMock as never} />);
 
     await waitFor(() => {
       expect(screen.queryByTestId('available-google')).not.toBeInTheDocument();
@@ -128,10 +121,9 @@ describe('useOAuthProviders', () => {
   it('offers exactly the providers the backend listed, in one request', async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValue(jsonResponse({ providers: [GOOGLE] }));
-    vi.stubGlobal('fetch', fetchMock);
+      .mockResolvedValue(jsonResponse({ providers: [GOOGLE_WIRE] }));
 
-    render(<Probe client={stubAuthClient()} />);
+    render(<Probe client={stubAuthClient()} fetchImpl={fetchMock as never} />);
 
     expect(await screen.findByTestId('available-google')).toBeInTheDocument();
     expect(screen.queryByTestId('available-github')).not.toBeInTheDocument();
@@ -143,9 +135,8 @@ describe('useOAuthProviders', () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue(jsonResponse({ providers: [] }));
-    vi.stubGlobal('fetch', fetchMock);
 
-    render(<Probe client={stubAuthClient()} />);
+    render(<Probe client={stubAuthClient()} fetchImpl={fetchMock as never} />);
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -156,9 +147,8 @@ describe('useOAuthProviders', () => {
 
   it('offers nothing against a backend older than 0.16.0', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}, 404));
-    vi.stubGlobal('fetch', fetchMock);
 
-    render(<Probe client={stubAuthClient()} />);
+    render(<Probe client={stubAuthClient()} fetchImpl={fetchMock as never} />);
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -168,9 +158,8 @@ describe('useOAuthProviders', () => {
 
   it('offers nothing when the request could not be made', async () => {
     const fetchMock = vi.fn().mockRejectedValue(new TypeError('failed'));
-    vi.stubGlobal('fetch', fetchMock);
 
-    render(<Probe client={stubAuthClient()} />);
+    render(<Probe client={stubAuthClient()} fetchImpl={fetchMock as never} />);
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
