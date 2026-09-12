@@ -104,7 +104,7 @@ const PasskeyRow: React.FC<{
       {renaming ? (
         <form
           className="flex flex-wrap items-center gap-2 w-full"
-          onSubmit={e => {
+          onSubmit={(e) => {
             e.preventDefault();
             onRename(draft.trim());
             setRenaming(false);
@@ -120,7 +120,7 @@ const PasskeyRow: React.FC<{
             id={`passkey-name-${passkey.credentialId}`}
             type="text"
             value={draft}
-            onChange={e => setDraft(e.target.value)}
+            onChange={(e) => setDraft(e.target.value)}
             maxLength={64}
             className="flex-1 min-w-[12rem] px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
             required
@@ -292,8 +292,8 @@ export const PasskeysPanel: React.FC<PasskeysPanelProps> = ({
       try {
         const outcome = await client.renamePasskey(credentialId, name);
         if (outcome.ok) {
-          setPasskeys(current =>
-            (current ?? []).map(entry =>
+          setPasskeys((current) =>
+            (current ?? []).map((entry) =>
               entry.credentialId === credentialId ? outcome.passkey : entry
             )
           );
@@ -328,7 +328,7 @@ export const PasskeysPanel: React.FC<PasskeysPanelProps> = ({
         const message = refusalMessage(outcome);
         setError(message);
         if (outcome.reason === 'last-credential') {
-          setBlocked(current => ({ ...current, [credentialId]: message }));
+          setBlocked((current) => ({ ...current, [credentialId]: message }));
         }
         if (outcome.reason === 'not-found') {
           await reload();
@@ -390,13 +390,13 @@ export const PasskeysPanel: React.FC<PasskeysPanelProps> = ({
             </p>
           ) : (
             <ul className="space-y-3 mb-4">
-              {list.map(passkey => (
+              {list.map((passkey) => (
                 <PasskeyRow
                   key={passkey.credentialId}
                   passkey={passkey}
                   busy={busy}
                   blockedReason={blocked[passkey.credentialId] ?? null}
-                  onRename={name =>
+                  onRename={(name) =>
                     void handleRename(passkey.credentialId, name)
                   }
                   onDelete={() => void handleDelete(passkey.credentialId)}
@@ -408,7 +408,7 @@ export const PasskeysPanel: React.FC<PasskeysPanelProps> = ({
           {naming ? (
             <form
               className="mt-4 space-y-3 p-4 border border-gray-200 dark:border-gray-700 rounded max-w-md"
-              onSubmit={e => {
+              onSubmit={(e) => {
                 e.preventDefault();
                 void handleRegister(newName.trim());
               }}
@@ -423,7 +423,7 @@ export const PasskeysPanel: React.FC<PasskeysPanelProps> = ({
                 id="new-passkey-name"
                 type="text"
                 value={newName}
-                onChange={e => setNewName(e.target.value)}
+                onChange={(e) => setNewName(e.target.value)}
                 maxLength={64}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
                 disabled={busy}

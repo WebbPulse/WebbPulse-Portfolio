@@ -171,7 +171,7 @@ const SkillSkeletonCard: React.FC = () => (
 
 const TierLegend: React.FC = () => (
   <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-surface-300">
-    {TIER_ORDER.map(t => {
+    {TIER_ORDER.map((t) => {
       const m = TIER_META[t];
       return (
         <span key={t} className="flex items-center gap-2">
@@ -249,7 +249,7 @@ export const Skills: React.FC = () => {
 
         {!loading && !error && (
           <div className="space-y-14">
-            {CATEGORY_ORDER.map(cat => {
+            {CATEGORY_ORDER.map((cat) => {
               const skills = grouped[cat];
               if (!skills || skills.length === 0) return null;
               const meta = CATEGORY_META[cat];

@@ -104,9 +104,9 @@ export const BlogList: React.FC = () => {
   }, []);
 
   const filtered = selectedCategory
-    ? blogPosts.filter(p => p.category?.slug === selectedCategory)
+    ? blogPosts.filter((p) => p.category?.slug === selectedCategory)
     : blogPosts;
-  const published = filtered.filter(p => p.published_at);
+  const published = filtered.filter((p) => p.published_at);
 
   return (
     <div className="min-h-screen">
@@ -144,7 +144,7 @@ export const BlogList: React.FC = () => {
               >
                 All
               </button>
-              {categories.map(c => {
+              {categories.map((c) => {
                 const active = selectedCategory === c.slug;
                 return (
                   <button

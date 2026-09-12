@@ -23,7 +23,7 @@ export const ExperienceForm: React.FC<ExperienceFormProps> = ({
   const addTechnology = () => {
     const tech = prompt('Enter technology:');
     if (tech) {
-      setForm(prev => ({
+      setForm((prev) => ({
         ...prev,
         technologies: [...prev.technologies, tech],
       }));
@@ -31,7 +31,7 @@ export const ExperienceForm: React.FC<ExperienceFormProps> = ({
   };
 
   const removeTechnology = (index: number) => {
-    setForm(prev => ({
+    setForm((prev) => ({
       ...prev,
       technologies: prev.technologies.filter((_, i) => i !== index),
     }));
@@ -40,7 +40,7 @@ export const ExperienceForm: React.FC<ExperienceFormProps> = ({
   const addAchievement = () => {
     const achievement = prompt('Enter achievement:');
     if (achievement) {
-      setForm(prev => ({
+      setForm((prev) => ({
         ...prev,
         achievements: [...prev.achievements, achievement],
       }));
@@ -48,7 +48,7 @@ export const ExperienceForm: React.FC<ExperienceFormProps> = ({
   };
 
   const removeAchievement = (index: number) => {
-    setForm(prev => ({
+    setForm((prev) => ({
       ...prev,
       achievements: prev.achievements.filter((_, i) => i !== index),
     }));
@@ -59,7 +59,7 @@ export const ExperienceForm: React.FC<ExperienceFormProps> = ({
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
         {editingExperience ? 'Edit Experience' : 'Add New Experience'}
       </h3>
-      <form onSubmit={e => void onSubmit(e)} className="space-y-4">
+      <form onSubmit={(e) => void onSubmit(e)} className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -68,8 +68,8 @@ export const ExperienceForm: React.FC<ExperienceFormProps> = ({
             <input
               type="text"
               value={form.title}
-              onChange={e =>
-                setForm(prev => ({
+              onChange={(e) =>
+                setForm((prev) => ({
                   ...prev,
                   title: e.target.value,
                 }))
@@ -85,8 +85,8 @@ export const ExperienceForm: React.FC<ExperienceFormProps> = ({
             <input
               type="text"
               value={form.company}
-              onChange={e =>
-                setForm(prev => ({
+              onChange={(e) =>
+                setForm((prev) => ({
                   ...prev,
                   company: e.target.value,
                 }))
@@ -104,8 +104,8 @@ export const ExperienceForm: React.FC<ExperienceFormProps> = ({
             <input
               type="text"
               value={form.location}
-              onChange={e =>
-                setForm(prev => ({
+              onChange={(e) =>
+                setForm((prev) => ({
                   ...prev,
                   location: e.target.value,
                 }))
@@ -121,8 +121,8 @@ export const ExperienceForm: React.FC<ExperienceFormProps> = ({
             <input
               type="text"
               value={form.period}
-              onChange={e =>
-                setForm(prev => ({
+              onChange={(e) =>
+                setForm((prev) => ({
                   ...prev,
                   period: e.target.value,
                 }))
@@ -141,8 +141,8 @@ export const ExperienceForm: React.FC<ExperienceFormProps> = ({
             <input
               type="date"
               value={form.start_date}
-              onChange={e =>
-                setForm(prev => ({
+              onChange={(e) =>
+                setForm((prev) => ({
                   ...prev,
                   start_date: e.target.value,
                 }))
@@ -158,8 +158,8 @@ export const ExperienceForm: React.FC<ExperienceFormProps> = ({
             <input
               type="date"
               value={form.end_date}
-              onChange={e =>
-                setForm(prev => ({
+              onChange={(e) =>
+                setForm((prev) => ({
                   ...prev,
                   end_date: e.target.value,
                 }))
@@ -174,8 +174,8 @@ export const ExperienceForm: React.FC<ExperienceFormProps> = ({
           </label>
           <textarea
             value={form.description}
-            onChange={e =>
-              setForm(prev => ({
+            onChange={(e) =>
+              setForm((prev) => ({
                 ...prev,
                 description: e.target.value,
               }))

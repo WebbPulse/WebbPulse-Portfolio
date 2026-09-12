@@ -85,7 +85,7 @@ const Hero: React.FC = () => {
         <div className="mt-12 flex flex-col sm:flex-row gap-4 justify-center items-center">
           <a
             href="#projects"
-            onClick={e => {
+            onClick={(e) => {
               e.preventDefault();
               document
                 .querySelector('#projects')
@@ -101,7 +101,7 @@ const Hero: React.FC = () => {
           </a>
           <a
             href="#contact"
-            onClick={e => {
+            onClick={(e) => {
               e.preventDefault();
               document
                 .querySelector('#contact')

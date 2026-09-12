@@ -22,7 +22,7 @@ export const SiteContentForm: React.FC<SiteContentFormProps> = ({
   loading,
 }) => {
   const updateParagraph = (index: number, value: string) =>
-    setForm(prev => ({
+    setForm((prev) => ({
       ...prev,
       about_paragraphs: prev.about_paragraphs.map((p, i) =>
         i === index ? value : p
@@ -30,13 +30,13 @@ export const SiteContentForm: React.FC<SiteContentFormProps> = ({
     }));
 
   const addParagraph = () =>
-    setForm(prev => ({
+    setForm((prev) => ({
       ...prev,
       about_paragraphs: [...prev.about_paragraphs, ''],
     }));
 
   const removeParagraph = (index: number) =>
-    setForm(prev => ({
+    setForm((prev) => ({
       ...prev,
       about_paragraphs: prev.about_paragraphs.filter((_, i) => i !== index),
     }));
@@ -46,7 +46,7 @@ export const SiteContentForm: React.FC<SiteContentFormProps> = ({
     field: 'title' | 'description' | 'icon',
     value: string
   ) =>
-    setForm(prev => ({
+    setForm((prev) => ({
       ...prev,
       about_values: prev.about_values.map((v, i) =>
         i === index ? { ...v, [field]: value } : v
@@ -54,7 +54,7 @@ export const SiteContentForm: React.FC<SiteContentFormProps> = ({
     }));
 
   const addValue = () =>
-    setForm(prev => ({
+    setForm((prev) => ({
       ...prev,
       about_values: [
         ...prev.about_values,
@@ -63,13 +63,13 @@ export const SiteContentForm: React.FC<SiteContentFormProps> = ({
     }));
 
   const removeValue = (index: number) =>
-    setForm(prev => ({
+    setForm((prev) => ({
       ...prev,
       about_values: prev.about_values.filter((_, i) => i !== index),
     }));
 
   return (
-    <form onSubmit={e => void onSubmit(e)} className="space-y-8">
+    <form onSubmit={(e) => void onSubmit(e)} className="space-y-8">
       <section className="bg-gray-50 dark:bg-gray-700 rounded-lg p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           Hero
@@ -80,8 +80,8 @@ export const SiteContentForm: React.FC<SiteContentFormProps> = ({
             <input
               type="text"
               value={form.hero_title}
-              onChange={e =>
-                setForm(prev => ({ ...prev, hero_title: e.target.value }))
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, hero_title: e.target.value }))
               }
               className={inputClass}
             />
@@ -91,8 +91,8 @@ export const SiteContentForm: React.FC<SiteContentFormProps> = ({
             <input
               type="text"
               value={form.hero_subtitle}
-              onChange={e =>
-                setForm(prev => ({ ...prev, hero_subtitle: e.target.value }))
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, hero_subtitle: e.target.value }))
               }
               className={inputClass}
             />
@@ -101,8 +101,8 @@ export const SiteContentForm: React.FC<SiteContentFormProps> = ({
             <label className={labelClass}>Description</label>
             <textarea
               value={form.hero_description}
-              onChange={e =>
-                setForm(prev => ({
+              onChange={(e) =>
+                setForm((prev) => ({
                   ...prev,
                   hero_description: e.target.value,
                 }))
@@ -123,7 +123,7 @@ export const SiteContentForm: React.FC<SiteContentFormProps> = ({
             <div key={i} className="flex gap-2">
               <textarea
                 value={p}
-                onChange={e => updateParagraph(i, e.target.value)}
+                onChange={(e) => updateParagraph(i, e.target.value)}
                 rows={3}
                 className={inputClass}
               />
@@ -159,21 +159,21 @@ export const SiteContentForm: React.FC<SiteContentFormProps> = ({
               <input
                 type="text"
                 value={v.icon}
-                onChange={e => updateValue(i, 'icon', e.target.value)}
+                onChange={(e) => updateValue(i, 'icon', e.target.value)}
                 placeholder="✨"
                 className={`${inputClass} md:col-span-1`}
               />
               <input
                 type="text"
                 value={v.title}
-                onChange={e => updateValue(i, 'title', e.target.value)}
+                onChange={(e) => updateValue(i, 'title', e.target.value)}
                 placeholder="Title"
                 className={`${inputClass} md:col-span-3`}
               />
               <input
                 type="text"
                 value={v.description}
-                onChange={e => updateValue(i, 'description', e.target.value)}
+                onChange={(e) => updateValue(i, 'description', e.target.value)}
                 placeholder="Description"
                 className={`${inputClass} md:col-span-7`}
               />
@@ -203,8 +203,8 @@ export const SiteContentForm: React.FC<SiteContentFormProps> = ({
             <input
               type="text"
               value={form.profile_image_url}
-              onChange={e =>
-                setForm(prev => ({
+              onChange={(e) =>
+                setForm((prev) => ({
                   ...prev,
                   profile_image_url: e.target.value,
                 }))
@@ -218,8 +218,8 @@ export const SiteContentForm: React.FC<SiteContentFormProps> = ({
             <input
               type="text"
               value={form.resume_url}
-              onChange={e =>
-                setForm(prev => ({ ...prev, resume_url: e.target.value }))
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, resume_url: e.target.value }))
               }
               placeholder="/Profile.pdf"
               className={inputClass}
@@ -230,8 +230,8 @@ export const SiteContentForm: React.FC<SiteContentFormProps> = ({
             <input
               type="email"
               value={form.email}
-              onChange={e =>
-                setForm(prev => ({ ...prev, email: e.target.value }))
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, email: e.target.value }))
               }
               className={inputClass}
             />
@@ -241,8 +241,8 @@ export const SiteContentForm: React.FC<SiteContentFormProps> = ({
             <input
               type="url"
               value={form.github_url}
-              onChange={e =>
-                setForm(prev => ({ ...prev, github_url: e.target.value }))
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, github_url: e.target.value }))
               }
               className={inputClass}
             />
@@ -252,8 +252,8 @@ export const SiteContentForm: React.FC<SiteContentFormProps> = ({
             <input
               type="url"
               value={form.linkedin_url}
-              onChange={e =>
-                setForm(prev => ({ ...prev, linkedin_url: e.target.value }))
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, linkedin_url: e.target.value }))
               }
               className={inputClass}
             />
@@ -263,8 +263,8 @@ export const SiteContentForm: React.FC<SiteContentFormProps> = ({
             <input
               type="text"
               value={form.footer_tagline}
-              onChange={e =>
-                setForm(prev => ({ ...prev, footer_tagline: e.target.value }))
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, footer_tagline: e.target.value }))
               }
               className={inputClass}
             />
@@ -280,8 +280,8 @@ export const SiteContentForm: React.FC<SiteContentFormProps> = ({
           <label className={labelClass}>Project sort order</label>
           <select
             value={form.project_sort_mode}
-            onChange={e =>
-              setForm(prev => ({
+            onChange={(e) =>
+              setForm((prev) => ({
                 ...prev,
                 project_sort_mode: e.target.value,
               }))

@@ -66,7 +66,7 @@ jobs:
       contents: read
     uses: WebbPulse/.github/.github/workflows/typescript-ci.yml@v2
     with:
-      node-version: "20"
+      node-version: "22"
       working-directory: frontend
       lint-command: npm run lint
       format-check-command: npm run format:check

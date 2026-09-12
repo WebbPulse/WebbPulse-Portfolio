@@ -147,9 +147,9 @@ export const Blog: React.FC = () => {
     };
   }, []);
 
-  const published = posts.filter(p => p.published_at);
+  const published = posts.filter((p) => p.published_at);
   const featured = published[0];
-  const recent = published.filter(p => p.id !== featured?.id).slice(0, 6);
+  const recent = published.filter((p) => p.id !== featured?.id).slice(0, 6);
 
   return (
     <section

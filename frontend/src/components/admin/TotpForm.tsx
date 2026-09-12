@@ -50,7 +50,7 @@ export const TotpForm: React.FC<TotpFormProps> = ({
               {error}
             </div>
           )}
-          <form onSubmit={e => void handleSubmit(e)} className="space-y-4">
+          <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
             <div>
               <label
                 htmlFor="totp-code"
@@ -62,7 +62,7 @@ export const TotpForm: React.FC<TotpFormProps> = ({
                 type="text"
                 id="totp-code"
                 value={code}
-                onChange={e => setCode(e.target.value)}
+                onChange={(e) => setCode(e.target.value)}
                 autoComplete="one-time-code"
                 inputMode="text"
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"

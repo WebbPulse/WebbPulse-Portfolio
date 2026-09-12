@@ -57,7 +57,7 @@ const Footer: React.FC = () => {
                 </svg>
               </a>
             )}
-            {links.map(link => (
+            {links.map((link) => (
               <a
                 key={link.platform}
                 href={link.url}

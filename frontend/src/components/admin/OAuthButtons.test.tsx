@@ -20,7 +20,7 @@ const GITHUB = { id: 'github', displayName: 'GitHub' };
 describe('OAuthButtons', () => {
   it('renders nothing for an empty provider list', () => {
     const { container } = render(
-      <OAuthButtons providers={[]} startUrl={p => `${START}/${p}/start`} />
+      <OAuthButtons providers={[]} startUrl={(p) => `${START}/${p}/start`} />
     );
 
     expect(container).toBeEmptyDOMElement();
@@ -30,7 +30,7 @@ describe('OAuthButtons', () => {
     render(
       <OAuthButtons
         providers={[GOOGLE, GITHUB]}
-        startUrl={p => `${START}/${p}/start?return_to=%2Fadmin`}
+        startUrl={(p) => `${START}/${p}/start?return_to=%2Fadmin`}
       />
     );
 
@@ -47,7 +47,7 @@ describe('OAuthButtons', () => {
     render(
       <OAuthButtons
         providers={[GOOGLE, GITHUB]}
-        startUrl={p => `${START}/${p}/start`}
+        startUrl={(p) => `${START}/${p}/start`}
       />
     );
 
@@ -59,7 +59,7 @@ describe('OAuthButtons', () => {
     render(
       <OAuthButtons
         providers={[{ id: 'gitlab', displayName: 'GitLab' }]}
-        startUrl={p => `${START}/${p}/start`}
+        startUrl={(p) => `${START}/${p}/start`}
       />
     );
 
@@ -79,7 +79,7 @@ const Probe: React.FC<{
   const providers = useOAuthProviders(client, ORIGIN, fetchImpl);
   return (
     <ul>
-      {providers.map(p => (
+      {providers.map((p) => (
         <li key={p.id} data-testid={`available-${p.id}`}>
           {p.displayName}
         </li>

@@ -30,14 +30,14 @@ export const EducationForm: React.FC<EducationFormProps> = ({
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
         {editingEducation ? 'Edit Education' : 'Add New Education'}
       </h3>
-      <form onSubmit={e => void onSubmit(e)} className="space-y-4">
+      <form onSubmit={(e) => void onSubmit(e)} className="space-y-4">
         <div>
           <label className={labelClass}>Degree *</label>
           <input
             type="text"
             value={form.degree}
-            onChange={e =>
-              setForm(prev => ({ ...prev, degree: e.target.value }))
+            onChange={(e) =>
+              setForm((prev) => ({ ...prev, degree: e.target.value }))
             }
             className={inputClass}
             required
@@ -50,8 +50,8 @@ export const EducationForm: React.FC<EducationFormProps> = ({
             <input
               type="text"
               value={form.school}
-              onChange={e =>
-                setForm(prev => ({ ...prev, school: e.target.value }))
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, school: e.target.value }))
               }
               className={inputClass}
               required
@@ -62,8 +62,8 @@ export const EducationForm: React.FC<EducationFormProps> = ({
             <input
               type="text"
               value={form.location}
-              onChange={e =>
-                setForm(prev => ({ ...prev, location: e.target.value }))
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, location: e.target.value }))
               }
               className={inputClass}
               required
@@ -77,8 +77,8 @@ export const EducationForm: React.FC<EducationFormProps> = ({
             <input
               type="text"
               value={form.period}
-              onChange={e =>
-                setForm(prev => ({ ...prev, period: e.target.value }))
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, period: e.target.value }))
               }
               placeholder="e.g., Aug 2018 - May 2022"
               className={inputClass}
@@ -90,8 +90,8 @@ export const EducationForm: React.FC<EducationFormProps> = ({
             <input
               type="date"
               value={form.start_date}
-              onChange={e =>
-                setForm(prev => ({ ...prev, start_date: e.target.value }))
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, start_date: e.target.value }))
               }
               className={inputClass}
               required
@@ -102,8 +102,8 @@ export const EducationForm: React.FC<EducationFormProps> = ({
             <input
               type="date"
               value={form.end_date}
-              onChange={e =>
-                setForm(prev => ({ ...prev, end_date: e.target.value }))
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, end_date: e.target.value }))
               }
               className={inputClass}
             />
@@ -114,8 +114,8 @@ export const EducationForm: React.FC<EducationFormProps> = ({
           <label className={labelClass}>Description</label>
           <textarea
             value={form.description}
-            onChange={e =>
-              setForm(prev => ({ ...prev, description: e.target.value }))
+            onChange={(e) =>
+              setForm((prev) => ({ ...prev, description: e.target.value }))
             }
             rows={3}
             className={inputClass}
@@ -127,8 +127,8 @@ export const EducationForm: React.FC<EducationFormProps> = ({
           <input
             type="number"
             value={form.order}
-            onChange={e =>
-              setForm(prev => ({
+            onChange={(e) =>
+              setForm((prev) => ({
                 ...prev,
                 order: Number(e.target.value) || 0,
               }))

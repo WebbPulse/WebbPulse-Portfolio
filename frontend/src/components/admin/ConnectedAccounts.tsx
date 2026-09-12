@@ -219,9 +219,9 @@ export const ConnectedAccounts: React.FC<ConnectedAccountsProps> = ({
   );
 
   const linked = links ?? [];
-  const linkedProviders = new Set(linked.map(link => link.provider));
+  const linkedProviders = new Set(linked.map((link) => link.provider));
   const connectable = availableProviders.filter(
-    provider => !linkedProviders.has(provider.id)
+    (provider) => !linkedProviders.has(provider.id)
   );
 
   return (
@@ -260,7 +260,7 @@ export const ConnectedAccounts: React.FC<ConnectedAccountsProps> = ({
         </p>
       ) : (
         <ul className="space-y-3 mb-4">
-          {linked.map(link => (
+          {linked.map((link) => (
             <LinkRow
               key={link.provider}
               link={link}

@@ -213,7 +213,7 @@ export const BlogPost: React.FC = () => {
                       </h3>
                       <button
                         type="button"
-                        onClick={() => setShowToc(prev => !prev)}
+                        onClick={() => setShowToc((prev) => !prev)}
                         className="lg:hidden text-surface-400 hover:text-surface-100"
                         aria-label="Toggle table of contents"
                       >

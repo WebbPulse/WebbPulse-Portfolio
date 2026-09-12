@@ -155,7 +155,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
         mediation: 'conditional',
         signal: controller.signal,
       })
-      .then(outcome => {
+      .then((outcome) => {
         if (controller.signal.aborted) return;
         settle(outcome);
       })
@@ -223,7 +223,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
               {passkeyError}
             </div>
           )}
-          <form onSubmit={e => void handleSubmit(e)} className="space-y-4">
+          <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
             <div>
               <label
                 htmlFor="username"
@@ -235,7 +235,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
                 type="text"
                 id="username"
                 value={username}
-                onChange={e => setUsername(e.target.value)}
+                onChange={(e) => setUsername(e.target.value)}
                 autoComplete={
                   passkeys.conditional ? 'username webauthn' : 'username'
                 }
@@ -255,7 +255,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
                 type="password"
                 id="password"
                 value={password}
-                onChange={e => setPassword(e.target.value)}
+                onChange={(e) => setPassword(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
                 required
                 disabled={loading}
@@ -274,7 +274,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
           {identity !== null && (
             <OAuthButtons
               providers={providers}
-              startUrl={provider =>
+              startUrl={(provider) =>
                 identity.oauthStartUrl(provider, {
                   returnTo: window.location.pathname,
                 })
@@ -299,7 +299,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
             <div className="mt-4">
               {resetOpen ? (
                 <form
-                  onSubmit={e => void handleResetRequest(e)}
+                  onSubmit={(e) => void handleResetRequest(e)}
                   className="space-y-3"
                 >
                   <label
@@ -312,7 +312,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
                     type="email"
                     id="reset-email"
                     value={resetEmail}
-                    onChange={e => setResetEmail(e.target.value)}
+                    onChange={(e) => setResetEmail(e.target.value)}
                     autoComplete="email"
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
                     required

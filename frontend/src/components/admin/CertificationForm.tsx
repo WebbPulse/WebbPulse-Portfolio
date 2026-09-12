@@ -30,15 +30,15 @@ export const CertificationForm: React.FC<CertificationFormProps> = ({
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
         {editingCertification ? 'Edit Certification' : 'Add New Certification'}
       </h3>
-      <form onSubmit={e => void onSubmit(e)} className="space-y-4">
+      <form onSubmit={(e) => void onSubmit(e)} className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className={labelClass}>Name *</label>
             <input
               type="text"
               value={form.name}
-              onChange={e =>
-                setForm(prev => ({ ...prev, name: e.target.value }))
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, name: e.target.value }))
               }
               className={inputClass}
               required
@@ -49,8 +49,8 @@ export const CertificationForm: React.FC<CertificationFormProps> = ({
             <input
               type="text"
               value={form.issuer}
-              onChange={e =>
-                setForm(prev => ({ ...prev, issuer: e.target.value }))
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, issuer: e.target.value }))
               }
               className={inputClass}
               required
@@ -64,8 +64,8 @@ export const CertificationForm: React.FC<CertificationFormProps> = ({
             <input
               type="date"
               value={form.issued_date}
-              onChange={e =>
-                setForm(prev => ({ ...prev, issued_date: e.target.value }))
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, issued_date: e.target.value }))
               }
               className={inputClass}
               required
@@ -76,8 +76,8 @@ export const CertificationForm: React.FC<CertificationFormProps> = ({
             <input
               type="url"
               value={form.credential_url}
-              onChange={e =>
-                setForm(prev => ({ ...prev, credential_url: e.target.value }))
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, credential_url: e.target.value }))
               }
               placeholder="https://..."
               className={inputClass}
@@ -90,8 +90,8 @@ export const CertificationForm: React.FC<CertificationFormProps> = ({
           <input
             type="number"
             value={form.order}
-            onChange={e =>
-              setForm(prev => ({
+            onChange={(e) =>
+              setForm((prev) => ({
                 ...prev,
                 order: Number(e.target.value) || 0,
               }))
