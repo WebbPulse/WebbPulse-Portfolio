@@ -144,12 +144,7 @@ export interface Category {
 
 /** The discipline a skill is grouped under. */
 export type SkillCategory =
-  | 'frontend'
-  | 'backend'
-  | 'devops'
-  | 'cloud'
-  | 'networking'
-  | 'other';
+  'frontend' | 'backend' | 'devops' | 'cloud' | 'networking' | 'other';
 /** How strong a skill is, from strongest to weakest. */
 export type SkillTier = 'core' | 'working' | 'familiar';
 
