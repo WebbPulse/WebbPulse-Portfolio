@@ -14,10 +14,10 @@ from .logging import logger
 
 __all__ = ["GATE_CLAIMS_KEY", "identity_claims", "identity_subject"]
 
-#: The single context key the staging access gate's Lambda authorizer publishes,
-#: holding every claim as JSON. The literal dot mirrors the native authorizer's
-#: `authorizer.jwt.claims` as closely as a Lambda authorizer can.
 GATE_CLAIMS_KEY = "jwt.claims"
+"""The single context key the staging access gate's Lambda authorizer publishes,
+holding every claim as JSON. The literal dot mirrors the native authorizer's
+`authorizer.jwt.claims` as closely as a Lambda authorizer can."""
 
 
 def _gate_claims(request: Request) -> Optional[dict[str, Any]]:

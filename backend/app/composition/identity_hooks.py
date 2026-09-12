@@ -13,18 +13,18 @@ from webbpulse.identity import AuthenticationRefused
 
 from ..db.entities import users
 
-#: What `may_authenticate` says when it refuses. One message for every failing
-#: column, so login cannot be used to tell missing from refused.
 REFUSAL_MESSAGE = "This account may not sign in."
+"""What `may_authenticate` says when it refuses. One message for every failing
+column, so login cannot be used to tell missing from refused."""
 REFUSAL_CODE = "NOT_AN_ADMINISTRATOR"
 
-#: The claim every authenticated user of this product carries, as a list so a
-#: consumer's check has the same shape as in a product with several roles.
 ADMIN_ROLE = "admin"
+"""The claim every authenticated user of this product carries, as a list so a
+consumer's check has the same shape as in a product with several roles."""
 
-#: How many suffixed usernames `create_user` tries before giving up, so a
-#: pathological local part fails the registration rather than spinning.
 USERNAME_ATTEMPTS = 100
+"""How many suffixed usernames `create_user` tries before giving up, so a
+pathological local part fails the registration rather than spinning."""
 
 
 class PortfolioIdentityHooks:

@@ -10,6 +10,7 @@ from fastapi import FastAPI
 
 from app.composition.identity_hooks import PortfolioIdentityHooks
 
+from .routes import all_paths, paths_for_method
 from .test_identity_m1 import AUDIENCE, ISSUER, KEY_ARN, FakeKms
 
 OAUTH_GET_PATHS = (
@@ -255,12 +256,18 @@ def test_the_client_secrets_are_passed_as_an_argument_not_a_setting(
 
 
 def test_no_secrets_arn_yields_an_empty_mapping() -> None:
-    """No ARN configured means nothing to read, and that is a success."""
+    """No ARN configured means nothing to read, and that is a success.
+
+    `app_secrets_arn` alone clears both readings of the ARN: the settings are
+    case insensitive, so the uppercase field is the same input and naming both
+    would assign one field twice.
+    """
     from app.composition.identity import build_oauth_client_secrets
     from app.composition.settings import Settings
 
-    settings = Settings(APP_SECRETS_ARN=None, app_secrets_arn="")
+    settings = Settings(app_secrets_arn="")
 
+    assert settings.APP_SECRETS_ARN is None
     assert build_oauth_client_secrets(settings) == {}
 
 
@@ -569,11 +576,9 @@ def identity_app_with_providers(
 
 def _paths_for_method(app: FastAPI, method: str) -> set[str]:
     """Every path the application serves for the given method."""
-    return {
-        route.path for route in app.routes if method in getattr(route, "methods", set())
-    }
+    return paths_for_method(app, method)
 
 
 def _all_paths(app: FastAPI) -> set[str]:
     """Every path the application serves, whatever the method."""
-    return {route.path for route in app.routes if hasattr(route, "path")}
+    return all_paths(app)

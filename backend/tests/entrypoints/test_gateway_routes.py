@@ -4,14 +4,13 @@ import re
 from pathlib import Path
 
 import pytest
-from starlette.routing import Route
 
 from app.composition.wiring import build_domain_app
 
+from ..routes import DOCUMENTATION_PATHS, served_routes
+
 REPO = Path(__file__).resolve().parents[3]
 APIGATEWAY_TF = REPO / "terraform" / "apigateway.tf"
-
-DOCUMENTATION_PATHS = {"/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json"}
 
 ROUTE_ENTRY = re.compile(
     r'"(?P<key>(?:ANY|GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) /[^"]*)"\s*='
@@ -126,9 +125,8 @@ def domain_paths(domain: str) -> set[str]:
     app = build_domain_app(domain)
     return {
         route.path
-        for route in app.routes
-        if isinstance(route, Route)
-        and route.methods
+        for route in served_routes(app)
+        if getattr(route, "methods", None)
         and route.path not in DOCUMENTATION_PATHS
         and not (domain != "public" and route.path == "/health")
     }
@@ -697,10 +695,8 @@ def identity_package_routes(monkeypatch) -> set[tuple[str, str]]:
     app = build_domain_app("identity", settings=identity_settings)
     return {
         (method, route.path)
-        for route in app.routes
-        if isinstance(route, Route)
-        and route.methods
-        and route.path.startswith("/api/auth")
+        for route in served_routes(app)
+        if getattr(route, "methods", None) and route.path.startswith("/api/auth")
         for method in route.methods
         if method != "HEAD"
     }
@@ -874,20 +870,8 @@ def _dependency_names(dependant) -> set[str]:
 
 
 def _api_routes(app):
-    """Every route the application serves, flattened, across two FastAPI shapes."""
-    from fastapi.routing import APIRoute
-
-    flat = [route for route in app.routes if isinstance(route, APIRoute)]
-
-    try:
-        from fastapi.routing import _IncludedRouter
-    except ImportError:
-        return flat
-
-    for route in app.routes:
-        if isinstance(route, _IncludedRouter):
-            flat.extend(route.effective_route_contexts())
-    return flat
+    """Every route the application serves, included routers resolved."""
+    return [route for route in served_routes(app) if getattr(route, "dependant", None)]
 
 
 def routes_requiring_a_caller(domain: str) -> set[str]:

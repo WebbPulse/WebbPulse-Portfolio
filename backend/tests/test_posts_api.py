@@ -122,7 +122,7 @@ class TestPostsAdminAPI:
     def test_get_all_posts_no_auth(self, client: TestClient):
         """Test getting all posts without authentication"""
         response = client.get("/api/v1/posts/admin")
-        assert response.status_code == 403
+        assert response.status_code == 401
 
     @pytest.mark.api
     @pytest.mark.auth

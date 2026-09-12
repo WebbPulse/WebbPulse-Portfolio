@@ -12,9 +12,9 @@ from typing import Any, Optional
 from pydantic import field_validator, model_validator
 from webbpulse.config import BaseServiceSettings
 
-#: Settings filled from the single JSON secret named by APP_SECRETS_ARN, whose
-#: keys are these names exactly.
 SECRET_FIELDS = ("SECRET_KEY", "ADMIN_USERNAME", "ADMIN_PASSWORD", "ADMIN_EMAIL")
+"""Settings filled from the single JSON secret named by APP_SECRETS_ARN, whose keys
+are these names exactly."""
 
 LOCALHOST_ORIGINS = [
     "http://localhost:3000",
@@ -30,8 +30,6 @@ DEFAULT_CORS_ORIGINS = (
     "https://webbpulse.com,https://www.webbpulse.com,http://webbpulse.com"
 )
 
-#: Maps Portfolio's free-text `ENVIRONMENT` onto the base class's Literal.
-#: Anything unrecognised lands on "local", the value that grants the least.
 ENVIRONMENT_ALIASES = {
     "development": "local",
     "dev": "local",
@@ -42,6 +40,8 @@ ENVIRONMENT_ALIASES = {
     "production": "production",
     "prod": "production",
 }
+"""Maps Portfolio's free-text `ENVIRONMENT` onto the base class's Literal. Anything
+unrecognised lands on "local", the value that grants the least."""
 
 
 class Settings(BaseServiceSettings):
@@ -63,10 +63,10 @@ class Settings(BaseServiceSettings):
     LOGIN_MAX_FAILURES: int = 10
     LOGIN_FAILURE_WINDOW_SECONDS: int = 900
 
-    #: The identity issuer. Present exactly when the identity application is
-    #: configured, which is how the composition root tests for it cheaply.
-    #: Every other `IDENTITY_*` field belongs to `IdentitySettings`.
     IDENTITY_ISSUER: Optional[str] = None
+    """The identity issuer. Present exactly when the identity application is
+    configured, which is how the composition root tests for it cheaply. Every other
+    `IDENTITY_*` field belongs to `IdentitySettings`."""
 
     APP_NAME: str = "Portfolio Blog API"
     SITE_URL: str = "https://www.webbpulse.com"

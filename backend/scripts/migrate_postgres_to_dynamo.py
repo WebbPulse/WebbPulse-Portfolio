@@ -19,7 +19,6 @@ for name, placeholder in (
 from app.db.entities import BY_ENTITY  # noqa: E402
 from app.db.serializer import from_item, to_item  # noqa: E402
 
-#: Postgres table name to DynamoDB entity name.
 POSTGRES_TABLES = {
     "users": "users",
     "categories": "categories",
@@ -31,15 +30,15 @@ POSTGRES_TABLES = {
     "certifications": "certifications",
     "site_content": "site-content",
 }
+"""Postgres table name to DynamoDB entity name."""
 
-#: Entity fields that must default to an empty list when the column was null.
 LIST_FIELDS = {
     "projects": ("technologies",),
     "experience": ("technologies", "achievements"),
     "site-content": ("about_paragraphs", "about_values"),
 }
+"""Entity fields that must default to an empty list when the column was null."""
 
-#: Entity flags that must default to a value when the column was null.
 BOOL_DEFAULTS = {
     "users": {"is_admin": False, "is_active": True},
     "projects": {"featured": False, "is_active": True},
@@ -48,6 +47,7 @@ BOOL_DEFAULTS = {
     "education": {"is_active": True},
     "certifications": {"is_active": True},
 }
+"""Entity flags that must default to a value when the column was null."""
 
 
 def transform_row(entity, row):

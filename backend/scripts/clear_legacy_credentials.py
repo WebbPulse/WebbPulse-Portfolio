@@ -24,15 +24,15 @@ from webbpulse.identity import PASSWORD_CREDENTIAL_TYPE  # noqa: E402
 
 from app.db.tables import CREDENTIALS  # noqa: E402
 
-#: The legacy column holding the bcrypt hash on a Portfolio user row.
 LEGACY_HASH_FIELD = "hashed_password"
+"""The legacy column holding the bcrypt hash on a Portfolio user row."""
 
-#: Actions that mean the run failed: a column would have been removed without a
-#: confirmed replacement.
 FAILING_ACTIONS = ("mismatch", "missing_credential", "errors")
+"""Actions that mean the run failed: a column would have been removed without a
+confirmed replacement."""
 
-#: Every action, in the order the summary prints them.
 ACTIONS = ("cleared", "already_clear", "mismatch", "missing_credential", "errors")
+"""Every action, in the order the summary prints them."""
 
 
 class Decision(NamedTuple):

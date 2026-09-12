@@ -114,7 +114,7 @@ class TestSkillsAdminAPI:
     def test_create_skill_no_auth(self, client: TestClient, sample_skill_data):
         """Creating a skill without credentials is refused."""
         response = client.post("/api/v1/skills/", json=sample_skill_data)
-        assert response.status_code == 403
+        assert response.status_code == 401
 
     @pytest.mark.api
     @pytest.mark.auth

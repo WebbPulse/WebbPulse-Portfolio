@@ -7,7 +7,7 @@ import pytest
 
 from app.composition.wiring import DOMAIN_NAMES, DOMAINS, build_domain_app
 
-DOCUMENTATION_PATHS = {"/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json"}
+from ..routes import method_path_pairs
 
 CONTRACT_PATH = Path(__file__).resolve().parents[1] / "fixtures" / "route_contract.json"
 CONTRACT = json.loads(CONTRACT_PATH.read_text())
@@ -24,12 +24,7 @@ EXPECTED_COUNTS = CONTRACT["counts"]
 
 def _route_pairs(app):
     """(method, path) for every application route, documentation excluded."""
-    return {
-        (method, route.path)
-        for route in app.routes
-        for method in getattr(route, "methods", ()) or ()
-        if method not in ("HEAD", "OPTIONS") and route.path not in DOCUMENTATION_PATHS
-    }
+    return method_path_pairs(app)
 
 
 def _operations(app):

@@ -20,16 +20,16 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 API_PREFIX = "/api/v1"
 
-#: Error envelope options shared by both composition roots, so the same failure
-#: renders the same body whichever root served it.
 ERROR_ENVELOPE_OPTIONS: dict[str, bool] = {
     "error_codes": True,
     "validation_details": True,
 }
+"""Error envelope options shared by both composition roots, so the same failure
+renders the same body whichever root served it."""
 
-#: Service name pattern. Terraform sets `SERVICE_NAME` to the same string, which
-#: becomes the OpenTelemetry `service.name` and the `service` log field.
 SERVICE_NAME_TEMPLATE = "webbpulse-portfolio-{domain}"
+"""Service name pattern. Terraform sets `SERVICE_NAME` to the same string, which
+becomes the OpenTelemetry `service.name` and the `service` log field."""
 
 
 @dataclass(frozen=True)
@@ -38,20 +38,20 @@ class Domain:
 
     name: str
     title: str
-    #: Called lazily so importing this module imports no domain package.
     load_routers: Callable[[], "list[APIRouter]"]
-    #: Where the domain's routers mount, so both roots supply the same prefix.
+    """Called lazily so importing this module imports no domain package."""
     router_prefix: str = API_PREFIX
-    #: Tags applied when the routers mount, shared by both roots.
+    """Where the domain's routers mount, so both roots supply the same prefix."""
     router_tags: tuple[str, ...] = ()
-    #: Secret fields the domain cannot serve a request without. A domain naming
-    #: none needs no `secretsmanager:GetSecretValue` grant.
+    """Tags applied when the routers mount, shared by both roots."""
     requires_secrets: tuple[str, ...] = ()
-    #: Seeders the domain runs on the first request, by the names in
-    #: `app.core.middleware.SEEDERS`. A domain seeds only the tables it owns.
+    """Secret fields the domain cannot serve a request without. A domain naming none
+    needs no `secretsmanager:GetSecretValue` grant."""
     seeds: tuple[str, ...] = ()
-    #: Extra keyword arguments for `create_app`.
+    """Seeders the domain runs on the first request, by the names in
+    `app.core.middleware.SEEDERS`. A domain seeds only the tables it owns."""
     extra: dict = field(default_factory=dict)
+    """Extra keyword arguments for `create_app`."""
 
     @property
     def service_name(self) -> str:
@@ -131,9 +131,9 @@ DOMAINS: dict[str, Domain] = {
 DOMAIN_NAMES = tuple(DOMAINS)
 
 
-#: Environments where a missing secret is a startup failure rather than a
-#: warning. Elsewhere a checkout with no AWS has to stay runnable.
 ENFORCED_ENVIRONMENTS = ("staging", "production")
+"""Environments where a missing secret is a startup failure rather than a warning.
+Elsewhere a checkout with no AWS has to stay runnable."""
 
 
 def check_required_secrets(

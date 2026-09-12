@@ -34,14 +34,14 @@ ENTITIES = (
 
 META = "meta"
 
-#: The rate limiter's own table, keyed and named to match `webbpulse.ratelimit`
-#: so the id allocator's table is not shared with a hot, high-churn workload.
 RATE_LIMITS = "rate-limits"
+"""The rate limiter's own table, keyed and named to match `webbpulse.ratelimit` so
+the id allocator's table is not shared with a hot, high-churn workload."""
 
-#: Identity tables, named by the package's own constants so a rename there is a
-#: failing test here. Registered in this module because the suite and
-#: `scripts/create_local_tables.py` both build their tables from it.
 CREDENTIALS = CREDENTIALS_TABLE
+"""The identity credential table, named by the package's own constant so a rename
+there is a failing test here. Registered in this module because the suite and
+`scripts/create_local_tables.py` both build their tables from it."""
 REFRESH_TOKENS = REFRESH_TOKENS_TABLE
 LOGIN_ATTEMPTS = LOGIN_ATTEMPTS_TABLE
 
@@ -331,15 +331,13 @@ TABLES = {
 
 TTL_ATTRIBUTE = "ttl"
 
-#: The rate limiter's TTL attribute, distinct from the meta table's `ttl`.
 RATE_LIMIT_TTL_ATTRIBUTE = "expires_at"
+"""The rate limiter's TTL attribute, distinct from the meta table's `ttl`."""
 
-#: The identity tables' TTL attribute. Only tables holding expiring session
-#: state enable it; a credential or factor must never expire on a reclaim.
 IDENTITY_TTL_ATTRIBUTE = "expires_at"
+"""The identity tables' TTL attribute. Only tables holding expiring session state
+enable it; a credential or factor must never expire on a reclaim."""
 
-#: Every table this backend owns, in creation order, paired with the TTL
-#: attribute it enables or `None`. The suite and the local table script walk it.
 ALL_TABLES = (
     *((entity, None) for entity in ENTITIES),
     (META, TTL_ATTRIBUTE),
@@ -355,6 +353,8 @@ ALL_TABLES = (
     (PASSKEYS, None),
     (WEBAUTHN_CHALLENGES, IDENTITY_TTL_ATTRIBUTE),
 )
+"""Every table this backend owns, in creation order, paired with the TTL attribute it
+enables or `None`. The suite and the local table script walk it."""
 
 
 def table_name(prefix, entity):

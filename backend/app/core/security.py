@@ -91,9 +91,9 @@ class IdentityAwareHTTPBearer(HTTPBearer):
         return await super().__call__(request)
 
 
-#: `scheme_name` pins the OpenAPI security scheme name, which FastAPI would
-#: otherwise take from the class, so the published contract does not move.
 security = IdentityAwareHTTPBearer(scheme_name="HTTPBearer")
+"""`scheme_name` pins the OpenAPI security scheme name, which FastAPI would otherwise
+take from the class, so the published contract does not move."""
 
 
 def _identity_user(request: Request) -> Optional[dict]:
@@ -157,9 +157,9 @@ def _user_id(user: dict) -> object:
     return user.get("id")
 
 
-#: `get_current_user`, wrapped so the resolved id reaches the log context. Not
-#: in the middleware, which runs before there is any token to resolve.
 _bind_user_id = user_id_dependency(get_current_user, extract=_user_id)
+"""`get_current_user`, wrapped so the resolved id reaches the log context. Not in the
+middleware, which runs before there is any token to resolve."""
 
 
 async def CurrentUser(user: dict = Depends(_bind_user_id)) -> dict:

@@ -6,9 +6,12 @@ import * as matchers from '@testing-library/jest-dom/matchers';
 expect.extend(matchers);
 
 declare module 'vitest' {
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type, @typescript-eslint/no-explicit-any
-  interface Matchers<T = any>
-    extends matchers.TestingLibraryMatchers<unknown, T> {}
+  /* eslint-disable @typescript-eslint/no-empty-object-type, @typescript-eslint/no-unused-vars */
+  interface Matchers<
+    R extends void | Promise<void> = void | Promise<void>,
+    T = unknown,
+  > extends matchers.TestingLibraryMatchers<unknown, R> {}
+  /* eslint-enable @typescript-eslint/no-empty-object-type, @typescript-eslint/no-unused-vars */
 }
 
 afterEach(() => {

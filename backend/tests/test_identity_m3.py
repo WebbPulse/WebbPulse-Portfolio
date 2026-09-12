@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from app.composition.identity_hooks import PortfolioIdentityHooks
 from app.db import entities
 
+from .routes import all_paths, paths_for_method
 from .test_identity_m1 import AUDIENCE, ISSUER, KEY_ARN, FakeKms
 
 EMAIL_PATHS = (
@@ -274,9 +275,7 @@ def identity_app(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
 
 def _post_paths(app: FastAPI) -> set[str]:
     """Every path the application serves for POST."""
-    return {
-        route.path for route in app.routes if "POST" in getattr(route, "methods", set())
-    }
+    return paths_for_method(app, "POST")
 
 
 def test_the_four_email_routes_mount_under_the_issuer_path(
@@ -310,7 +309,7 @@ def test_the_documents_still_answer_where_the_authorizer_looks(
 
 def test_no_email_route_is_served_at_the_origin(identity_app: FastAPI) -> None:
     """No route escapes the issuer's path."""
-    served = {getattr(route, "path", "") for route in identity_app.routes}
+    served = all_paths(identity_app)
     leaked = {
         path
         for path in served

@@ -20,7 +20,7 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
 }
 
 describe('ApiService', () => {
-  let fetchMock: ReturnType<typeof vi.fn>;
+  let fetchMock: ReturnType<typeof vi.fn<typeof fetch>>;
 
   /** The single fetch call the test made, with the loose mock types narrowed. */
   function callArgs(): { url: string; init: RequestInit; headers: Headers } {
@@ -34,7 +34,7 @@ describe('ApiService', () => {
 
   beforeEach(() => {
     localStorage.clear();
-    fetchMock = vi.fn();
+    fetchMock = vi.fn<typeof fetch>();
     vi.stubGlobal('fetch', fetchMock);
     vi.spyOn(console, 'error').mockImplementation(() => {});
   });
