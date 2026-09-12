@@ -1,17 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button } from '../common';
-import {
-  describeOAuthCallbackError,
-  readOAuthCallback,
-  stripOAuthParams,
-} from '@webbpulse/auth';
+import { describeOAuthCallbackError } from '@webbpulse/auth';
 import type { PasskeySignInOutcome } from '@webbpulse/auth';
+import { AuthProvider, useOAuthCallback } from '@webbpulse/auth/react';
+import type { AnyAuthClient } from '@webbpulse/auth/react';
 import {
   API_BASE_URL,
   apiService,
   identityOriginFrom,
 } from '../../services/api';
 import { useOAuthProviders } from '../../hooks/useOAuthProviders';
+import {
+  useAdminSession,
+  useBearerSession,
+  type AdminSession,
+} from '../../hooks/useAdminSession';
 import { LoginForm } from './LoginForm';
 import { TotpForm } from './TotpForm';
 import { ProjectForm } from './ProjectForm';
@@ -129,10 +132,52 @@ const TABS: { id: AdminTab; label: string }[] = [
   { id: 'security', label: 'Security' },
 ];
 
-/** The admin panel: sign in, then the content and security tabs. */
+/**
+ * The admin panel: sign in, then the content and security tabs.
+ *
+ * Mounts the package's `AuthProvider` around the panel so the session is owned
+ * by the same `AuthClient` the API client refreshes through. The provider spends
+ * the refresh cookie on mount, which is this application's bootstrap, and bearer
+ * mode renders the panel with no provider because it has no client to give one.
+ */
 export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
+  const authClient = apiService.getAuthClient();
+
+  if (authClient === null) {
+    return <AdminPanelBearer className={className} />;
+  }
+
+  return (
+    <AuthProvider client={authClient as unknown as AnyAuthClient}>
+      <AdminPanelIdentity className={className} />
+    </AuthProvider>
+  );
+};
+
+/** The panel inside the provider, reading the session off `useAuth`. */
+const AdminPanelIdentity: React.FC<AdminPanelProps> = ({ className = '' }) => {
+  const session = useAdminSession();
+  return <AdminPanelView session={session} className={className} />;
+};
+
+/** The panel with no provider, reading the session off the bearer store. */
+const AdminPanelBearer: React.FC<AdminPanelProps> = ({ className = '' }) => {
+  const session = useBearerSession();
+  return <AdminPanelView session={session} className={className} />;
+};
+
+/** Props for the panel body, which is given a session rather than owning one. */
+interface AdminPanelViewProps extends AdminPanelProps {
+  session: AdminSession;
+}
+
+/** The panel body: the sign-in screens, the content tabs and the Security tab. */
+const AdminPanelView: React.FC<AdminPanelViewProps> = ({
+  session,
+  className = '',
+}) => {
+  const { isAuthenticated, isLoading: sessionLoading } = session;
   const [activeTab, setActiveTab] = useState<AdminTab>('site-content');
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   /**
    * The MFA ticket from a first login leg that asked for a second factor.
    *
@@ -140,8 +185,37 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
    * no separate boolean that could disagree with it. Identity mode only.
    */
   const [mfaTicket, setMfaTicket] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /**
+   * Whether anything the panel disables a control for is in flight.
+   *
+   * The bootstrap refresh and a content save both block the same buttons, so the
+   * two sources are read as one.
+   */
+  const loading = working || sessionLoading;
+
+  /**
+   * What the sign-in screens render above the form.
+   *
+   * A session that ended by itself outranks a stale form error, because it is
+   * the newer reason the user is looking at a login screen again.
+   */
+  const signInError = session.sessionEndedMessage ?? error;
+
+  /**
+   * Drops a half-finished second factor when a session ends by itself.
+   *
+   * A ticket from the old session cannot complete, so the panel falls back to
+   * the password screen rather than a code box that can only fail.
+   */
+  useEffect(() => {
+    if (session.sessionEndedMessage !== null) {
+      setMfaTicket(null);
+      setWorking(false);
+    }
+  }, [session.sessionEndedMessage]);
 
   /**
    * The identity client, which is null in bearer mode.
@@ -217,77 +291,35 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
   const [linksEpoch, setLinksEpoch] = useState(0);
 
   /**
-   * Reads whatever the OAuth callback left in the address bar.
+   * Settles whatever the OAuth callback left in the address bar.
    *
-   * Parameters are stripped before any await, so a live MFA ticket does not reach
-   * the history or the next `Referer`. Runs once on mount, identity mode only.
+   * The hook strips the single-use parameters before this runs, so a live MFA
+   * ticket does not reach the history or the next `Referer`. A no-op on every
+   * ordinary load, and in bearer mode, where there is no identity client.
+   *
+   * A landed sign-in needs no `initialize` of its own: the provider already
+   * started one on mount and the client shares that in-flight request, so the
+   * status arrives through `useAuth` either way.
    */
-  useEffect(() => {
+  useOAuthCallback(result => {
     if (identityClient === null) {
-      if (apiService.isAuthenticated()) setIsAuthenticated(true);
       return;
     }
 
-    const result = readOAuthCallback(window.location.href);
-    if (result !== null) {
-      window.history.replaceState(
-        null,
-        '',
-        stripOAuthParams(window.location.href)
-      );
-    }
-
-    switch (result?.kind) {
+    switch (result.kind) {
       case 'signed-in':
-        setLoading(true);
-        void identityClient
-          .initialize()
-          .then(() => {
-            setIsAuthenticated(apiService.isAuthenticated());
-          })
-          .catch(() => {
-            setError('That sign-in could not be completed. Try again.');
-          })
-          .finally(() => {
-            setLoading(false);
-          });
         return;
       case 'mfa-required':
         setMfaTicket(result.ticket);
         return;
       case 'linked':
-        setIsAuthenticated(apiService.isAuthenticated());
         setLinksEpoch(epoch => epoch + 1);
         return;
       case 'error':
         setError(describeOAuthCallbackError(result));
-        setIsAuthenticated(apiService.isAuthenticated());
         return;
-      default:
-        setLoading(true);
-        void apiService
-          .restoreSession()
-          .then(restored => {
-            setIsAuthenticated(restored);
-          })
-          .finally(() => {
-            setLoading(false);
-          });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  /** Returns to the sign-in screen when a session ends by itself. */
-  useEffect(
-    () =>
-      apiService.onSessionEnded(() => {
-        setIsAuthenticated(false);
-        setMfaTicket(null);
-        setLoading(false);
-        setError('Your session expired. Please sign in again.');
-      }),
-    []
-  );
+  });
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -368,18 +400,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
     }
   };
 
+  /**
+   * Signs in with a password.
+   *
+   * Under identity the client records the session itself and `useAuth` reports
+   * it, so only the bearer branch has a flag to set.
+   */
   const handleLogin = async (username: string, password: string) => {
-    setLoading(true);
+    setWorking(true);
     setError(null);
     try {
       const r = await apiService.login({ username, password });
-      if (r.status === 'authenticated') setIsAuthenticated(true);
-      else if (r.status === 'mfa-required') setMfaTicket(r.ticket);
+      if (r.status === 'authenticated') {
+        session.markAuthenticated();
+      } else if (r.status === 'mfa-required') setMfaTicket(r.ticket);
       else setError(r.error);
     } catch {
       setError('Login failed');
     } finally {
-      setLoading(false);
+      setWorking(false);
     }
   };
 
@@ -396,7 +435,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
       return;
     }
     setError(null);
-    setIsAuthenticated(apiService.isAuthenticated());
   };
 
   /**
@@ -406,13 +444,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
    */
   const handleTotp = async (code: string) => {
     if (mfaTicket === null) return;
-    setLoading(true);
+    setWorking(true);
     setError(null);
     try {
       const r = await apiService.completeTotp({ ticket: mfaTicket, code });
       if (r.status === 'authenticated') {
         setMfaTicket(null);
-        setIsAuthenticated(true);
+        session.markAuthenticated();
       } else if (r.status === 'mfa-required') {
         setMfaTicket(r.ticket);
       } else {
@@ -421,13 +459,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
     } catch {
       setError('Login failed');
     } finally {
-      setLoading(false);
+      setWorking(false);
     }
   };
 
   const handleProjectSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
+    setWorking(true);
     setError(null);
     const r = editingProject
       ? await apiService.updateProject(editingProject.id, projectForm)
@@ -439,7 +477,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
       setEditingProject(null);
       setProjectForm(EMPTY_PROJECT);
     }
-    setLoading(false);
+    setWorking(false);
   };
   const handleProjectEdit = (p: Project) => {
     setEditingProject(p);
@@ -457,16 +495,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
   };
   const handleProjectDelete = async (id: number) => {
     if (!confirm('Delete this project?')) return;
-    setLoading(true);
+    setWorking(true);
     const r = await apiService.deleteProject(id);
     if (r.error) handleApiError('delete project', r.error);
     else await loadProjects();
-    setLoading(false);
+    setWorking(false);
   };
 
   const handleExperienceSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
+    setWorking(true);
     setError(null);
     const r = editingExperience
       ? await apiService.updateExperience(editingExperience.id, experienceForm)
@@ -478,7 +516,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
       setEditingExperience(null);
       setExperienceForm(EMPTY_EXPERIENCE);
     }
-    setLoading(false);
+    setWorking(false);
   };
   const handleExperienceEdit = (exp: Experience) => {
     setEditingExperience(exp);
@@ -497,16 +535,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
   };
   const handleExperienceDelete = async (id: number) => {
     if (!confirm('Delete this experience entry?')) return;
-    setLoading(true);
+    setWorking(true);
     const r = await apiService.deleteExperience(id);
     if (r.error) handleApiError('delete experience', r.error);
     else await loadExperience();
-    setLoading(false);
+    setWorking(false);
   };
 
   const handleBlogPostSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
+    setWorking(true);
     setError(null);
     const r = editingPost
       ? await apiService.updateBlogPost(editingPost.id, blogPostForm)
@@ -518,7 +556,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
       setEditingPost(null);
       setBlogPostForm(EMPTY_BLOG);
     }
-    setLoading(false);
+    setWorking(false);
   };
   const handleBlogPostEdit = (post: BlogPost) => {
     setEditingPost(post);
@@ -535,23 +573,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
   };
   const handleBlogPostDelete = async (id: number) => {
     if (!confirm('Delete this blog post?')) return;
-    setLoading(true);
+    setWorking(true);
     const r = await apiService.deleteBlogPost(id);
     if (r.error) handleApiError('delete blog post', r.error);
     else await loadBlogPosts();
-    setLoading(false);
+    setWorking(false);
   };
   const handleBlogPostPublish = async (id: number) => {
-    setLoading(true);
+    setWorking(true);
     const r = await apiService.publishBlogPost(id);
     if (r.error) handleApiError('publish blog post', r.error);
     else await loadBlogPosts();
-    setLoading(false);
+    setWorking(false);
   };
 
   const handleCategorySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
+    setWorking(true);
     setError(null);
     const r = editingCategory
       ? await apiService.updateCategory(editingCategory.id, categoryForm)
@@ -563,7 +601,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
       setEditingCategory(null);
       setCategoryForm(EMPTY_CATEGORY);
     }
-    setLoading(false);
+    setWorking(false);
   };
   const handleCategoryEdit = (c: Category) => {
     setEditingCategory(c);
@@ -576,16 +614,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
   };
   const handleCategoryDelete = async (id: number) => {
     if (!confirm('Delete this category?')) return;
-    setLoading(true);
+    setWorking(true);
     const r = await apiService.deleteCategory(id);
     if (r.error) handleApiError('delete category', r.error);
     else await loadCategories();
-    setLoading(false);
+    setWorking(false);
   };
 
   const handleSkillSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
+    setWorking(true);
     setError(null);
     const r = editingSkill
       ? await apiService.updateSkill(editingSkill.id, skillForm)
@@ -597,7 +635,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
       setEditingSkill(null);
       setSkillForm(EMPTY_SKILL);
     }
-    setLoading(false);
+    setWorking(false);
   };
   const handleSkillEdit = (s: Skill) => {
     setEditingSkill(s);
@@ -612,16 +650,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
   };
   const handleSkillDelete = async (id: number) => {
     if (!confirm('Delete this skill?')) return;
-    setLoading(true);
+    setWorking(true);
     const r = await apiService.deleteSkill(id);
     if (r.error) handleApiError('delete skill', r.error);
     else await loadSkills();
-    setLoading(false);
+    setWorking(false);
   };
 
   const handleEducationSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
+    setWorking(true);
     setError(null);
     const payload = {
       ...educationForm,
@@ -638,7 +676,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
       setEditingEducation(null);
       setEducationForm(EMPTY_EDUCATION);
     }
-    setLoading(false);
+    setWorking(false);
   };
   const handleEducationEdit = (ed: Education) => {
     setEditingEducation(ed);
@@ -656,16 +694,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
   };
   const handleEducationDelete = async (id: number) => {
     if (!confirm('Delete this education entry?')) return;
-    setLoading(true);
+    setWorking(true);
     const r = await apiService.deleteEducation(id);
     if (r.error) handleApiError('delete education', r.error);
     else await loadEducation();
-    setLoading(false);
+    setWorking(false);
   };
 
   const handleCertSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
+    setWorking(true);
     setError(null);
     const payload = {
       ...certForm,
@@ -681,7 +719,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
       setEditingCert(null);
       setCertForm(EMPTY_CERTIFICATION);
     }
-    setLoading(false);
+    setWorking(false);
   };
   const handleCertEdit = (c: Certification) => {
     setEditingCert(c);
@@ -696,21 +734,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
   };
   const handleCertDelete = async (id: number) => {
     if (!confirm('Delete this certification?')) return;
-    setLoading(true);
+    setWorking(true);
     const r = await apiService.deleteCertification(id);
     if (r.error) handleApiError('delete certification', r.error);
     else await loadCertifications();
-    setLoading(false);
+    setWorking(false);
   };
 
   const handleSiteContentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
+    setWorking(true);
     setError(null);
     const r = await apiService.updateSiteContent(siteContentForm);
     if (r.error) handleApiError('save site content', r.error);
     else await loadSiteContent();
-    setLoading(false);
+    setWorking(false);
   };
 
   if (!isAuthenticated) {
@@ -723,7 +761,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
             setError(null);
           }}
           loading={loading}
-          error={error}
+          error={signInError}
           className={className}
         />
       );
@@ -733,7 +771,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
         onLogin={handleLogin}
         onPasskeySignIn={handlePasskeySignIn}
         loading={loading}
-        error={error}
+        error={signInError}
         className={className}
       />
     );
@@ -758,14 +796,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
                 >
                   Back to Main Page
                 </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    apiService.logout();
-                    setIsAuthenticated(false);
-                  }}
-                  size="sm"
-                >
+                <Button variant="outline" onClick={session.logout} size="sm">
                   Logout
                 </Button>
               </div>

@@ -3,10 +3,10 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import type { PasskeySignInOutcome } from '@webbpulse/auth';
 
+import { resetAvailabilityCache } from '@webbpulse/discovery';
+
 import { LoginForm } from './LoginForm';
 import { apiService } from '../../services/api';
-import { resetAvailabilityCache } from '../../services/availabilityCache';
-import { resetPasskeyAvailabilityCache } from '../../services/passkeyAvailability';
 
 /** Puts a `PublicKeyCredential` on the global, as a real browser has. */
 function supportWebAuthn(conditional = false): void {
@@ -44,11 +44,9 @@ function passkeyProbeCount(fetchMock: ReturnType<typeof vi.fn>): number {
   ).length;
 }
 
-/** The slice of `AuthClient` this form touches. */
+/** The one `AuthClient` method these passkey tests reach. */
 function stubIdentity(overrides: Record<string, unknown> = {}) {
   return {
-    requestPasswordReset: vi.fn(),
-    oauthStartUrl: (provider: string) => `https://api.test/oauth/${provider}`,
     signInWithPasskey: vi.fn(),
     ...overrides,
   } as unknown as ReturnType<typeof apiService.getIdentityClient>;
@@ -71,14 +69,11 @@ function renderForm(onPasskeySignIn = vi.fn()) {
 describe('LoginForm passkeys', () => {
   beforeEach(() => {
     resetAvailabilityCache();
-    resetPasskeyAvailabilityCache();
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
-    resetAvailabilityCache();
-    resetPasskeyAvailabilityCache();
   });
 
   it('hides the button when the browser cannot do WebAuthn', async () => {

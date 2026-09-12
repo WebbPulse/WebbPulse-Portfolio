@@ -9,6 +9,7 @@ import {
 } from '@webbpulse/api-client';
 import { ConfigReader, loadAppConfig } from '@webbpulse/config';
 import { createAuthClient, type AuthClient } from '@webbpulse/auth';
+import { identityOriginFrom as packageIdentityOriginFrom } from '@webbpulse/discovery';
 
 import { AUTH_MODES, AUTH_MODE_ENV_KEY, type AuthMode } from './authMode';
 import { BearerTokenStore } from './bearerTokenStore';
@@ -31,14 +32,11 @@ export const API_BASE_URL = config.apiBaseUrl;
  * The origin the identity routes hang off, derived from the API base URL.
  *
  * Identity mounts at `/api/auth` on the origin while this application's routes
- * live under `/api/v1`. Falls back to the unmodified base when it will not parse.
+ * live under `/api/v1`. `passthrough` keeps a root relative base unchanged, which
+ * is what this application's callers already depend on.
  */
 export function identityOriginFrom(apiBaseUrl: string): string {
-  try {
-    return new URL(apiBaseUrl).origin;
-  } catch {
-    return apiBaseUrl;
-  }
+  return packageIdentityOriginFrom(apiBaseUrl, { relativeAs: 'passthrough' });
 }
 
 /**
@@ -255,9 +253,6 @@ export class ApiService {
   /** The auth client, in `identity` mode only. */
   private readonly auth: AuthClient<unknown> | null;
 
-  /** Subscribers notified when a live session ends on its own. */
-  private readonly sessionEndedListeners = new Set<() => void>();
-
   constructor(baseUrl: string = API_BASE_URL, mode: AuthMode = AUTH_MODE) {
     const credentials = 'include' as const;
 
@@ -266,9 +261,6 @@ export class ApiService {
       this.auth = createAuthClient({
         baseUrl: identityOriginFrom(baseUrl),
         clientOptions: { credentials },
-        onSessionEnded: () => {
-          this.notifySessionEnded();
-        },
       });
       this.client = this.buildClient(baseUrl, {
         credentials,
@@ -417,24 +409,6 @@ export class ApiService {
    */
   getIdentityClient(): AuthClient<unknown> | null {
     return this.auth;
-  }
-
-  /**
-   * Registers a callback for a session that ended without the user asking.
-   * Returns the unsubscribe function. Never fires in `bearer` mode.
-   */
-  onSessionEnded(listener: () => void): () => void {
-    this.sessionEndedListeners.add(listener);
-    return () => {
-      this.sessionEndedListeners.delete(listener);
-    };
-  }
-
-  /** Fans a session-ended event out to every subscriber. */
-  private notifySessionEnded(): void {
-    for (const listener of [...this.sessionEndedListeners]) {
-      listener();
-    }
   }
 
   /**

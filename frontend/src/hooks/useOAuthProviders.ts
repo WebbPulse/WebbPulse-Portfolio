@@ -6,11 +6,12 @@
  */
 import { useEffect, useState } from 'react';
 import type { AuthClient } from '@webbpulse/auth';
-
 import {
-  type OAuthProvider,
+  identityUrl,
   oauthProviders,
-} from '../services/oauthAvailability';
+  OAUTH_PROVIDERS_PATH,
+  type OAuthProviderInfo,
+} from '@webbpulse/discovery';
 
 /**
  * The providers to offer, in the order the backend listed them.
@@ -20,9 +21,10 @@ import {
  */
 export function useOAuthProviders(
   client: AuthClient<unknown> | null,
-  identityOrigin: string
-): OAuthProvider[] {
-  const [available, setAvailable] = useState<OAuthProvider[]>([]);
+  identityOrigin: string,
+  fetchImpl?: typeof fetch
+): OAuthProviderInfo[] {
+  const [available, setAvailable] = useState<OAuthProviderInfo[]>([]);
 
   useEffect(() => {
     if (client === null || typeof client.oauthStartUrl !== 'function') {
@@ -31,7 +33,10 @@ export function useOAuthProviders(
     }
     let live = true;
 
-    void oauthProviders(identityOrigin).then(providers => {
+    void oauthProviders(
+      identityUrl(identityOrigin, OAUTH_PROVIDERS_PATH),
+      fetchImpl
+    ).then(providers => {
       if (!live) return;
       setAvailable(providers);
     });
@@ -39,7 +44,7 @@ export function useOAuthProviders(
     return () => {
       live = false;
     };
-  }, [client, identityOrigin]);
+  }, [client, identityOrigin, fetchImpl]);
 
   return available;
 }

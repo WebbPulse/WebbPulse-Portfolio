@@ -11,8 +11,11 @@ import {
   conditionalMediationAvailable,
   passkeysSupported,
 } from '@webbpulse/auth';
-
-import { passkeyLoginOffered } from '../services/passkeyAvailability';
+import {
+  identityUrl,
+  passkeyLoginAvailability,
+  PASSKEY_AVAILABILITY_PATH,
+} from '@webbpulse/discovery';
 
 /** What the login page needs to know before drawing anything. */
 export interface PasskeySignInSupport {
@@ -26,11 +29,14 @@ export interface PasskeySignInSupport {
  * The passkey affordances this browser and this deployment can support.
  *
  * `identityOrigin` is the origin the identity routes are mounted on, passed in
- * so the service owns the path.
+ * so this hook needs no knowledge of how the bundle is configured. Only an
+ * `available` answer offers the button: an unreadable route is not a deployment
+ * with passwordless switched off.
  */
 export function usePasskeySignIn(
   client: AuthClient<unknown> | null,
-  identityOrigin: string
+  identityOrigin: string,
+  fetchImpl?: typeof fetch
 ): PasskeySignInSupport {
   const [support, setSupport] = useState<PasskeySignInSupport>({
     offered: false,
@@ -49,9 +55,12 @@ export function usePasskeySignIn(
     let live = true;
 
     void (async () => {
-      const offered = await passkeyLoginOffered(identityOrigin);
+      const availability = await passkeyLoginAvailability(
+        identityUrl(identityOrigin, PASSKEY_AVAILABILITY_PATH),
+        fetchImpl
+      );
       if (!live) return;
-      if (!offered) {
+      if (availability !== 'available') {
         setSupport({ offered: false, conditional: false });
         return;
       }
@@ -63,7 +72,7 @@ export function usePasskeySignIn(
     return () => {
       live = false;
     };
-  }, [client, identityOrigin]);
+  }, [client, identityOrigin, fetchImpl]);
 
   return support;
 }

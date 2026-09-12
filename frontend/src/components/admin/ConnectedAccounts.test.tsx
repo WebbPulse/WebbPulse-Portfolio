@@ -31,8 +31,8 @@ function refusal(reason: string, message = '') {
   return { ok: false as const, reason, message, code: undefined };
 }
 
-const GOOGLE = { id: 'google', display_name: 'Google' };
-const GITHUB = { id: 'github', display_name: 'GitHub' };
+const GOOGLE = { id: 'google', displayName: 'Google' };
+const GITHUB = { id: 'github', displayName: 'GitHub' };
 
 describe('ConnectedAccounts', () => {
   it('lists the links the account has', async () => {
