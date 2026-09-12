@@ -47,7 +47,7 @@ jobs:
   deploy:
     name: Build and publish the SPA
     needs: resolve-env
-    uses: WebbPulse/.github/.github/workflows/spa-deploy.yml@v2
+    uses: WebbPulse/.github/.github/workflows/spa-deploy.yml@6ebb7773f8ce80ab9cfb1c7e11833ef39a6e96f1 # v2.3.0
     permissions:
       id-token: write
       contents: read
