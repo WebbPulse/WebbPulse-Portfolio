@@ -77,18 +77,22 @@ def test_an_entrypoint_reports_its_own_service_name(domain, probes):
 
 @pytest.mark.parametrize("domain", sorted(DOMAIN_NAMES))
 def test_an_entrypoint_exposes_the_runtime_wiring(domain):
-    """`main` is what the image runs, and it wires the four shared helpers."""
+    """`main` is what the image runs, and it wires the three shared helpers."""
     module = __import__(f"app.entrypoints.{domain}", fromlist=["main"])
     source = Path(module.__file__).read_text()
-    for helper in (
-        "configure_logging",
-        "configure_tracing",
-        "instrument_fastapi",
-        "run_uvicorn",
-    ):
+    for helper in ("configure_logging", "configure_tracing", "run_uvicorn"):
         assert helper in source, f"{domain} entrypoint does not call {helper}"
     assert callable(module.main)
     assert callable(module.build_app)
+
+
+@pytest.mark.parametrize("domain", sorted(DOMAIN_NAMES))
+def test_an_entrypoint_leaves_instrumentation_to_create_app(domain):
+    """`create_app` instruments every app it builds, so a second call only warns."""
+    source = (BACKEND / "app" / "entrypoints" / f"{domain}.py").read_text()
+    assert "instrument_fastapi" not in source, (
+        f"{domain} entrypoint instruments an already instrumented app"
+    )
 
 
 def test_no_entrypoint_imports_a_whole_surface_root():
