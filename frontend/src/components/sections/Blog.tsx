@@ -193,7 +193,7 @@ export const Blog: React.FC = () => {
 
         {!loading && !error && published.length === 0 && (
           <p className="text-center text-surface-400">
-            No posts yet — check back soon.
+            No posts yet. Check back soon.
           </p>
         )}
 
