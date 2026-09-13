@@ -4,28 +4,36 @@ ARG BASE_IMAGE=432410731887.dkr.ecr.us-west-2.amazonaws.com/webbpulse/python-lam
 
 FROM ${BASE_IMAGE} AS builder
 
+COPY --from=ghcr.io/astral-sh/uv:0.12.10@sha256:2bb3ebca0a796a155094a27773d290c4b074572e6107f171d88d086682fd2500 /uv /usr/local/bin/uv
+
 USER root
 
 WORKDIR /build
 
-COPY requirements.txt ./
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
+    UV_PYTHON_DOWNLOADS=never \
+    UV_LINK_MODE=copy \
+    UV_NO_CACHE=1 \
+    UV_PYTHON=/usr/local/bin/python3.13
 
-ARG CODEARTIFACT_DOMAIN=webbpulse
-ARG CODEARTIFACT_DOMAIN_OWNER=432410731887
-ARG CODEARTIFACT_REPOSITORY=python
-ARG AWS_REGION=us-west-2
+COPY pyproject.toml uv.lock ./
+
+RUN uv sync --locked --no-dev --no-install-project --no-install-package webbpulse
 
 ARG DEPENDENCY_RESOLUTION=local
 
 RUN --mount=type=secret,id=codeartifact_token,required=true \
     set -eu; \
-    token="$(cat /run/secrets/codeartifact_token)"; \
-    PIP_INDEX_URL="https://aws:${token}@${CODEARTIFACT_DOMAIN}-${CODEARTIFACT_DOMAIN_OWNER}.d.codeartifact.${AWS_REGION}.amazonaws.com/pypi/${CODEARTIFACT_REPOSITORY}/simple/" \
-    pip install --no-cache-dir --target /deps -r requirements.txt; \
-    PYTHONPATH=/deps python -c "import importlib.metadata as m; print('webbpulse', m.version('webbpulse'))"
+    UV_INDEX_CODEARTIFACT_USERNAME=aws \
+    UV_INDEX_CODEARTIFACT_PASSWORD="$(cat /run/secrets/codeartifact_token)" \
+    uv lock --upgrade-package webbpulse; \
+    UV_INDEX_CODEARTIFACT_USERNAME=aws \
+    UV_INDEX_CODEARTIFACT_PASSWORD="$(cat /run/secrets/codeartifact_token)" \
+    uv sync --frozen --no-dev --no-install-project; \
+    /opt/venv/bin/python -c "import importlib.metadata as m; print('webbpulse', m.version('webbpulse'))"
 
-RUN find /deps -type d -name "__pycache__" -prune -exec rm -rf {} + \
-    && find /deps -type f \( -name "*.pyc" -o -name "*.pyo" \) -delete
+RUN find /opt/venv -type d -name "__pycache__" -prune -exec rm -rf {} + \
+    && find /opt/venv -type f \( -name "*.pyc" -o -name "*.pyo" \) -delete
 
 FROM ${BASE_IMAGE} AS runtime
 
@@ -40,10 +48,12 @@ RUN test -n "${DOMAIN}" || { \
         *) echo "DOMAIN=${DOMAIN} is not a domain. Expected one of content, resume, identity, public." >&2; exit 1 ;; \
     esac
 
-COPY --from=builder /deps /var/task
+COPY --from=builder /opt/venv /opt/venv
 COPY app/ /var/task/app/
 
 ENV DOMAIN=${DOMAIN} \
+    VIRTUAL_ENV=/opt/venv \
+    PATH=/opt/venv/bin:$PATH \
     PYTHONPATH=/var/task \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
