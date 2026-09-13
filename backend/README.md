@@ -87,22 +87,30 @@ One on-demand table per entity: `users`, `categories`, `posts`, `projects`,
 
 ## Local development
 
+Dependencies live in `pyproject.toml` and are pinned by the committed `uv.lock`.
+Install uv 0.12.10, then point it at the CodeArtifact index that serves the
+private `webbpulse` package:
+
 ```bash
-uv venv --python 3.13 venv
-VIRTUAL_ENV=$PWD/venv uv pip install -r requirements-dev.txt
+export UV_INDEX_CODEARTIFACT_USERNAME=aws
+export UV_INDEX_CODEARTIFACT_PASSWORD="$(aws codeartifact get-authorization-token \
+  --domain webbpulse --domain-owner 432410731887 --region us-west-2 \
+  --query authorizationToken --output text)"
+
+uv sync
 
 docker compose up -d
 export DYNAMODB_ENDPOINT_URL=http://localhost:8001
 export DYNAMODB_TABLE_PREFIX=webbpulse-development
 export SECRET_KEY=dev-secret ADMIN_USERNAME=admin ADMIN_PASSWORD=admin ADMIN_EMAIL=admin@example.com
-venv/bin/python scripts/create_local_tables.py
+uv run python scripts/create_local_tables.py
 ```
 
 **All 44 routes in one process.** `app.composition.app` is root A, built from
 the same `wiring.DOMAINS` list the four entrypoints read. Nothing deploys it.
 
 ```bash
-venv/bin/uvicorn app.composition.app:app --reload   # http://localhost:8000
+uv run uvicorn app.composition.app:app --reload   # http://localhost:8000
 ```
 
 **One domain, the way Lambda runs it.** `app.entrypoints.<domain>` is root B and
@@ -110,8 +118,8 @@ is exactly what the image runs. `run_uvicorn` binds `AWS_LWA_PORT`, then `PORT`,
 then 8080.
 
 ```bash
-PORT=8010 venv/bin/python -m app.entrypoints.content
-PORT=8013 venv/bin/python -m app.entrypoints.public
+PORT=8010 uv run python -m app.entrypoints.content
+PORT=8013 uv run python -m app.entrypoints.public
 ```
 
 This is the faithful one: a domain here answers only its own routes, so a
@@ -124,9 +132,9 @@ process, so there is no separate seed step. Docs are at `/docs` and `/redoc`.
 ## Tests and lint
 
 ```bash
-venv/bin/python -m pytest
-venv/bin/ruff check app tests
-venv/bin/ruff format --check app tests
+uv run python -m pytest
+uv run ruff check app tests
+uv run ruff format --check app tests
 ```
 
 Tests run against moto; no AWS credentials or local DynamoDB are needed. See
@@ -134,8 +142,10 @@ Tests run against moto; no AWS credentials or local DynamoDB are needed. See
 `integration`, `auth` and `admin`, so `-m unit` runs one category.
 
 CI runs the same commands through `.github/workflows/ci.yml`, which delegates to
-the org reusable `python-ci.yml@v2` and additionally runs `pyright`, `bandit -r
-app -ll` and `pip-audit -r requirements.txt`.
+the org reusable `python-ci.yml@v3` and additionally runs `pyright`, `bandit -r
+app -ll` and `pip-audit` over `uv export`. Test domains are the immediate
+subdirectories of `tests/domains`, each matching an `app/entrypoints/<name>.py`
+module; CI runs one job per domain and a shared job over the rest of `tests`.
 
 `tests/entrypoints/test_gateway_routes.py` is load-bearing: it keeps the
 gateway's route keys and the served paths in agreement in both directions, and
