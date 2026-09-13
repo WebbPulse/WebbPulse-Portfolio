@@ -43,23 +43,22 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: WebbPulse/.github/.github/workflows/python-ci.yml@v2
+    uses: WebbPulse/.github/.github/workflows/python-ci.yml@v3
     with:
       python-version: "3.13"
       working-directory: backend
       install-command: >-
-        python -m pip install --upgrade pip &&
-        pip install -r requirements-dev.txt &&
-        pip install pyright bandit pip-audit
+        uv lock --upgrade-package webbpulse &&
+        uv sync --locked &&
+        uv run --no-sync python -c "import importlib.metadata as m; print('webbpulse', m.version('webbpulse'))"
       ruff-target: "app tests"
       typecheck-command: pyright
       security-commands: |
         bandit -r app -ll
-        pip-audit -r requirements.txt
+        uv export --frozen --no-dev --no-emit-project --no-hashes --no-emit-package webbpulse -o /tmp/requirements-audit.txt && pip-audit --no-deps -r /tmp/requirements-audit.txt
       coverage-source: app
       pytest-args: ""
       codeartifact-domain: webbpulse
-      codeartifact-repository: python
       aws-region: us-west-2
     secrets:
       role-to-assume: ${{ vars.CI_AWS_ROLE_ARN }}
