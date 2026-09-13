@@ -1,39 +1,36 @@
-# WebbPulse Portfolio Website
+# Frontend
 
-A modern, responsive personal portfolio website showcasing development work and skills, built with TypeScript React and Tailwind CSS.
+React 19 and TypeScript on Vite, styled with Tailwind CSS. It serves the public
+portfolio and blog plus the admin panel that drives every section through the
+API.
 
-## 🚀 Tech Stack
+## Routes
 
-- **Frontend**: React 19 with TypeScript
-- **Build Tool**: Vite with SWC for fast compilation
-- **Styling**: Tailwind CSS
-- **Package Manager**: npm
-- **Development**: Hot Module Replacement (HMR)
+| Path | What it is |
+| --- | --- |
+| `/` | The portfolio |
+| `/blog`, `/blog/:slug` | The blog index and a post |
+| `/privacy` | The public privacy policy |
+| `/verify-email`, `/reset-password` | The two identity link pages |
+| `/admin` | The admin panel, the only authenticated surface |
 
-## 📦 Getting Started
+## Getting started
 
-### Prerequisites
+Prerequisites: Node 22, npm, and an AWS login to the WebbPulse Identity Center
+for the shared packages.
 
-- Node.js 18+
-- npm
-- AWS CLI, signed in to the WebbPulse Identity Center, for the shared packages
+```bash
+npm install       # fetch a CodeArtifact token first, below
+npm run dev:local # :5173, proxies /api to localhost:8000
+```
 
 ### Shared packages from CodeArtifact
 
-This frontend depends on the org's shared TypeScript packages, which are
-published to AWS CodeArtifact rather than the public npm registry:
-
-| Package                    | Used for                                               |
-| -------------------------- | ------------------------------------------------------ |
-| `@webbpulse/api-client`    | The typed fetch client behind `src/services/api.ts`    |
-| `@webbpulse/auth`          | `AuthClient`, for the identity mode described below    |
-| `@webbpulse/config`        | Validated startup configuration from `import.meta.env` |
-| `@webbpulse/tsconfig`      | The compiler options `tsconfig.app.json` extends       |
-| `@webbpulse/eslint-config` | The lint rules `eslint.config.js` extends              |
-
-`frontend/.npmrc` points the `@webbpulse` scope at the CodeArtifact repository,
-but it deliberately holds no auth token. Before your first `npm install` or
-`npm ci`, fetch a 12 hour token:
+`@webbpulse/api-client`, `auth`, `config`, `discovery`, `qrcode`, `tsconfig` and
+`eslint-config` are published to CodeArtifact rather than the public registry,
+all pinned to `^0.10.2`. `frontend/.npmrc` points the `@webbpulse` scope at that
+repository but deliberately holds no token. Before your first install, fetch a
+12 hour one:
 
 ```bash
 AWS_PROFILE=WebbPulse-Artifacts/AdministratorAccess AWS_REGION=us-west-2 \
@@ -42,146 +39,91 @@ AWS_PROFILE=WebbPulse-Artifacts/AdministratorAccess AWS_REGION=us-west-2 \
     --repository npm --namespace @webbpulse
 ```
 
-That appends the token to your `~/.npmrc`, leaving the checked in
-`frontend/.npmrc` untouched. Re-run it when an install starts returning 401.
+That appends the token to `~/.npmrc`, leaving the checked-in `frontend/.npmrc`
+untouched. Re-run it when an install starts returning 401.
 
-Note that a `ReadOnlyAccess` profile is not enough: the AWS managed
-ReadOnlyAccess policy omits `sts:GetServiceBearerToken`, which
-`codeartifact login` requires. CI does not use these profiles at all; it obtains
-a token over OIDC in the workflow.
+A `ReadOnlyAccess` profile is not enough: the AWS managed policy omits
+`sts:GetServiceBearerToken`, which `codeartifact login` requires. CI does not
+use these profiles at all and obtains a token over OIDC.
 
-### Authentication modes
+## Scripts
 
-Authentication is mid migration, and which mechanism a bundle uses is chosen by
-the `VITE_AUTH_MODE` environment variable rather than by a code change.
+| Command | What it does |
+| --- | --- |
+| `npm run dev:local` | Dev server on :5173, proxying `/api` to localhost:8000 |
+| `npm run dev:remote-api` | Dev server against `https://api.webbpulse.com/api/v1` |
+| `npm run build` | `tsc -b` then a Vite production build |
+| `npm run lint`, `lint:fix` | ESLint |
+| `npm run format`, `format:check` | Prettier |
+| `npm run test` | Vitest in watch mode |
+| `npm run test:run` | Vitest once. CI appends `-- --coverage` |
+| `npm run preview` | Serve the built bundle |
 
-| Mode               | What it does                                                                                                        |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| `bearer` (default) | `POST /api/v1/admin/login` answers with a bearer token, which is held in `localStorage` and sent on every request   |
-| `identity`         | `AuthClient` from `@webbpulse/auth`: an in memory access token, an httpOnly refresh cookie, and retry once on a 401 |
+There is no `npm run dev`. Use `dev:local`.
 
-**Staging runs on `identity`.** The flip happened on 2026-09-11 at 02:25Z, and
-the legacy `hashed_password` column was cleared from the staging users table
-after the identity sign-in was verified (PR 174). Production still builds
-`bearer`.
+## Configuration
 
-The identity routes `AuthClient` needs are live: `/api/auth/login`,
-`/api/auth/refresh` and `/api/auth/logout`, alongside email verification and
-password reset (M3), TOTP and recovery codes (M4), passkeys (M5) and OAuth
-sign-in with Google and GitHub (M6). Setting `VITE_AUTH_MODE=identity` on an
-environment whose backend has not been promoted still breaks signing in, which
-is the only reason production has not been flipped.
+The bundle's configuration comes from the deploy workflow's build step only.
+There is no `.env` file and no Terraform input for it.
 
-Once every environment carries it, the bearer branch in `src/services/api.ts`,
-`src/services/bearerTokenStore.ts` and `src/services/authMode.ts` are deleted
-together. See `IDENTITY_CUTOVER` in `src/services/api.ts` for the full list of
-what the backend has to provide, and `docs/identity-cutover.md` for the runbook.
+| Variable | Meaning |
+| --- | --- |
+| `VITE_API_BASE_URL` | API base. Set from the environment's `API_BASE_URL`; falls back to `https://api.webbpulse.com/api/v1` |
+| `VITE_AUTH_MODE` | `bearer` or `identity`. Absent means `bearer` |
 
-### Installation
+In local dev Vite proxies `/api/*` to `http://localhost:8000`, so neither needs
+setting.
 
-1. Clone the repository:
+## Auth
 
-```bash
-git clone <repository-url>
-cd Portfolio-Website
-```
+Both mechanisms are written and tested, and `src/services/authMode.ts` selects
+one at build time from `VITE_AUTH_MODE`.
 
-2. Log in to CodeArtifact, as above, then install dependencies:
+| Mode | What it does |
+| --- | --- |
+| `bearer` | `POST /api/v1/admin/login` returns a token held in `localStorage` by `src/services/bearerTokenStore.ts` |
+| `identity` | `AuthClient` from `@webbpulse/auth`: an in-memory access token, an httpOnly refresh cookie, and one retry on a 401 |
 
-```bash
-npm install
-```
+**Both environments run on `identity`.** Staging flipped 2026-09-11 02:25Z,
+production the same day at 07:18Z. The gateway enforces identity JWTs on the 24
+`/api/v1` admin route keys, so a bundle built in `bearer` mode cannot make admin
+writes against either environment.
 
-3. Start the development server:
+> **Open defect.** `deploy-frontend.yml` no longer forwards `VITE_AUTH_MODE`
+> into the build, so the next frontend deploy would rebuild in `bearer` mode and
+> break admin writes. See `docs/identity-cutover.md`, "Open defect", before
+> triggering one.
 
-```bash
-npm run dev
-```
+The bearer branch in `src/services/api.ts`, `bearerTokenStore.ts` and
+`authMode.ts` is deleted together with the backend's legacy login, once both
+environments have run on identity long enough. Keeping it is what leaves the
+flip reversible.
 
-4. Open your browser and navigate to `http://localhost:5173`
+## API layer
 
-## 🛠️ Available Scripts
+Every call goes through `src/services/api.ts` (`apiService`). The transport is
+`@webbpulse/api-client` and startup configuration is `@webbpulse/config`. That
+client rejects on a non-2xx, so `ApiService` adapts it back into the
+`{ data, error }` envelope every page component reads. The envelope is
+Portfolio's own and is unchanged.
 
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm run lint` - Run ESLint
-- `npm run preview` - Preview production build
-
-## 📁 Project Structure
+## Structure
 
 ```
 src/
-├── components/          # Reusable UI components
-│   ├── common/         # Common components (Button, Card, etc.)
-│   ├── layout/         # Layout components (Header, Footer, etc.)
-│   └── sections/       # Page sections (Hero, About, etc.)
-├── pages/              # Page components
-├── hooks/              # Custom React hooks
-├── utils/              # Utility functions
-├── types/              # TypeScript type definitions
-├── assets/             # Static assets
-└── styles/             # Global styles
+├── components/   common, layout and section components
+├── pages/        Home, Privacy, VerifyEmail, ResetPassword, NotFound
+├── hooks/        custom React hooks
+├── services/     api.ts, authMode.ts, bearerTokenStore.ts
+├── types/        shared TypeScript types
+├── utils/        helpers
+└── styles/       global styles
 ```
 
-## 🎨 Design System
+## Deploys
 
-- **Theme**: Modern dark color scheme
-- **Colors**: Gray scale with blue accents
-- **Typography**: System fonts with responsive sizing
-- **Layout**: Responsive grid system with Tailwind CSS
-
-## 🚀 Development Plan
-
-The original 10-phase build plan is complete: the site is built, deployed and
-serving production traffic on S3, CloudFront and Route 53, with GitHub Actions
-deploying both halves. Current work is the identity migration described below.
-
-## 📋 Current Status
-
-The site is live. Public routes are `/` (the portfolio itself), `/blog` and
-`/blog/:slug`, `/privacy` (the public privacy policy, PRs 177 and 178), and the
-two identity link pages `/verify-email` and `/reset-password`. `/admin` is the
-admin panel and is the only authenticated surface.
-
-The identity migration is the active workstream, tracked by milestone against
-the backend's `@webbpulse/*` adoption. What has landed on `staging`:
-
-| Milestone       | What the admin panel gained                       | PRs           |
-| --------------- | ------------------------------------------------- | ------------- |
-| Shared packages | `@webbpulse/*` 0.4.0, then 0.5.0                  | 159, 165      |
-| M2 sessions     | The identity sign-in path behind `VITE_AUTH_MODE` | 159, 160      |
-| M3 links        | The `/verify-email` and `/reset-password` pages   | 162, 165      |
-| M4 MFA          | The TOTP and recovery code management surface     | 166, 167, 168 |
-| M6 OAuth        | Google and GitHub sign-in buttons                 | 169, 170      |
-| M5 passkeys     | Passkey sign-in and the Passkeys management panel | 171, 172, 173 |
-| Privacy policy  | The public `/privacy` page                        | 177, 178      |
-
-Passkeys and passwordless sign-in are both on in staging and off in production,
-derived from the environment rather than set per workspace (PR 173). Gateway
-JWT enforcement is live in staging in `gate` mode (PR 175), with the passkey and
-OAuth route keys declared in PR 180. The M0 identity spike was retired in
-PR 176.
-
-Still ahead: promoting the identity stack to production, flipping
-`VITE_AUTH_MODE` there, and then deleting the bearer branch.
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests and linting
-5. Submit a pull request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 📞 Contact
-
-- **Website**: [webbpulse.com](https://webbpulse.com)
-- **Privacy policy**: [webbpulse.com/privacy](https://webbpulse.com/privacy)
-
----
-
-Built with ❤️ using React, TypeScript, and Tailwind CSS
+A push to `staging` or `main` touching `frontend/**` runs `deploy-frontend.yml`,
+which resolves the GitHub Environment from the branch and calls the org
+`spa-deploy.yml`: CodeArtifact login, `npm run build`, a wait for any active HCP
+Terraform run on that workspace, `s3 sync --delete`, then a CloudFront
+invalidation. The TFC wait keeps a code deploy from racing an apply.
