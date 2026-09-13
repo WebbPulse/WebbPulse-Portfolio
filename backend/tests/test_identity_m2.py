@@ -360,15 +360,22 @@ def test_nothing_is_served_at_the_origin(identity_app: FastAPI) -> None:
 def test_every_identity_route_sits_under_the_issuer_path(
     identity_app: FastAPI,
 ) -> None:
-    """Stated positively, so a route added by a later milestone is covered too."""
+    """Stated positively, so a route added by a later milestone is covered too.
+
+    The purge route is the one exception: the Lambda Web Adapter posts a stream
+    invocation to its own pass-through path, which is absolute and outside the
+    issuer prefix, so that route has to sit at the root to be reachable at all.
+    """
     from webbpulse.identity import IdentitySettings, identity_prefix
+    from webbpulse.identity.events import events_path
 
     prefix = identity_prefix(IdentitySettings())  # pyright: ignore[reportCallIssue]
     assert prefix == "/api/auth"
 
     framework = {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}
+    allowed_outside_prefix = framework | {events_path()}
     for path in all_paths(identity_app):
-        if path in framework:
+        if path in allowed_outside_prefix:
             continue
         assert path.startswith(prefix), path
 
