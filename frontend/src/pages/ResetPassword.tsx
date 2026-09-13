@@ -78,7 +78,10 @@ export const ResetPassword: React.FC = () => {
   };
 
   const shell = (children: React.ReactNode) => (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-12">
+    <div
+      className="min-h-screen bg-gray-50 dark:bg-gray-900 py-12"
+      data-testid="page-reset-password"
+    >
       <div className="max-w-md mx-auto">
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6 text-center">

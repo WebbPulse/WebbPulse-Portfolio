@@ -115,7 +115,10 @@ export const BlogPost: React.FC = () => {
       </div>
 
       <Header navigationItems={NAV} />
-      <main className="relative py-20 sm:py-28 overflow-hidden">
+      <main
+        className="relative py-20 sm:py-28 overflow-hidden"
+        data-testid="page-blog-post"
+      >
         <div className="absolute inset-0 bg-mesh-1 opacity-30 pointer-events-none" />
         <div className="relative z-10 max-w-6xl mx-auto px-6 sm:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-10">
