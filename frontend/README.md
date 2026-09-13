@@ -6,13 +6,13 @@ API.
 
 ## Routes
 
-| Path | What it is |
-| --- | --- |
-| `/` | The portfolio |
-| `/blog`, `/blog/:slug` | The blog index and a post |
-| `/privacy` | The public privacy policy |
-| `/verify-email`, `/reset-password` | The two identity link pages |
-| `/admin` | The admin panel, the only authenticated surface |
+| Path                               | What it is                                      |
+| ---------------------------------- | ----------------------------------------------- |
+| `/`                                | The portfolio                                   |
+| `/blog`, `/blog/:slug`             | The blog index and a post                       |
+| `/privacy`                         | The public privacy policy                       |
+| `/verify-email`, `/reset-password` | The two identity link pages                     |
+| `/admin`                           | The admin panel, the only authenticated surface |
 
 ## Getting started
 
@@ -48,16 +48,16 @@ use these profiles at all and obtains a token over OIDC.
 
 ## Scripts
 
-| Command | What it does |
-| --- | --- |
-| `npm run dev:local` | Dev server on :5173, proxying `/api` to localhost:8000 |
-| `npm run dev:remote-api` | Dev server against `https://api.webbpulse.com/api/v1` |
-| `npm run build` | `tsc -b` then a Vite production build |
-| `npm run lint`, `lint:fix` | ESLint |
-| `npm run format`, `format:check` | Prettier |
-| `npm run test` | Vitest in watch mode |
-| `npm run test:run` | Vitest once. CI appends `-- --coverage` |
-| `npm run preview` | Serve the built bundle |
+| Command                          | What it does                                           |
+| -------------------------------- | ------------------------------------------------------ |
+| `npm run dev:local`              | Dev server on :5173, proxying `/api` to localhost:8000 |
+| `npm run dev:remote-api`         | Dev server against `https://api.webbpulse.com/api/v1`  |
+| `npm run build`                  | `tsc -b` then a Vite production build                  |
+| `npm run lint`, `lint:fix`       | ESLint                                                 |
+| `npm run format`, `format:check` | Prettier                                               |
+| `npm run test`                   | Vitest in watch mode                                   |
+| `npm run test:run`               | Vitest once. CI appends `-- --coverage`                |
+| `npm run preview`                | Serve the built bundle                                 |
 
 There is no `npm run dev`. Use `dev:local`.
 
@@ -66,10 +66,10 @@ There is no `npm run dev`. Use `dev:local`.
 The bundle's configuration comes from the deploy workflow's build step only.
 There is no `.env` file and no Terraform input for it.
 
-| Variable | Meaning |
-| --- | --- |
+| Variable            | Meaning                                                                                               |
+| ------------------- | ----------------------------------------------------------------------------------------------------- |
 | `VITE_API_BASE_URL` | API base. Set from the environment's `API_BASE_URL`; falls back to `https://api.webbpulse.com/api/v1` |
-| `VITE_AUTH_MODE` | `bearer` or `identity`. Absent means `bearer` |
+| `VITE_AUTH_MODE`    | `bearer` or `identity`. Absent means `bearer`                                                         |
 
 In local dev Vite proxies `/api/*` to `http://localhost:8000`, so neither needs
 setting.
@@ -79,9 +79,9 @@ setting.
 Both mechanisms are written and tested, and `src/services/authMode.ts` selects
 one at build time from `VITE_AUTH_MODE`.
 
-| Mode | What it does |
-| --- | --- |
-| `bearer` | `POST /api/v1/admin/login` returns a token held in `localStorage` by `src/services/bearerTokenStore.ts` |
+| Mode       | What it does                                                                                                       |
+| ---------- | ------------------------------------------------------------------------------------------------------------------ |
+| `bearer`   | `POST /api/v1/admin/login` returns a token held in `localStorage` by `src/services/bearerTokenStore.ts`            |
 | `identity` | `AuthClient` from `@webbpulse/auth`: an in-memory access token, an httpOnly refresh cookie, and one retry on a 401 |
 
 **Both environments run on `identity`.** Staging flipped 2026-09-11 02:25Z,
