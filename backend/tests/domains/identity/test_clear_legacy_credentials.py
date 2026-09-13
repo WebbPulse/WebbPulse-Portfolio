@@ -14,7 +14,7 @@ from app.db import entities
 
 def load_script():
     """Import the clear script by path, since scripts is not a package."""
-    path = Path(__file__).resolve().parents[1] / "scripts" / "clear_legacy_credentials.py"
+    path = Path(__file__).resolve().parents[3] / "scripts" / "clear_legacy_credentials.py"
     spec = importlib.util.spec_from_file_location("clear_legacy_credentials", path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module

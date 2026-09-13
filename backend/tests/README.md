@@ -1,25 +1,29 @@
 # Backend tests
 
 pytest suite for the portfolio API. DynamoDB and Secrets Manager are provided
-by moto, so the suite runs anywhere with Python 3.13 and `requirements-dev.txt`
-installed.
+by moto, so the suite runs anywhere with Python 3.13 and `uv sync` run.
 
 ```
 tests/
 ├── conftest.py                 moto tables, TestClient, fixture data
-├── test_app.py                 root, health, trailing slashes, CORS
-├── test_auth_api.py            login and token flows
-├── test_auth_hardening.py      expired/tampered tokens, seeding, login limiter
-├── test_core_security.py       hashing and JWT unit tests
 ├── fixtures/                   route_contract.json: the 44 routes and 42
 │                               documented operations the API publishes
+├── entrypoints/                per-entrypoint route split and wiring
+├── domains/                    one directory per deployed domain, each named
+│   │                           for its app/entrypoints/<name>.py module
+│   ├── content/                posts, site content
+│   ├── identity/               auth, tokens, hashing, seeding, migrations
+│   ├── public/                 sitemap and robots
+│   └── resume/                 projects, experience, skills, education,
+│                               certifications
+├── test_app.py                 root, health, trailing slashes, CORS
 ├── test_migration.py           Postgres -> DynamoDB migration script
 ├── test_repository.py          serializer, repository, ordering
-├── test_settings.py            env and Secrets Manager configuration
-├── test_seo.py                 sitemap and robots
-└── test_*_api.py               posts, projects, experience, skills, education,
-                                certifications, site content
+└── test_settings.py            env and Secrets Manager configuration
 ```
+
+CI derives its per-domain jobs from the `tests/domains` subdirectory names, so
+adding a domain means adding a directory, not editing a list.
 
 ## How the fixtures work
 
@@ -43,10 +47,12 @@ repositories and return plain dicts, so tests read `test_post["slug"]`. The
 ## Running
 
 ```bash
-venv/bin/python -m pytest
-venv/bin/python -m pytest -m "api and not slow"
-venv/bin/python -m pytest tests/test_auth_hardening.py -k limiter
-venv/bin/python -m pytest --no-cov -q
+uv run python -m pytest
+uv run python -m pytest -m "api and not slow"
+uv run python -m pytest tests/domains/identity/test_auth_hardening.py -k limiter
+uv run python -m pytest tests/domains/content
+uv run python -m pytest tests --ignore=tests/domains
+uv run python -m pytest --no-cov -q
 ```
 
 Coverage is on by default (`pytest.ini`); reports go to the terminal,

@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from app.composition.identity_hooks import PortfolioIdentityHooks
 from app.db import entities
 
-from .routes import all_paths, paths_for_method
+from ...routes import all_paths, paths_for_method
 from .test_identity_m1 import AUDIENCE, ISSUER, KEY_ARN, FakeKms
 
 EMAIL_PATHS = (

@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 
-from .routes import all_paths, paths_for_method
+from ...routes import all_paths, paths_for_method
 from .test_identity_m1 import AUDIENCE, ISSUER, KEY_ARN, FakeKms
 
 PASSKEY_MANAGEMENT_POST_PATHS = (
