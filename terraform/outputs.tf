@@ -92,3 +92,18 @@ output "domain_lambda_log_group_names" {
   description = "CloudWatch log group name keyed by domain, read by the error metric filters and by responders"
   value       = { for name, fn in module.lambda_domain : name => fn.log_group_name }
 }
+
+output "e2e_gate_signing_key_ssm_parameter_name" {
+  description = "SSM SecureString holding the gate's CloudFront cookie signing key, set as the E2E_GATE_SIGNING_KEY_SSM_PARAMETER environment variable. Null when the gate is off"
+  value       = one(module.staging_access_gate[*].signing_key_ssm_parameter_name)
+}
+
+output "e2e_gate_key_pair_id" {
+  description = "CloudFront public key id the gate trusts, set as the E2E_GATE_KEY_PAIR_ID environment variable. Null when the gate is off"
+  value       = one(module.staging_access_gate[*].signing_key_pair_id)
+}
+
+output "e2e_gate_cookie_domain" {
+  description = "Domain the gate's signed cookies are scoped to, set as the E2E_GATE_COOKIE_DOMAIN environment variable. Null when the gate is off"
+  value       = one(module.staging_access_gate[*].cookie_domain)
+}
