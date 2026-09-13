@@ -4,8 +4,9 @@ import json
 
 import boto3
 import pytest
+from webbpulse.security import app_secrets as read_app_secrets
+from webbpulse.security import reset_secret_cache
 
-from app import secrets as app_secrets
 from app.config import Settings
 
 FULL_PAYLOAD = {
@@ -28,9 +29,9 @@ def create_app_secret(name, payload):
 @pytest.fixture(autouse=True)
 def clear_secrets_cache():
     """The reader caches per execution environment; each test starts empty."""
-    app_secrets.reset_cache()
+    reset_secret_cache()
     yield
-    app_secrets.reset_cache()
+    reset_secret_cache()
 
 
 @pytest.fixture
@@ -135,7 +136,7 @@ def test_non_object_payload_is_rejected():
     """A payload that is not a JSON object is rejected."""
     arn = create_app_secret("webbpulse-list/app", json.dumps(["not", "a", "dict"]))
     with pytest.raises(ValueError):
-        app_secrets.load_app_secrets(arn)
+        read_app_secrets(arn)
 
 
 @pytest.mark.unit
@@ -143,7 +144,7 @@ def test_invalid_json_payload_is_rejected():
     """A payload that is not JSON at all is rejected."""
     arn = create_app_secret("webbpulse-garbage/app", "not json at all")
     with pytest.raises(ValueError):
-        app_secrets.load_app_secrets(arn)
+        read_app_secrets(arn)
 
 
 @pytest.mark.unit
@@ -153,22 +154,22 @@ def test_non_string_values_are_json_encoded_and_nulls_dropped():
         "webbpulse-types/app",
         {"SECRET_KEY": "x", "ADMIN_EMAIL": None, "RETRIES": 3},
     )
-    assert app_secrets.load_app_secrets(arn) == {"SECRET_KEY": "x", "RETRIES": "3"}
+    assert read_app_secrets(arn) == {"SECRET_KEY": "x", "RETRIES": "3"}
 
 
 @pytest.mark.unit
 def test_values_are_cached_per_execution_environment():
     """A rotated secret is only seen after the cache is reset."""
     arn = create_app_secret("webbpulse-cached/app", {"SECRET_KEY": "first"})
-    assert app_secrets.load_app_secrets(arn)["SECRET_KEY"] == "first"
+    assert read_app_secrets(arn)["SECRET_KEY"] == "first"
 
     boto3.client("secretsmanager", region_name="us-west-2").put_secret_value(
         SecretId=arn, SecretString=json.dumps({"SECRET_KEY": "second"})
     )
-    assert app_secrets.load_app_secrets(arn)["SECRET_KEY"] == "first"
+    assert read_app_secrets(arn)["SECRET_KEY"] == "first"
 
-    app_secrets.reset_cache()
-    assert app_secrets.load_app_secrets(arn)["SECRET_KEY"] == "second"
+    reset_secret_cache()
+    assert read_app_secrets(arn)["SECRET_KEY"] == "second"
 
 
 @pytest.mark.unit
