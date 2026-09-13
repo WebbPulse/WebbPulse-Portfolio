@@ -52,6 +52,17 @@ npm run lint
 npm run test:run
 ```
 
+### Shared package versions
+
+The shared `webbpulse` Python distribution and the `@webbpulse/*` npm packages
+float to the newest compatible release at build time rather than sitting on an
+exact pin. The version recorded in `backend/requirements.txt` and
+`frontend/package.json` is a floor, the minimum the code needs, with the major
+bound as the ceiling. An exact pin is the explicit exception, used only to hold
+a known good version while something is investigated. Every build log prints the
+versions it resolved, so the image and the bundle each say what they were built
+against.
+
 ## Architecture
 
 Four FastAPI apps, one per domain (`content`, `resume`, `identity`, `public`),

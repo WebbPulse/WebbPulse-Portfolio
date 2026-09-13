@@ -66,6 +66,7 @@ jobs:
       build-args: |
         DOMAIN=${{ matrix.domain }}
         READINESS_PROTOCOL=${{ matrix.domain == 'public' && 'tcp' || 'http' }}
+        DEPENDENCY_RESOLUTION=${{ github.run_id }}
       codeartifact-domain: webbpulse
       codeartifact-domain-owner: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
       codeartifact-repository: python
