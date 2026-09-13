@@ -184,7 +184,7 @@ export const BlogList: React.FC = () => {
             <p className="text-center text-surface-400">
               {selectedCategory
                 ? 'No posts in this category yet.'
-                : 'No posts yet — check back soon.'}
+                : 'No posts yet. Check back soon.'}
             </p>
           )}
           {!loading && !error && published.length > 0 && (
