@@ -2,16 +2,19 @@
 
 import json
 import logging
+import time
 from datetime import timedelta
 
 import boto3
 import pytest
 from fastapi import Request
 from fastapi.testclient import TestClient
+from webbpulse.http import REQUEST_CONTEXT_HEADER
+from webbpulse.ratelimit import RateLimiter
 
 from app.config import settings
 from app.core import login_limiter as limiter_module
-from app.core.login_limiter import REQUEST_CONTEXT_HEADER, client_ip
+from app.core.login_limiter import client_ip
 from app.core.security import create_access_token, get_password_hash, verify_password
 from app.db import client as db_client
 from app.db import entities
@@ -25,6 +28,29 @@ from tests.envelope import error_message
 
 LOGIN = "/api/v1/admin/login"
 PROTECTED = "/api/v1/posts/admin"
+
+
+def build_limiter():
+    """A limiter matching the product's, with a three failure cap over a minute."""
+    return RateLimiter(
+        logical_name=RATE_LIMITS,
+        namespace=limiter_module.LOGIN_NAMESPACE,
+        anchor="first_request",
+        count_attribute="failures",
+        prefix=settings.DYNAMODB_TABLE_PREFIX,
+        endpoint_url=settings.DYNAMODB_ENDPOINT_URL,
+    )
+
+
+def limiter_key(ip):
+    """The partition key the limiter writes an IP's counter under."""
+    return {"pk": f"{limiter_module.LOGIN_NAMESPACE}#{ip}"}
+
+
+def count_failure(limiter, ip, now=None):
+    """Count one failure against `ip` and return the running total."""
+    decision = limiter.check(ip, limit=3, window_seconds=60, now=now)
+    return decision.limit - decision.remaining
 
 
 def request_context_headers(ip, payload_format="2.0"):
@@ -167,34 +193,30 @@ class TestLoginLimiter:
         for _ in range(settings.LOGIN_MAX_FAILURES):
             attempt(client, ip="10.0.0.1")
         assert attempt(client, "adminpassword123", ip="10.0.0.1").status_code == 429
-        real_now = limiter_module.now()
-        monkeypatch.setattr(
-            limiter_module,
-            "now",
-            lambda: real_now + settings.LOGIN_FAILURE_WINDOW_SECONDS + 1,
-        )
+        later = time.time() + settings.LOGIN_FAILURE_WINDOW_SECONDS + 1
+        monkeypatch.setattr(time, "time", lambda: later)
         assert attempt(client, "adminpassword123", ip="10.0.0.1").status_code == 200
 
     @pytest.mark.auth
     def test_failures_accumulate_atomically(self, aws_tables):
         """Failures count up per key and stay separate between keys."""
-        limiter = limiter_module.LoginLimiter(3, 60)
-        assert limiter.record_failure("10.0.0.9") == 1
-        assert limiter.record_failure("10.0.0.9") == 2
-        assert limiter.record_failure("10.0.0.9") == 3
-        assert limiter.retry_after("10.0.0.9") >= 1
-        assert limiter.record_failure("10.0.0.8") == 1
+        limiter = build_limiter()
+        assert count_failure(limiter, "10.0.0.9") == 1
+        assert count_failure(limiter, "10.0.0.9") == 2
+        assert count_failure(limiter, "10.0.0.9") == 3
+        assert limiter.check("10.0.0.9", limit=3, window_seconds=60).reset_after >= 1
+        assert count_failure(limiter, "10.0.0.8") == 1
 
     @pytest.mark.auth
-    def test_expired_window_restarts_count(self, aws_tables, monkeypatch):
+    def test_expired_window_restarts_count(self, aws_tables):
         """A failure after the window restarts the count at one."""
-        limiter = limiter_module.LoginLimiter(3, 60)
-        limiter.record_failure("10.0.0.9")
-        limiter.record_failure("10.0.0.9")
-        real_now = limiter_module.now()
-        monkeypatch.setattr(limiter_module, "now", lambda: real_now + 61)
-        assert limiter.record_failure("10.0.0.9") == 1
-        assert limiter.retry_after("10.0.0.9") is None
+        limiter = build_limiter()
+        start = time.time()
+        count_failure(limiter, "10.0.0.9", now=start)
+        count_failure(limiter, "10.0.0.9", now=start)
+        decision = limiter.check("10.0.0.9", limit=3, window_seconds=60, now=start + 61)
+        assert decision.allowed
+        assert decision.remaining == 2
 
     @pytest.mark.auth
     def test_unknown_usernames_count_as_failures(self, client: TestClient):
@@ -343,69 +365,65 @@ class TestLimiterTable:
     @pytest.mark.auth
     def test_items_are_written_to_the_rate_limits_table(self, aws_tables):
         """The failure counter lands in the rate-limits table."""
-        limiter = limiter_module.LoginLimiter(3, 60)
-        limiter.record_failure("10.0.0.7")
+        count_failure(build_limiter(), "10.0.0.7")
 
         table = db_client.table(RATE_LIMITS)
-        item = table.get_item(Key=limiter.key("10.0.0.7")).get("Item")
+        item = table.get_item(Key=limiter_key("10.0.0.7")).get("Item")
         assert item is not None, "the counter must land in the rate-limits table"
         assert int(item["failures"]) == 1
 
     @pytest.mark.auth
     def test_the_ttl_attribute_matches_the_shared_package(self, aws_tables):
         """`webbpulse.ratelimit` names it `expires_at`, not the `ttl` meta uses."""
-        limiter = limiter_module.LoginLimiter(3, 60)
-        limiter.record_failure("10.0.0.7")
+        count_failure(build_limiter(), "10.0.0.7")
 
-        item = db_client.table(RATE_LIMITS).get_item(Key=limiter.key("10.0.0.7"))["Item"]
+        item = db_client.table(RATE_LIMITS).get_item(Key=limiter_key("10.0.0.7"))["Item"]
         assert RATE_LIMIT_TTL_ATTRIBUTE in item
         assert "ttl" not in item
 
     @pytest.mark.auth
     def test_nothing_is_written_to_meta(self, aws_tables):
         """The limiter writes nothing to the meta table."""
-        limiter = limiter_module.LoginLimiter(3, 60)
-        limiter.record_failure("10.0.0.7")
+        count_failure(build_limiter(), "10.0.0.7")
 
         meta = db_client.table(META)
-        assert meta.get_item(Key=limiter.key("10.0.0.7")).get("Item") is None
+        assert meta.get_item(Key=limiter_key("10.0.0.7")).get("Item") is None
 
 
 class TestLimiterFailsOpen:
-    """The `rate-limits` table does not exist until PR 9 creates it."""
+    """A limiter that cannot reach its table must never lock a caller out."""
 
     @staticmethod
-    def missing_table_limiter(monkeypatch):
-        """A limiter pointed at a table that does not exist."""
-        limiter = limiter_module.LoginLimiter(3, 60)
+    def point_at_a_missing_table(monkeypatch):
+        """Point every limiter at a table that does not exist."""
         resource = boto3.resource("dynamodb", region_name="us-west-2")
         absent = resource.Table("webbpulse-test-does-not-exist")
-        monkeypatch.setattr(type(limiter), "table", property(lambda self: absent), raising=False)
-        return limiter
+        monkeypatch.setattr(RateLimiter, "table", property(lambda self: absent))
 
     @pytest.mark.auth
     def test_record_failure_allows_the_request(self, aws_tables, monkeypatch):
-        """An unparseable context header falls back to the peer address."""
-        limiter = self.missing_table_limiter(monkeypatch)
-        assert limiter.record_failure("10.0.0.6") == 0
+        """A failure that cannot be counted reports no lockout."""
+        self.point_at_a_missing_table(monkeypatch)
+        assert limiter_module.record_failure("10.0.0.6") is None
 
     @pytest.mark.auth
     def test_retry_after_reports_no_lockout(self, aws_tables, monkeypatch):
         """With the table missing, no lockout is reported."""
-        limiter = self.missing_table_limiter(monkeypatch)
-        assert limiter.retry_after("10.0.0.6") is None
+        self.point_at_a_missing_table(monkeypatch)
+        assert limiter_module.retry_after("10.0.0.6") is None
 
     @pytest.mark.auth
     def test_clear_does_not_raise(self, aws_tables, monkeypatch):
         """With the table missing, clearing a key is a no-op rather than an error."""
-        limiter = self.missing_table_limiter(monkeypatch)
-        limiter.clear("10.0.0.6")
+        self.point_at_a_missing_table(monkeypatch)
+        limiter_module.clear("10.0.0.6")
 
     @pytest.mark.auth
     def test_the_failure_is_logged_as_failed_open(self, aws_tables, monkeypatch, caplog):
         """The WARNING is the compensating control; an alarm watches for it."""
+        self.point_at_a_missing_table(monkeypatch)
         with caplog.at_level(logging.WARNING):
-            self.missing_table_limiter(monkeypatch).record_failure("10.0.0.6")
+            limiter_module.record_failure("10.0.0.6")
 
         assert caplog.records, "a fail-open must not be silent"
         record = caplog.records[0]
@@ -414,14 +432,8 @@ class TestLimiterFailsOpen:
 
     @pytest.mark.auth
     def test_login_still_answers_401_with_the_table_missing(self, client: TestClient, test_admin_user, monkeypatch):
-        """With the table missing, clearing a key is a no-op rather than an error."""
-        resource = boto3.resource("dynamodb", region_name="us-west-2")
-        absent = resource.Table("webbpulse-test-does-not-exist")
-        monkeypatch.setattr(
-            limiter_module.LoginLimiter,
-            "table",
-            property(lambda self: absent),
-        )
+        """A broken limiter leaves login answering 401, never 429."""
+        self.point_at_a_missing_table(monkeypatch)
         for _ in range(settings.LOGIN_MAX_FAILURES + 2):
             assert attempt(client, ip="10.0.0.5").status_code == 401, "a broken limiter must never lock anyone out"
         assert attempt(client, "adminpassword123", ip="10.0.0.5").status_code == 200

@@ -7,11 +7,12 @@ from typing import Any
 
 import pytest
 from fastapi import FastAPI
+from webbpulse.testing import FakeKms
 
 from app.composition.identity_hooks import PortfolioIdentityHooks
 
 from ...routes import paths_for_method, served_routes
-from .test_identity_m1 import AUDIENCE, ISSUER, KEY_ARN, FakeKms
+from .test_identity_m1 import AUDIENCE, ISSUER, KEY_ARN
 
 MFA_PATHS = (
     "/api/auth/login/totp",
@@ -235,15 +236,6 @@ def test_the_hooks_still_satisfy_the_packages_protocol() -> None:
     assert isinstance(PortfolioIdentityHooks(), IdentityHooks)
 
 
-@pytest.fixture(scope="module")
-def private_key() -> Any:
-    """One 2048-bit key for the module, for the reason M2's copy gives: a module
-    scoped fixture does not cross files."""
-    from cryptography.hazmat.primitives.asymmetric import rsa
-
-    return rsa.generate_private_key(public_exponent=65537, key_size=2048)
-
-
 def _identity_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """The `IDENTITY_*` variables `terraform/lambda_domains.tf` sets."""
     monkeypatch.setenv("IDENTITY_ENVIRONMENT", "staging")
@@ -255,7 +247,7 @@ def _identity_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def identity_app(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
+def identity_app(rsa_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     """The identity router as the composition root builds it, with the envelope key
     set as the module sets it.
     """
@@ -267,7 +259,7 @@ def identity_app(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     _identity_environment(monkeypatch)
     monkeypatch.setenv("IDENTITY_DATA_KEY_ARN", DATA_KEY_ARN)
 
-    fake = FakeKms(private_key)
+    fake = FakeKms(rsa_key)
     monkeypatch.setattr(boto3, "client", lambda service, *a, **kw: fake)
 
     app = FastAPI()
@@ -345,7 +337,7 @@ def test_the_documents_still_answer_with_the_mfa_routes_mounted(
     assert client.get("/api/auth/.well-known/jwks.json").status_code == 200
 
 
-def test_the_routes_do_not_mount_without_the_factor_store(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_routes_do_not_mount_without_the_factor_store(rsa_key: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     """The other side of the switch, asserted against the package directly."""
     import boto3
     import webbpulse.identity as package
@@ -356,7 +348,7 @@ def test_the_routes_do_not_mount_without_the_factor_store(private_key: Any, monk
     _identity_environment(monkeypatch)
     monkeypatch.setenv("IDENTITY_DATA_KEY_ARN", DATA_KEY_ARN)
 
-    fake = FakeKms(private_key)
+    fake = FakeKms(rsa_key)
     monkeypatch.setattr(boto3, "client", lambda service, *a, **kw: fake)
 
     captured: dict[str, Any] = {}
@@ -413,7 +405,7 @@ class _EnvelopeKms:
         return {"Plaintext": plaintext}
 
 
-def _enrolled_app(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> tuple[Any, ...]:
+def _enrolled_app(rsa_key: Any, monkeypatch: pytest.MonkeyPatch) -> tuple[Any, ...]:
     """An identity app with one enrolled user, plus the pieces to drive it.
 
     Returns `(app, mfa_service, user_id, access_token, recovery_codes)`.
@@ -435,7 +427,7 @@ def _enrolled_app(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> tuple[An
     _identity_environment(monkeypatch)
     monkeypatch.setenv("IDENTITY_DATA_KEY_ARN", DATA_KEY_ARN)
 
-    fake = _EnvelopeKms(FakeKms(private_key))
+    fake = _EnvelopeKms(FakeKms(rsa_key))
     monkeypatch.setattr(boto3, "client", lambda service, *a, **kw: fake)
 
     user_id = "user-under-test"
@@ -505,12 +497,12 @@ def _auth(token: str) -> dict[str, str]:
 @pytest.mark.parametrize("path", ["/api/auth/totp/disable", "/api/auth/recovery-codes"])
 @pytest.mark.parametrize("body", [{}, {"code": ""}, {"code": "   "}, {"code": 123}])
 def test_a_missing_or_blank_code_is_a_422_on_both_routes(
-    private_key: Any, monkeypatch: pytest.MonkeyPatch, path: str, body: Any
+    rsa_key: Any, monkeypatch: pytest.MonkeyPatch, path: str, body: Any
 ) -> None:
     """The old 0.12.1 call shape, and the near misses, all rejected as validation."""
     from fastapi.testclient import TestClient
 
-    app, _mfa, _uid, access, _codes, _secret = _enrolled_app(private_key, monkeypatch)
+    app, _mfa, _uid, access, _codes, _secret = _enrolled_app(rsa_key, monkeypatch)
 
     response = TestClient(app).post(path, json=body, headers=_auth(access))
 
@@ -520,12 +512,12 @@ def test_a_missing_or_blank_code_is_a_422_on_both_routes(
 
 @pytest.mark.parametrize("path", ["/api/auth/totp/disable", "/api/auth/recovery-codes"])
 def test_a_wrong_code_is_a_401_invalid_mfa_code_on_both_routes(
-    private_key: Any, monkeypatch: pytest.MonkeyPatch, path: str
+    rsa_key: Any, monkeypatch: pytest.MonkeyPatch, path: str
 ) -> None:
     """A well formed code that is not the user's, refused in the shared envelope."""
     from fastapi.testclient import TestClient
 
-    app, _mfa, _uid, access, _codes, _secret = _enrolled_app(private_key, monkeypatch)
+    app, _mfa, _uid, access, _codes, _secret = _enrolled_app(rsa_key, monkeypatch)
 
     response = TestClient(app).post(path, json={"code": "000000"}, headers=_auth(access))
 
@@ -533,11 +525,11 @@ def test_a_wrong_code_is_a_401_invalid_mfa_code_on_both_routes(
     assert response.json()["error_code"] == "INVALID_MFA_CODE"
 
 
-def test_a_refused_disable_leaves_the_factor_active(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_refused_disable_leaves_the_factor_active(rsa_key: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verification happens before anything is deleted."""
     from fastapi.testclient import TestClient
 
-    app, mfa, user_id, access, _codes, _secret = _enrolled_app(private_key, monkeypatch)
+    app, mfa, user_id, access, _codes, _secret = _enrolled_app(rsa_key, monkeypatch)
 
     refused = TestClient(app).post("/api/auth/totp/disable", json={"code": "000000"}, headers=_auth(access))
 
@@ -545,11 +537,11 @@ def test_a_refused_disable_leaves_the_factor_active(private_key: Any, monkeypatc
     assert mfa.factors_for(user_id) == ["totp"]
 
 
-def test_a_recovery_code_disables_the_factor_and_is_spent(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_recovery_code_disables_the_factor_and_is_spent(rsa_key: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     """A recovery code is accepted where a TOTP code is, and is consumed by the use."""
     from fastapi.testclient import TestClient
 
-    app, mfa, user_id, access, codes, _secret = _enrolled_app(private_key, monkeypatch)
+    app, mfa, user_id, access, codes, _secret = _enrolled_app(rsa_key, monkeypatch)
 
     before = mfa.remaining_recovery_codes(user_id)
 
@@ -561,12 +553,12 @@ def test_a_recovery_code_disables_the_factor_and_is_spent(private_key: Any, monk
     assert mfa.remaining_recovery_codes(user_id) < before
 
 
-def test_a_current_totp_code_regenerates_the_recovery_codes(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_current_totp_code_regenerates_the_recovery_codes(rsa_key: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     """The success path of the second route, with a real code from the real seed."""
     from fastapi.testclient import TestClient
     from webbpulse.identity.totp import current_step, generate_code
 
-    app, mfa, user_id, access, codes, secret = _enrolled_app(private_key, monkeypatch)
+    app, mfa, user_id, access, codes, secret = _enrolled_app(rsa_key, monkeypatch)
 
     code = generate_code(secret, step=current_step() + 1)
     response = TestClient(app).post("/api/auth/recovery-codes", json={"code": code}, headers=_auth(access))
@@ -578,15 +570,13 @@ def test_a_current_totp_code_regenerates_the_recovery_codes(private_key: Any, mo
     assert mfa.factors_for(user_id) == ["totp"], "regenerating is not disabling"
 
 
-def test_a_refused_regenerate_leaves_the_existing_codes_working(
-    private_key: Any, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_refused_regenerate_leaves_the_existing_codes_working(rsa_key: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     """Regenerating deletes the old set before writing the new one, so the order of
     the check against that delete is what this pins.
     """
     from fastapi.testclient import TestClient
 
-    app, mfa, user_id, access, codes, _secret = _enrolled_app(private_key, monkeypatch)
+    app, mfa, user_id, access, codes, _secret = _enrolled_app(rsa_key, monkeypatch)
 
     refused = TestClient(app).post("/api/auth/recovery-codes", json={"code": "000000"}, headers=_auth(access))
 
@@ -596,12 +586,12 @@ def test_a_refused_regenerate_leaves_the_existing_codes_working(
 
 @pytest.mark.parametrize("path", ["/api/auth/totp/disable", "/api/auth/recovery-codes"])
 def test_the_code_does_not_substitute_for_the_bearer_token(
-    private_key: Any, monkeypatch: pytest.MonkeyPatch, path: str
+    rsa_key: Any, monkeypatch: pytest.MonkeyPatch, path: str
 ) -> None:
     """0.13.0 adds a requirement, it does not swap one for another."""
     from fastapi.testclient import TestClient
 
-    app, _mfa, _uid, _access, codes, _secret = _enrolled_app(private_key, monkeypatch)
+    app, _mfa, _uid, _access, codes, _secret = _enrolled_app(rsa_key, monkeypatch)
 
     response = TestClient(app).post(path, json={"code": codes[0]})
 
@@ -626,11 +616,9 @@ def _limit_namespaces(app: FastAPI, path: str) -> set[str]:
     raise AssertionError(f"{path} did not mount")
 
 
-def test_both_destructive_routes_carry_the_mfa_verify_rate_limit(
-    private_key: Any, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_both_destructive_routes_carry_the_mfa_verify_rate_limit(rsa_key: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     """The same `mfa-verify` bound `login/totp` has, added to both by 0.13.0."""
-    app, _mfa, _uid, _access, _codes, _secret = _enrolled_app(private_key, monkeypatch)
+    app, _mfa, _uid, _access, _codes, _secret = _enrolled_app(rsa_key, monkeypatch)
 
     expected = _limit_namespaces(app, "/api/auth/login/totp")
     assert "mfa-verify" in expected

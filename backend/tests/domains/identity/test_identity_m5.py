@@ -7,9 +7,10 @@ from typing import Any
 
 import pytest
 from fastapi import FastAPI
+from webbpulse.testing import FakeKms
 
 from ...routes import all_paths, paths_for_method
-from .test_identity_m1 import AUDIENCE, ISSUER, KEY_ARN, FakeKms
+from .test_identity_m1 import AUDIENCE, ISSUER, KEY_ARN
 
 PASSKEY_MANAGEMENT_POST_PATHS = (
     "/api/auth/passkeys/register/options",
@@ -326,9 +327,7 @@ def test_the_mounted_paths_are_the_packages_own_constants(
     assert expected <= _all_paths(identity_app_passkeys_on)
 
 
-def test_passwordless_off_is_what_the_enabled_app_still_ships(
-    monkeypatch: pytest.MonkeyPatch, private_key: Any
-) -> None:
+def test_passwordless_off_is_what_the_enabled_app_still_ships(monkeypatch: pytest.MonkeyPatch, rsa_key: Any) -> None:
     """Turning passkeys on does not turn passwordless on with it."""
     from webbpulse.identity import IdentitySettings
 
@@ -475,16 +474,7 @@ def _identity_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("IDENTITY_GITHUB_CLIENT_ID", raising=False)
 
 
-@pytest.fixture(scope="module")
-def private_key() -> Any:
-    """One 2048-bit key for the module, for the reason M2's copy gives: a module
-    scoped fixture does not cross files."""
-    from cryptography.hazmat.primitives.asymmetric import rsa
-
-    return rsa.generate_private_key(public_exponent=65537, key_size=2048)
-
-
-def _build_identity_app(monkeypatch: pytest.MonkeyPatch, private_key: Any, *, enabled: bool) -> FastAPI:
+def _build_identity_app(monkeypatch: pytest.MonkeyPatch, rsa_key: Any, *, enabled: bool) -> FastAPI:
     """The identity router as the composition root builds it, at this flag value."""
     import boto3
 
@@ -494,7 +484,7 @@ def _build_identity_app(monkeypatch: pytest.MonkeyPatch, private_key: Any, *, en
     _identity_environment(monkeypatch)
     monkeypatch.setenv("IDENTITY_PASSKEYS_ENABLED", "true" if enabled else "false")
 
-    fake = FakeKms(private_key)
+    fake = FakeKms(rsa_key)
     monkeypatch.setattr(boto3, "client", lambda service, *a, **kw: fake)
 
     app = FastAPI()
@@ -503,15 +493,15 @@ def _build_identity_app(monkeypatch: pytest.MonkeyPatch, private_key: Any, *, en
 
 
 @pytest.fixture
-def identity_app_passkeys_off(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
+def identity_app_passkeys_off(rsa_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     """The router exactly as staging and production serve it today."""
-    return _build_identity_app(monkeypatch, private_key, enabled=False)
+    return _build_identity_app(monkeypatch, rsa_key, enabled=False)
 
 
 @pytest.fixture
-def identity_app_passkeys_on(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
+def identity_app_passkeys_on(rsa_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     """The router once the owner flips the one variable, after the frontend lands."""
-    return _build_identity_app(monkeypatch, private_key, enabled=True)
+    return _build_identity_app(monkeypatch, rsa_key, enabled=True)
 
 
 def _paths_for_method(app: FastAPI, method: str) -> set[str]:

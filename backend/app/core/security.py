@@ -10,6 +10,7 @@ from typing import Optional
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from webbpulse.http import user_id_dependency
+from webbpulse.identity.claims import identity_subject
 from webbpulse.log_context import set_span_context_attributes
 from webbpulse.security import (
     TokenError,
@@ -23,7 +24,6 @@ from webbpulse.security import (
 
 from ..config import settings
 from ..db.entities import users
-from .identity_claims import identity_subject
 from .logging import logger
 
 
