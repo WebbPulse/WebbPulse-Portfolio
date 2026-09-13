@@ -65,12 +65,6 @@ locals {
   )
 }
 
-variable "wire_users_stream" {
-  description = "Whether to create the users table stream event source mapping and its grant. False on the apply that enables the table's stream, because the stream ARN is unknown until that apply finishes and an unknown value cannot decide a count. Set it true on a later apply, once the stream exists and the deployed identity package is 0.28.0 or later."
-  type        = bool
-  default     = false
-}
-
 variable "identity_rp_name" {
   description = "WebAuthn Relying Party display name shown during a passkey ceremony. A display string only, safe to change at any time."
   type        = string
@@ -95,7 +89,8 @@ module "identity" {
   identity_role_name = module.lambda_domain["identity"].role_id
   identity_role_arn  = module.lambda_domain["identity"].role_arn
 
-  users_table_stream_arn = var.wire_users_stream ? module.dynamodb.stream_arns["users"] : null
+  users_stream_enabled   = true
+  users_table_stream_arn = module.dynamodb.stream_arns["users"]
   identity_function_name = module.lambda_domain["identity"].function_name
   users_key_attribute    = "id"
 

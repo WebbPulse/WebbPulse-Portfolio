@@ -15,11 +15,14 @@ ARG CODEARTIFACT_DOMAIN_OWNER=432410731887
 ARG CODEARTIFACT_REPOSITORY=python
 ARG AWS_REGION=us-west-2
 
+ARG DEPENDENCY_RESOLUTION=local
+
 RUN --mount=type=secret,id=codeartifact_token,required=true \
     set -eu; \
     token="$(cat /run/secrets/codeartifact_token)"; \
     PIP_INDEX_URL="https://aws:${token}@${CODEARTIFACT_DOMAIN}-${CODEARTIFACT_DOMAIN_OWNER}.d.codeartifact.${AWS_REGION}.amazonaws.com/pypi/${CODEARTIFACT_REPOSITORY}/simple/" \
-    pip install --no-cache-dir --target /deps -r requirements.txt
+    pip install --no-cache-dir --target /deps -r requirements.txt; \
+    PYTHONPATH=/deps python -c "import importlib.metadata as m; print('webbpulse', m.version('webbpulse'))"
 
 RUN find /deps -type d -name "__pycache__" -prune -exec rm -rf {} + \
     && find /deps -type f \( -name "*.pyc" -o -name "*.pyo" \) -delete
