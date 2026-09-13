@@ -9,7 +9,7 @@ import {
   apiService,
   identityOriginFrom,
 } from '../../services/api';
-import { useOAuthProviders } from '../../hooks/useOAuthProviders';
+import { useOAuthProviders } from '@webbpulse/discovery/react';
 import {
   useAdminSession,
   type AdminSession,
@@ -217,10 +217,10 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
    *
    * Passed to the Security tab so Connect buttons appear only for real providers.
    */
-  const oauthProviders = useOAuthProviders(
-    identityClient,
-    identityOriginFrom(API_BASE_URL)
-  );
+  const oauthProviders = useOAuthProviders({
+    identityOrigin: identityOriginFrom(API_BASE_URL),
+    enabled: typeof identityClient.oauthStartUrl === 'function',
+  });
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [showProjectForm, setShowProjectForm] = useState(false);
