@@ -69,35 +69,36 @@ There is no `.env` file and no Terraform input for it.
 | Variable            | Meaning                                                                                               |
 | ------------------- | ----------------------------------------------------------------------------------------------------- |
 | `VITE_API_BASE_URL` | API base. Set from the environment's `API_BASE_URL`; falls back to `https://api.webbpulse.com/api/v1` |
-| `VITE_AUTH_MODE`    | `bearer` or `identity`. Absent means `bearer`                                                         |
 
 In local dev Vite proxies `/api/*` to `http://localhost:8000`, so neither needs
 setting.
 
 ## Auth
 
-Both mechanisms are written and tested, and `src/services/authMode.ts` selects
-one at build time from `VITE_AUTH_MODE`.
+Auth is `AuthClient` from `@webbpulse/auth`: an in-memory access token, an
+httpOnly refresh cookie, and one retry on a 401. There is no build time switch
+and no second mechanism to select.
 
-| Mode       | What it does                                                                                                       |
-| ---------- | ------------------------------------------------------------------------------------------------------------------ |
-| `bearer`   | `POST /api/v1/admin/login` returns a token held in `localStorage` by `src/services/bearerTokenStore.ts`            |
-| `identity` | `AuthClient` from `@webbpulse/auth`: an in-memory access token, an httpOnly refresh cookie, and one retry on a 401 |
-
-**Both environments run on `identity`.** Staging flipped 2026-09-11 02:25Z,
+**Both environments run on identity.** Staging flipped 2026-09-11 02:25Z,
 production the same day at 07:18Z. The gateway enforces identity JWTs on the 24
-`/api/v1` admin route keys, so a bundle built in `bearer` mode cannot make admin
-writes against either environment.
+`/api/v1` admin route keys.
 
-> **Open defect.** `deploy-frontend.yml` no longer forwards `VITE_AUTH_MODE`
-> into the build, so the next frontend deploy would rebuild in `bearer` mode and
-> break admin writes. See `docs/identity-cutover.md`, "Open defect", before
-> triggering one.
+The mode used to be chosen by `VITE_AUTH_MODE`, which defaulted to `bearer` when
+unset. `deploy-frontend.yml` stopped forwarding it in `ce34362`, so builds after
+that commit silently shipped a bearer bundle against JWT enforced routes. The
+switch has been removed rather than repaired: `authMode.ts` and
+`bearerTokenStore.ts` are gone, `ApiService` always builds an `AuthClient`, and
+`getAuthClient` and `getIdentityClient` never return null.
 
-The bearer branch in `src/services/api.ts`, `bearerTokenStore.ts` and
-`authMode.ts` is deleted together with the backend's legacy login, once both
-environments have run on identity long enough. Keeping it is what leaves the
-flip reversible.
+Two guards hold the line. `src/services/api.test.ts` asserts in `built auth
+mode` that sign-in goes to `/api/auth/login`, that nothing posts to
+`/admin/login`, and that no access token reaches `localStorage`. The
+`resolve-env` job in `deploy-frontend.yml` fails the deploy if `frontend/src`
+reintroduces `VITE_AUTH_MODE` or the legacy login route.
+
+The backend's `POST /api/v1/admin/login` stays mounted and unused until a later
+PR retires it with the `hashed_password` column. Until then, reverting the
+frontend to an earlier commit is still a working rollback.
 
 ## API layer
 
@@ -114,7 +115,7 @@ src/
 ├── components/   common, layout and section components
 ├── pages/        Home, Privacy, VerifyEmail, ResetPassword, NotFound
 ├── hooks/        custom React hooks
-├── services/     api.ts, authMode.ts, bearerTokenStore.ts
+├── services/     api.ts
 ├── types/        shared TypeScript types
 ├── utils/        helpers
 └── styles/       global styles

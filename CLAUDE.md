@@ -70,14 +70,17 @@ ruff format --check app tests
   `qrcode`, `tsconfig` and `eslint-config` resolve from CodeArtifact through
   `frontend/.npmrc`, all pinned to `^0.10.2`. Run `aws codeartifact login`
   before installing; see `frontend/README.md`
-- **Auth**: selected at build time by `VITE_AUTH_MODE`. Both environments run
-  `identity`: `AuthClient` from `@webbpulse/auth` holds a short-lived access
-  token in memory and refreshes it from an httpOnly cookie. The `bearer` branch
-  (`POST /api/v1/admin/login`, a token in `localStorage` via
-  `src/services/bearerTokenStore.ts`) is still mounted so the flip stays
-  reversible. **`deploy-frontend.yml` no longer forwards `VITE_AUTH_MODE`, so
-  the next frontend deploy would rebuild in bearer mode and break admin writes.
-  See `docs/identity-cutover.md` before triggering one**
+- **Auth**: identity only, with no build time switch. `AuthClient` from
+  `@webbpulse/auth` holds a short-lived access token in memory and refreshes it
+  from an httpOnly cookie, and `ApiService` always constructs one. The mode was
+  once chosen by `VITE_AUTH_MODE`, which defaulted to `bearer`; the deploy
+  stopped forwarding it in `ce34362` and silently shipped bearer bundles against
+  the 24 JWT enforced admin route keys. The switch was removed rather than
+  repaired, so `authMode.ts` and `bearerTokenStore.ts` no longer exist and
+  `getAuthClient`/`getIdentityClient` never return null. A unit test
+  (`built auth mode` in `src/services/api.test.ts`) and a `deploy-frontend.yml`
+  step both fail if `VITE_AUTH_MODE` or `POST /api/v1/admin/login` comes back.
+  The backend's legacy login route stays mounted and unused until a later PR
 - **Dev proxy**: Vite proxies `/api/*` to `http://localhost:8000` in local dev; a
   production build reads `VITE_API_BASE_URL` and falls back to
   `https://api.webbpulse.com/api/v1`
