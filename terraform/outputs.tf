@@ -48,6 +48,16 @@ output "api_gateway_url" {
   value       = module.api.api_endpoint
 }
 
+output "api_id" {
+  description = "Id of the HTTP API, set as the API_ID GitHub environment variable so the e2e suite can read the deployed route keys"
+  value       = module.api.api_id
+}
+
+output "api_access_log_group_name" {
+  description = "Name of the HTTP API access log group, set as the API_ACCESS_LOG_GROUP GitHub environment variable so the e2e suite can prove which route key served a request"
+  value       = module.api.access_log_group_name
+}
+
 output "api_custom_domain" {
   description = "Regional target hostname of the API Gateway custom domain, null when custom domains are disabled"
   value       = module.api.custom_domain_target_domain_name
