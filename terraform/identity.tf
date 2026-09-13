@@ -79,7 +79,7 @@ locals {
 
 module "identity" {
   source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/identity"
-  version = "~> 2.16"
+  version = "~> 2.17"
 
   name_prefix        = local.prefix
   issuer             = local.identity_issuer
@@ -88,6 +88,11 @@ module "identity" {
 
   identity_role_name = module.lambda_domain["identity"].role_id
   identity_role_arn  = module.lambda_domain["identity"].role_arn
+
+  users_stream_enabled   = true
+  users_table_stream_arn = module.dynamodb.stream_arns["users"]
+  identity_function_name = module.lambda_domain["identity"].function_name
+  users_key_attribute    = "id"
 
   tags = {
     Component = "identity"
