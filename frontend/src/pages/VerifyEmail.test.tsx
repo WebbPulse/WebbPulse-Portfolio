@@ -135,14 +135,4 @@ describe('VerifyEmail', () => {
     });
     expect(confirm).not.toHaveBeenCalled();
   });
-
-  it('says the flow is not enabled in bearer mode', async () => {
-    vi.spyOn(apiService, 'getIdentityClient').mockReturnValue(null);
-
-    renderAt('/verify-email?token=abc123');
-
-    await waitFor(() => {
-      expect(screen.getByText(/not enabled/i)).toBeInTheDocument();
-    });
-  });
 });

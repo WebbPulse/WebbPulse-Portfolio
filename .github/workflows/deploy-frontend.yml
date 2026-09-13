@@ -24,6 +24,25 @@ jobs:
       role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
       build-env-json: ${{ steps.pick.outputs.build-env-json }}
     steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Assert the frontend has no build time auth mode switch
+        run: |
+          set -euo pipefail
+          sources=$(find frontend/src -type f \( -name '*.ts' -o -name '*.tsx' \) ! -name '*.test.ts' ! -name '*.test.tsx')
+          if echo "$sources" | xargs grep -n "VITE_AUTH_MODE"; then
+            echo "::error::frontend/src reintroduced VITE_AUTH_MODE. Identity is the only auth mode; a build time switch is what silently shipped a bearer bundle against JWT enforced routes."
+            exit 1
+          fi
+          if echo "$sources" | xargs grep -n "'/admin/login'"; then
+            echo "::error::frontend/src posts to the legacy bearer login route. The gateway enforces identity JWTs on the admin route keys."
+            exit 1
+          fi
+          echo "No auth mode switch and no bearer login route."
+
       - name: Republish environment values as job outputs
         id: pick
         env:
