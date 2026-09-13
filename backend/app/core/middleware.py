@@ -1,12 +1,8 @@
 """ASGI middleware shared by every composition root: slash tolerance,
-first-request seeding, request logging and the serving-domain header.
+first-request seeding and the serving-domain header.
 """
 
-import time
-
 from starlette.routing import Match
-
-from .logging import logger
 
 
 class TrailingSlashMiddleware:
@@ -118,41 +114,6 @@ class SeedMiddleware:
             for name in self.seeds:
                 SEEDERS[name]()
         await self.app(scope, receive, send)
-
-
-class RequestLoggingMiddleware:
-    """Log one structured line per request with its status and duration."""
-
-    def __init__(self, app):
-        """Wrap `app`."""
-        self.app = app
-
-    async def __call__(self, scope, receive, send):
-        """Time the request and log its outcome, however it ends."""
-        if scope["type"] != "http":
-            await self.app(scope, receive, send)
-            return
-        started = time.perf_counter()
-        status = {"code": None}
-
-        async def send_wrapper(message):
-            """Capture the response status as it goes out."""
-            if message["type"] == "http.response.start":
-                status["code"] = message["status"]
-            await send(message)
-
-        try:
-            await self.app(scope, receive, send_wrapper)
-        finally:
-            logger.info(
-                "request",
-                extra={
-                    "method": scope.get("method"),
-                    "path": scope.get("path"),
-                    "status": status["code"],
-                    "duration_ms": round((time.perf_counter() - started) * 1000, 2),
-                },
-            )
 
 
 DOMAIN_HEADER = "x-webbpulse-domain"

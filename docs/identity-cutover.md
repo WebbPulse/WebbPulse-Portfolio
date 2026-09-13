@@ -1,13 +1,13 @@
 # Identity runbook
 
-The identity cutover is complete in both environments except for the two steps
-below. Identity is the only auth mode the frontend can build: the mode switch
-was removed, so there is nothing left to select. Production runs with gateway
-JWT enforcement on the 24 admin route keys. Staging runs in `gate` mode with the
-legacy column already cleared.
+The identity cutover is complete in both environments. Identity is the only auth
+mode the frontend can build: the mode switch was removed, so there is nothing
+left to select. Production runs with gateway JWT enforcement on the 24 admin
+route keys. Staging runs in `gate` mode. Both environments have cleared the
+legacy column, so the identity store is the only place a password exists.
 
-This file is the current state, the two remaining steps, and the operational
-reference for the optional identity features. The migration narrative is in
+This file is the current state and the operational reference for the optional
+identity features. The migration narrative is in
 `docs/migration/RETROSPECTIVE.md`.
 
 ## Where each environment stands
@@ -17,7 +17,7 @@ reference for the optional identity features. The migration narrative is in
 | Frontend auth mode | identity, the only mode | identity, the only mode |
 | `identity_jwt_mode` | `gate` | `native` |
 | `domain_jwt_enforced` | n/a in gate mode | `true` on the workspace |
-| Legacy `hashed_password` column | cleared | **still populated** |
+| Legacy `hashed_password` column | cleared | cleared |
 | Passkeys | derived on | derived off |
 | Passwordless | derived on | off, owner decision |
 | OAuth providers | client ids unset | client ids unset |
@@ -30,9 +30,8 @@ that enforcement is off. Read the workspace through the HCP API to confirm.
 **Rollback from either environment is fix-forward.** There is no build time
 switch back: the bearer branch, its token store and `authMode.ts` are deleted,
 so a rollback means reverting the frontend to a commit that still carried them.
-Staging has also run the column clear, so a bearer bundle there would produce a
-sign-in page nobody can get past. Production still has its legacy column until
-Step 11 runs.
+Both environments have run the column clear, so a bearer bundle in either would
+produce a sign-in page nobody can get past.
 
 ### Resolved: the build time auth mode switch is gone
 
@@ -52,8 +51,8 @@ The switch was therefore removed rather than repaired. `authMode.ts` and
 `bearerTokenStore.ts` are deleted, `ApiService` always constructs an
 `AuthClient`, and `getAuthClient` and `getIdentityClient` no longer return null.
 Identity is structural, not configured, so no GitHub Environment variable
-selects it and none can turn it off. The `AUTH_MODE` variables still present on
-both environments are inert and can be deleted at any time.
+selects it and none can turn it off. The `AUTH_MODE` variables have been deleted
+from both environments.
 
 Two guards keep it that way. `frontend/src/services/api.test.ts` asserts in
 `built auth mode` that sign-in goes to `/api/auth/login`, that nothing posts to
@@ -61,17 +60,27 @@ Two guards keep it that way. `frontend/src/services/api.test.ts` asserts in
 `resolve-env` job in `deploy-frontend.yml` fails the deploy if `frontend/src`
 reintroduces `VITE_AUTH_MODE` or the legacy login route.
 
-## Step 11. Clear the legacy column in production
+## The legacy column clear, done in both environments
 
-**Pending.** It is gated on the owner making one admin write through the
-identity path in a browser. This is the step that makes the identity store the
-only place the administrator's password exists, and it is a one-way door.
+Production ran `backend/scripts/clear_legacy_credentials.py` on 2026-09-13 and
+reported `cleared=1` for the single administrator, having confirmed the identity
+credential held the same secret first. The `hashed_password` attribute is gone
+from the production `users` row, as it already was in staging. An admin write
+through the identity path succeeded after the clear, and
+`POST /api/v1/admin/login` no longer authenticates anybody.
+
+The script is kept because it is the tool for any user row that acquires a
+legacy column again. It is a dry run unless `--apply` is passed:
 
 ```bash
 cd backend
 AWS_PROFILE=Portfolio-Production/AdministratorAccess AWS_REGION=us-west-2 \
+AWS_DEFAULT_REGION=us-west-2 \
   python scripts/clear_legacy_credentials.py --prefix webbpulse-production
 ```
+
+`AWS_DEFAULT_REGION` is needed as well as `AWS_REGION`: boto3 reads the former,
+so setting only the latter fails with `NoRegionError` before anything is read.
 
 Read the classification. `cleared` and `already_clear` are fine; `mismatch` and
 `missing_credential` are refusals that exit non-zero and want a person, because
@@ -82,39 +91,28 @@ store is correct and newer than the column, but the script will not make that
 judgement on its own. No hash is printed, in the summary, a detail line or an
 error.
 
-Then:
-
-```bash
-AWS_PROFILE=Portfolio-Production/AdministratorAccess AWS_REGION=us-west-2 \
-  python scripts/clear_legacy_credentials.py --prefix webbpulse-production --apply
-```
-
 The attribute is removed rather than blanked. The admin seeder is identity aware
 and owns the user row and the identity credential but never the legacy column,
 so a cleared column stays cleared instead of being rewritten on the next cold
 start.
 
-Sign in once more after clearing, to confirm the identity path is genuinely
-standalone.
+**Rollback is fix-forward from here.** The legacy login now verifies every
+password against a dummy hash, so it refuses everybody rather than erroring.
+Rolling back means first re-migrating in the other direction, writing each user's
+secret from the identity `credentials` table back onto the `users` row, and there
+is deliberately no script for that. The identity store is the system of record.
 
-**Rollback changes shape after this step.** Up to here, rolling back is a
-variable and a redeploy. Once the column is removed the legacy login verifies
-every password against a dummy hash, so it refuses everybody rather than
-erroring. Rolling back from there means first re-migrating in the other
-direction, writing each user's secret from the identity `credentials` table back
-onto the `users` row, and there is deliberately no script for that. The identity
-store is the system of record from this step onward.
+## Close out, done
 
-## Step 12. Close out
+- `~/prod-users-preflight.json` is deleted.
+- `_dmarc.webbpulse.com` is `p=none` with its `rua`, unchanged by the promotion.
+- The eight production CloudWatch alarms are all `OK`.
+- SES DKIM for `webbpulse.com` reached `SUCCESS` and the domain is verified for
+  sending. Sending stays sandbox-limited (200 a day, 1 per second) until an
+  owner-approved support case says otherwise.
 
-**Pending**, after Step 11.
-
-- [ ] Delete `~/prod-users-preflight.json`.
-- [ ] Confirm `dig +short TXT _dmarc.webbpulse.com` is still `p=none` with its `rua`.
-- [ ] Confirm the CloudWatch alarms are quiet.
-- [ ] Note whether SES DKIM reached `SUCCESS`, and that sending is
-      sandbox-limited until an owner-approved support case says otherwise.
-- [ ] Decide separately on `passkeys_enabled` and on leaving the SES sandbox.
+Two decisions are the owner's and are deliberately not taken here:
+`passkeys_enabled` in production, and whether to leave the SES sandbox.
 
 ## Later, in a separate PR: remove the legacy routes
 
