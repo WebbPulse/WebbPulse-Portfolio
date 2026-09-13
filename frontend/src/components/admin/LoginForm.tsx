@@ -1,6 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { PasskeySignInOutcome } from '@webbpulse/auth';
+import { usePasskeySignInSupport } from '@webbpulse/auth/react';
+import {
+  identityUrl,
+  passkeyLoginAvailability,
+  PASSKEY_AVAILABILITY_PATH,
+} from '@webbpulse/discovery';
+import { useOAuthProviders } from '@webbpulse/discovery/react';
 
 import { Button } from '../common';
 import {
@@ -10,8 +17,6 @@ import {
 } from '../../services/api';
 import { OAuthButtons } from './OAuthButtons';
 import { PasskeySignInButton } from './PasskeySignInButton';
-import { useOAuthProviders } from '../../hooks/useOAuthProviders';
-import { usePasskeySignIn } from '../../hooks/usePasskeySignIn';
 
 /**
  * The one sentence the reset request ever shows, whatever happened.
@@ -50,15 +55,27 @@ export const LoginForm: React.FC<LoginFormProps> = ({
   /** The identity client that backs sign-in, OAuth and password reset. */
   const identity = apiService.getIdentityClient();
 
+  /** The origin the identity routes are mounted on. */
+  const identityOrigin = identityOriginFrom(API_BASE_URL);
+
   /**
    * The providers this deployment configured, or an empty list.
    *
    * Empty while in flight and with no OAuth configured; `OAuthButtons` renders
    * nothing for both.
    */
-  const providers = useOAuthProviders(
-    identity,
-    identityOriginFrom(API_BASE_URL)
+  const providers = useOAuthProviders({
+    identityOrigin,
+    enabled: typeof identity.oauthStartUrl === 'function',
+  });
+
+  /** Answers whether this deployment offers passwordless sign-in. */
+  const probe = useCallback(
+    () =>
+      passkeyLoginAvailability(
+        identityUrl(identityOrigin, PASSKEY_AVAILABILITY_PATH)
+      ),
+    [identityOrigin]
   );
 
   /**
@@ -67,7 +84,10 @@ export const LoginForm: React.FC<LoginFormProps> = ({
    *
    * Both false without WebAuthn, or with passwordless switched off.
    */
-  const passkeys = usePasskeySignIn(identity, identityOriginFrom(API_BASE_URL));
+  const passkeys = usePasskeySignInSupport({
+    probe,
+    enabled: typeof identity.signInWithPasskey === 'function',
+  });
 
   const [passkeyBusy, setPasskeyBusy] = useState(false);
   const [passkeyError, setPasskeyError] = useState<string | null>(null);

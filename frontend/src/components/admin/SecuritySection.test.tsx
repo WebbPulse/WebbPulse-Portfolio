@@ -3,6 +3,12 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 
 import { SecuritySection, type SecurityClient } from './SecuritySection';
 
+/**
+ * The TOTP legs of `AuthClient`, as much of it as the section ever calls.
+ *
+ * The prop is the whole client now that the panel hook owns the calls, so the
+ * stub is cast rather than spelling out every unrelated member.
+ */
 function stubClient(overrides: Partial<SecurityClient> = {}): SecurityClient {
   return {
     enrolTotp: vi.fn(),
@@ -10,7 +16,7 @@ function stubClient(overrides: Partial<SecurityClient> = {}): SecurityClient {
     disableTotp: vi.fn(),
     regenerateRecoveryCodes: vi.fn(),
     ...overrides,
-  };
+  } as unknown as SecurityClient;
 }
 
 /** A refusal in the shape the package's outcome union produces. */
@@ -64,11 +70,12 @@ describe('SecuritySection', () => {
 
   describe('enrolment sequence', () => {
     it('shows the secret and a QR code, then the recovery codes after activation', async () => {
+      const activateTotp = vi
+        .fn()
+        .mockResolvedValue({ ok: true, recoveryCodes: CODES });
       const client = stubClient({
         enrolTotp: vi.fn().mockResolvedValue(ENROLMENT),
-        activateTotp: vi
-          .fn()
-          .mockResolvedValue({ ok: true, recoveryCodes: CODES }),
+        activateTotp,
       });
 
       await startEnrolment(client);
@@ -86,7 +93,7 @@ describe('SecuritySection', () => {
       submitCode('123456', /turn on/i);
 
       await screen.findByTestId('recovery-codes');
-      expect(client.activateTotp).toHaveBeenCalledWith({ code: '123456' });
+      expect(activateTotp).toHaveBeenCalledWith({ code: '123456' });
       for (const code of CODES) {
         expect(screen.getByTestId('recovery-codes')).toHaveTextContent(code);
       }
@@ -120,18 +127,19 @@ describe('SecuritySection', () => {
     });
 
     it('trims the code before sending it', async () => {
+      const activateTotp = vi
+        .fn()
+        .mockResolvedValue({ ok: true, recoveryCodes: CODES });
       const client = stubClient({
         enrolTotp: vi.fn().mockResolvedValue(ENROLMENT),
-        activateTotp: vi
-          .fn()
-          .mockResolvedValue({ ok: true, recoveryCodes: CODES }),
+        activateTotp,
       });
 
       await startEnrolment(client);
       submitCode('  123456  ', /turn on/i);
 
       await waitFor(() => {
-        expect(client.activateTotp).toHaveBeenCalledWith({ code: '123456' });
+        expect(activateTotp).toHaveBeenCalledWith({ code: '123456' });
       });
     });
 
@@ -156,20 +164,19 @@ describe('SecuritySection', () => {
 
   describe('disable', () => {
     it('asks for a code first and reports the factor off', async () => {
-      const client = stubClient({
-        disableTotp: vi.fn().mockResolvedValue({ ok: true }),
-      });
+      const disableTotp = vi.fn().mockResolvedValue({ ok: true });
+      const client = stubClient({ disableTotp });
       render(<SecuritySection client={client} />);
 
       fireEvent.click(
         screen.getByRole('button', { name: /turn off the authenticator app/i })
       );
-      expect(client.disableTotp).not.toHaveBeenCalled();
+      expect(disableTotp).not.toHaveBeenCalled();
 
       submitCode('654321', /^turn off$/i);
 
       await waitFor(() => {
-        expect(client.disableTotp).toHaveBeenCalledWith({ code: '654321' });
+        expect(disableTotp).toHaveBeenCalledWith({ code: '654321' });
       });
       expect(await screen.findByRole('status')).toHaveTextContent(
         /recovery code for it is void/i
@@ -182,22 +189,21 @@ describe('SecuritySection', () => {
 
   describe('regenerate', () => {
     it('asks for a code first, then shows the replacement set once', async () => {
-      const client = stubClient({
-        regenerateRecoveryCodes: vi
-          .fn()
-          .mockResolvedValue({ ok: true, recoveryCodes: CODES }),
-      });
+      const regenerateRecoveryCodes = vi
+        .fn()
+        .mockResolvedValue({ ok: true, recoveryCodes: CODES });
+      const client = stubClient({ regenerateRecoveryCodes });
       render(<SecuritySection client={client} />);
 
       fireEvent.click(
         screen.getByRole('button', { name: /generate new recovery codes/i })
       );
-      expect(client.regenerateRecoveryCodes).not.toHaveBeenCalled();
+      expect(regenerateRecoveryCodes).not.toHaveBeenCalled();
 
       submitCode('111111', /^generate$/i);
 
       await screen.findByTestId('recovery-codes');
-      expect(client.regenerateRecoveryCodes).toHaveBeenCalledWith({
+      expect(regenerateRecoveryCodes).toHaveBeenCalledWith({
         code: '111111',
       });
       expect(screen.getByRole('button', { name: /^done$/i })).toBeDisabled();
@@ -306,6 +312,47 @@ describe('SecuritySection', () => {
         /could not be completed/i
       );
     });
+  });
+
+  it('sends the code the panel hook holds, so the field is controlled by it', async () => {
+    const activateTotp = vi
+      .fn()
+      .mockResolvedValue({ ok: true, recoveryCodes: CODES });
+    const client = stubClient({
+      enrolTotp: vi.fn().mockResolvedValue(ENROLMENT),
+      activateTotp,
+    });
+
+    await startEnrolment(client);
+    const field = screen.getByLabelText(/authenticator or recovery code/i);
+    fireEvent.change(field, { target: { value: '123456' } });
+
+    expect(field).toHaveValue('123456');
+
+    fireEvent.click(screen.getByRole('button', { name: /turn on/i }));
+
+    await waitFor(() => {
+      expect(activateTotp).toHaveBeenCalledWith({ code: '123456' });
+    });
+  });
+
+  it('clears the hook code field once a leg succeeds', async () => {
+    const client = stubClient({
+      enrolTotp: vi.fn().mockResolvedValue(ENROLMENT),
+      activateTotp: vi
+        .fn()
+        .mockResolvedValue({ ok: true, recoveryCodes: CODES }),
+    });
+
+    await startEnrolment(client);
+    submitCode('123456', /turn on/i);
+
+    expect(await screen.findByTestId('recovery-codes')).toHaveTextContent(
+      CODES.join('')
+    );
+    expect(
+      screen.queryByLabelText(/authenticator or recovery code/i)
+    ).not.toBeInTheDocument();
   });
 
   it('says it cannot report enrolment state before anything has happened', () => {

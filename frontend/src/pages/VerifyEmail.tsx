@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
-import { VERIFY_EMAIL_PATH, readLinkToken } from '@webbpulse/auth';
+import { useEmailVerificationLink } from '@webbpulse/auth/react';
 import { Button } from '../components/common';
 import { apiService } from '../services/api';
 
@@ -10,12 +10,6 @@ import { apiService } from '../services/api';
  * Confirms with a POST on mount, so a mail scanner following the link cannot
  * spend the single use token.
  */
-
-/** What the page is currently showing. */
-type VerifyState =
-  | { kind: 'working' }
-  | { kind: 'done' }
-  | { kind: 'error'; title: string; detail: string };
 
 /**
  * The sentence for each refusal the confirm route can answer with.
@@ -50,51 +44,36 @@ function describeRefusal(reason: string): { title: string; detail: string } {
   }
 }
 
+/** The title and detail to render for one outcome of the link. */
+function describeState(kind: 'missing-token' | 'failed'): {
+  title: string;
+  detail: string;
+} {
+  if (kind === 'missing-token') {
+    return {
+      title: 'This link is missing its token',
+      detail:
+        'Open the link from your email again, or request a new verification email.',
+    };
+  }
+  return {
+    title: 'Something went wrong',
+    detail: 'We could not verify this address. Please try again later.',
+  };
+}
+
 /** Confirms the token on mount and reports the outcome. */
 export const VerifyEmail: React.FC = () => {
-  const [state, setState] = useState<VerifyState>({ kind: 'working' });
+  const state = useEmailVerificationLink({
+    client: apiService.getIdentityClient(),
+  });
 
-  /**
-   * Guards against a second confirm in React 18 strict mode, whose double
-   * invoked effects would present a single use token twice and turn a valid
-   * link into an "already used" refusal on the second call.
-   */
-  const started = useRef(false);
-
-  useEffect(() => {
-    if (started.current) return;
-    started.current = true;
-
-    const identity = apiService.getIdentityClient();
-
-    const token = readLinkToken({ expectedPath: VERIFY_EMAIL_PATH });
-    if (token === null) {
-      setState({
-        kind: 'error',
-        title: 'This link is missing its token',
-        detail:
-          'Open the link from your email again, or request a new verification email.',
-      });
-      return;
-    }
-
-    void (async () => {
-      try {
-        const outcome = await identity.confirmEmailVerification({ token });
-        if (outcome.ok) {
-          setState({ kind: 'done' });
-          return;
-        }
-        setState({ kind: 'error', ...describeRefusal(outcome.reason) });
-      } catch {
-        setState({
-          kind: 'error',
-          title: 'Something went wrong',
-          detail: 'We could not verify this address. Please try again later.',
-        });
-      }
-    })();
-  }, []);
+  const failure =
+    state.kind === 'refused'
+      ? describeRefusal(state.reason)
+      : state.kind === 'missing-token' || state.kind === 'failed'
+        ? describeState(state.kind)
+        : null;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-12">
@@ -104,13 +83,13 @@ export const VerifyEmail: React.FC = () => {
             Email Verification
           </h1>
 
-          {state.kind === 'working' && (
+          {state.kind === 'confirming' && (
             <p role="status" className="text-gray-600 dark:text-gray-400">
               Verifying your email address...
             </p>
           )}
 
-          {state.kind === 'done' && (
+          {state.kind === 'confirmed' && (
             <>
               <p
                 role="status"
@@ -124,13 +103,13 @@ export const VerifyEmail: React.FC = () => {
             </>
           )}
 
-          {state.kind === 'error' && (
+          {failure !== null && (
             <div role="alert">
               <p className="font-medium text-gray-900 dark:text-white mb-2">
-                {state.title}
+                {failure.title}
               </p>
               <p className="text-gray-600 dark:text-gray-400 mb-6">
-                {state.detail}
+                {failure.detail}
               </p>
               <Link to="/admin">
                 <Button variant="outline">Back to sign in</Button>
