@@ -56,7 +56,7 @@ npm run test:run
 
 The shared `webbpulse` Python distribution and the `@webbpulse/*` npm packages
 float to the newest compatible release at build time rather than sitting on an
-exact pin. The version recorded in `backend/requirements.txt` and
+exact pin. The version recorded in `backend/pyproject.toml` and
 `frontend/package.json` is a floor, the minimum the code needs, with the major
 bound as the ceiling. An exact pin is the explicit exception, used only to hold
 a known good version while something is investigated. Every build log prints the

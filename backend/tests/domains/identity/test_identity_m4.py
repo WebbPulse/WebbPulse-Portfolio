@@ -10,7 +10,7 @@ from fastapi import FastAPI
 
 from app.composition.identity_hooks import PortfolioIdentityHooks
 
-from .routes import paths_for_method, served_routes
+from ...routes import paths_for_method, served_routes
 from .test_identity_m1 import AUDIENCE, ISSUER, KEY_ARN, FakeKms
 
 MFA_PATHS = (

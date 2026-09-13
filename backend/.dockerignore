@@ -26,8 +26,6 @@ coverage.xml
 htmlcov/
 tests/
 
-requirements-dev.txt
-
 compose.yaml
 docker-compose.yml
 Dockerfile
