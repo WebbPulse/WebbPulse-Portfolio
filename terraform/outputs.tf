@@ -53,11 +53,6 @@ output "api_custom_domain" {
   value       = module.api.custom_domain_target_domain_name
 }
 
-output "lambda_artifact_bucket" {
-  description = "S3 bucket holding the archived backend deployment zips, retained as the rollback source"
-  value       = module.lambda_artifacts.bucket_id
-}
-
 output "dynamodb_table_names" {
   description = "DynamoDB table names keyed by entity"
   value       = module.dynamodb.table_names
