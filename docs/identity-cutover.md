@@ -18,8 +18,8 @@ identity features. The migration narrative is in
 | `identity_jwt_mode` | `gate` | `native` |
 | `domain_jwt_enforced` | n/a in gate mode | `true` on the workspace |
 | Legacy `hashed_password` column | cleared | cleared |
-| Passkeys | derived on | derived off |
-| Passwordless | derived on | off, owner decision |
+| Passkeys | derived on | `passkeys_enabled = true` on the workspace |
+| Passwordless | derived on | `passkeys_passwordless = true` on the workspace |
 | OAuth providers | client ids unset | client ids unset |
 
 `var.domain_jwt_enforced` defaults to `false` in `terraform/variables.tf` and is
@@ -111,8 +111,9 @@ is deliberately no script for that. The identity store is the system of record.
   sending. Sending stays sandbox-limited (200 a day, 1 per second) until an
   owner-approved support case says otherwise.
 
-Two decisions are the owner's and are deliberately not taken here:
-`passkeys_enabled` in production, and whether to leave the SES sandbox.
+Passkeys are on in production: the owner enabled both `passkeys_enabled` and
+`passkeys_passwordless` on the workspace. Whether to leave the SES sandbox
+remains the owner's decision.
 
 ## Later, in a separate PR: remove the legacy routes
 
@@ -261,12 +262,13 @@ variable change with no code deploy.
 
 | Variable | Resolves to | What true means |
 |---|---|---|
-| `passkeys_enabled` | true staging, false production | The five management routes mount. A user can enrol, list, rename and delete a passkey, and use one as a second factor |
-| `passkeys_passwordless` | true staging, false production | The two `/api/auth/login/passkey/*` routes stop refusing. A passkey becomes a way in with no password at all |
+| `passkeys_enabled` | true in both, production set explicitly on the workspace | The five management routes mount. A user can enrol, list, rename and delete a passkey, and use one as a second factor |
+| `passkeys_passwordless` | true in both, production set explicitly on the workspace | The two `/api/auth/login/passkey/*` routes stop refusing. A passkey becomes a way in with no password at all |
 
-`passkeys_passwordless` is a policy decision, not a rollout step, and stays off
-in production until the owner decides. With it off a passkey is a managed
-credential and a second factor, which is all the frontend needs.
+`passkeys_passwordless` is a policy decision, not a rollout step. The owner
+turned it on in production, so a passkey there is both a managed credential and
+a way in with no password. Production therefore overrides both derived
+defaults with explicit `true` workspace variables.
 
 ### RP id and origins
 
