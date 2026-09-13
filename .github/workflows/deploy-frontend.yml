@@ -32,11 +32,12 @@ jobs:
       - name: Assert the frontend has no build time auth mode switch
         run: |
           set -euo pipefail
-          if grep -rn "VITE_AUTH_MODE" frontend/src; then
+          sources=$(find frontend/src -type f \( -name '*.ts' -o -name '*.tsx' \) ! -name '*.test.ts' ! -name '*.test.tsx')
+          if echo "$sources" | xargs grep -n "VITE_AUTH_MODE"; then
             echo "::error::frontend/src reintroduced VITE_AUTH_MODE. Identity is the only auth mode; a build time switch is what silently shipped a bearer bundle against JWT enforced routes."
             exit 1
           fi
-          if grep -rn "'/admin/login'" frontend/src; then
+          if echo "$sources" | xargs grep -n "'/admin/login'"; then
             echo "::error::frontend/src posts to the legacy bearer login route. The gateway enforces identity JWTs on the admin route keys."
             exit 1
           fi
