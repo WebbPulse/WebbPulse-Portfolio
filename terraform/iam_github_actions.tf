@@ -96,10 +96,6 @@ module "github_actions_role" {
       resources = local.lambda_domain_function_arns
     },
     {
-      actions   = ["s3:GetObject", "s3:ListBucket"]
-      resources = [module.lambda_artifacts.bucket_arn, "${module.lambda_artifacts.bucket_arn}/*"]
-    },
-    {
       actions = [
         "s3:PutObject",
         "s3:GetObject",

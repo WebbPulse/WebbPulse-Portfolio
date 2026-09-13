@@ -106,7 +106,6 @@ Parts of the stack come from `app.terraform.io/WebbPulse/platform-modules/aws`:
 | `staging-access-gate` | Cognito, the login Lambda, signed-cookie key group, viewer-request function, origin-verify secret, HTTP API authorizer (`staging_access_gate.tf`) |
 | `identity` | The KMS signing key and alias, the identity tables, and the two IAM grants the identity function needs (`identity.tf`) |
 | `ecr-repository` | The four domain image repositories (`ecr.tf`) |
-| `lambda-artifacts-bucket` | The artifact bucket and placeholder object (`lambda.tf`) |
 
 The ACM certificates (`acm.tf`) and the `www`, apex and `api` alias records
 (`route53.tf`) stay hand-written, because a module has one `aws` provider and
