@@ -79,7 +79,7 @@ locals {
 
 module "identity" {
   source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/identity"
-  version = "~> 2.8"
+  version = "~> 2.16"
 
   name_prefix        = local.prefix
   issuer             = local.identity_issuer
@@ -115,6 +115,7 @@ module "identity" {
         { name = "token_hash", type = "S" },
         { name = "family_id", type = "S" },
         { name = "generation", type = "N" },
+        { name = "user_id", type = "S" },
       ]
       hash_key = "token_hash"
       global_secondary_indexes = [
@@ -123,6 +124,12 @@ module "identity" {
           hash_key        = "family_id"
           range_key       = "generation"
           projection_type = "ALL"
+        },
+        {
+          name            = "user_id-family_id-index"
+          hash_key        = "user_id"
+          range_key       = "family_id"
+          projection_type = "KEYS_ONLY"
         },
       ]
       ttl_attribute = "expires_at"
