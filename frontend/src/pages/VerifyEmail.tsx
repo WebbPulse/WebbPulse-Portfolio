@@ -15,8 +15,7 @@ import { apiService } from '../services/api';
 type VerifyState =
   | { kind: 'working' }
   | { kind: 'done' }
-  | { kind: 'error'; title: string; detail: string }
-  | { kind: 'unavailable' };
+  | { kind: 'error'; title: string; detail: string };
 
 /**
  * The sentence for each refusal the confirm route can answer with.
@@ -67,10 +66,6 @@ export const VerifyEmail: React.FC = () => {
     started.current = true;
 
     const identity = apiService.getIdentityClient();
-    if (identity === null) {
-      setState({ kind: 'unavailable' });
-      return;
-    }
 
     const token = readLinkToken({ expectedPath: VERIFY_EMAIL_PATH });
     if (token === null) {
@@ -139,17 +134,6 @@ export const VerifyEmail: React.FC = () => {
               </p>
               <Link to="/admin">
                 <Button variant="outline">Back to sign in</Button>
-              </Link>
-            </div>
-          )}
-
-          {state.kind === 'unavailable' && (
-            <div role="alert">
-              <p className="text-gray-600 dark:text-gray-400 mb-6">
-                Email verification is not enabled for this site.
-              </p>
-              <Link to="/">
-                <Button variant="outline">Back to home</Button>
               </Link>
             </div>
           )}

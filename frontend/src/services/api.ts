@@ -7,15 +7,9 @@ import {
   type AuthTokenProvider,
   type EnvelopeClient,
 } from '@webbpulse/api-client';
-import { ConfigReader, loadAppConfig } from '@webbpulse/config';
+import { loadAppConfig } from '@webbpulse/config';
 import { createAuthClient, type AuthClient } from '@webbpulse/auth';
 import { identityOriginFrom as packageIdentityOriginFrom } from '@webbpulse/discovery';
-
-import { AUTH_MODES, AUTH_MODE_ENV_KEY, type AuthMode } from './authMode';
-import { BearerTokenStore } from './bearerTokenStore';
-
-/** Key the auth token is stored under. Unchanged, so sessions survive deploy. */
-const TOKEN_STORAGE_KEY = 'authToken';
 
 const config = loadAppConfig(import.meta.env, {
   defaultApiBaseUrl:
@@ -38,31 +32,6 @@ export const API_BASE_URL = config.apiBaseUrl;
 export function identityOriginFrom(apiBaseUrl: string): string {
   return packageIdentityOriginFrom(apiBaseUrl, { relativeAs: 'passthrough' });
 }
-
-/**
- * The auth mechanism this bundle runs, read once at startup.
- *
- * Read through `ConfigReader` so an unrecognised value fails by name at startup.
- */
-export const AUTH_MODE: AuthMode = (() => {
-  const reader = new ConfigReader(import.meta.env);
-  const mode = reader.oneOf(AUTH_MODE_ENV_KEY, AUTH_MODES, 'bearer');
-  reader.assertValid();
-  return mode;
-})();
-
-/**
- * What the identity cutover still needs, in one place.
- *
- * The routes are live; what remains is setting `AUTH_MODE=identity` per
- * environment, after which the bearer branch and its store are deleted.
- */
-export const IDENTITY_CUTOVER = {
-  /** The GitHub Environment variable that selects the mode at build time. */
-  environmentVariable: 'AUTH_MODE',
-  /** The value that turns the identity mode on. */
-  enabledValue: 'identity',
-} as const;
 
 /**
  * Logs a failed request with the fields the backend's error envelope carries.
@@ -214,17 +183,11 @@ export interface UserLogin {
   password: string;
 }
 
-/** A bearer access token as the API returns it. */
-export interface Token {
-  access_token: string;
-  token_type: string;
-}
-
 /**
  * What a sign in attempt produced.
  *
  * An MFA challenge is its own case rather than an error: it is a successful
- * first leg that carries no access token. `bearer` mode never produces it.
+ * first leg that carries no access token.
  */
 export type LoginResult =
   | { status: 'authenticated' }
@@ -239,71 +202,42 @@ export type LoginResult =
  */
 export type ApiResponse<T> = ApiEnvelope<T>;
 
-/** Typed client for the portfolio API, covering both auth modes. */
+/** Typed client for the portfolio API. */
 export class ApiService {
   private readonly client: EnvelopeClient;
 
   /**
-   * The bearer store, in `bearer` mode only.
-   *
-   * Null under `identity`, where the access token lives in `AuthClient` instead.
+   * The auth client that holds the access token and spends the refresh cookie.
    */
-  private readonly tokenStore: BearerTokenStore | null;
+  private readonly auth: AuthClient<unknown>;
 
-  /** The auth client, in `identity` mode only. */
-  private readonly auth: AuthClient<unknown> | null;
-
-  constructor(baseUrl: string = API_BASE_URL, mode: AuthMode = AUTH_MODE) {
+  constructor(baseUrl: string = API_BASE_URL) {
     const credentials = 'include' as const;
 
-    if (mode === 'identity') {
-      this.tokenStore = null;
-      this.auth = createAuthClient({
-        baseUrl: identityOriginFrom(baseUrl),
-        clientOptions: { credentials },
-      });
-      this.client = this.buildClient(baseUrl, {
+    this.auth = createAuthClient({
+      baseUrl: identityOriginFrom(baseUrl),
+      clientOptions: { credentials },
+    });
+    this.client = createEnvelopeClient(
+      createApiClient({
+        baseUrl,
         credentials,
         auth: this.auth satisfies AuthTokenProvider,
-      });
-      return;
-    }
-
-    const store = new BearerTokenStore(TOKEN_STORAGE_KEY);
-    this.tokenStore = store;
-    this.auth = null;
-    this.client = this.buildClient(baseUrl, {
-      credentials,
-      getAuthToken: () => store.get(),
-      onTokenRefresh: (token: string) => {
-        store.set(token);
-      },
-    });
-  }
-
-  /** The one place the envelope client is constructed, for either mode. */
-  private buildClient(
-    baseUrl: string,
-    options: {
-      credentials: RequestCredentials;
-      auth?: AuthTokenProvider;
-      getAuthToken?: () => string | null;
-      onTokenRefresh?: (token: string) => void;
-    }
-  ): EnvelopeClient {
-    return createEnvelopeClient(createApiClient({ baseUrl, ...options }), {
-      onError: (error) => {
-        logApiFailure(error);
-      },
-    });
+      }),
+      {
+        onError: (error) => {
+          logApiFailure(error);
+        },
+      }
+    );
   }
 
   /**
-   * The auth client, when this bundle runs the identity mode.
+   * The auth client.
    *
    * Exposed so `AuthProvider` shares the instance the API client refreshes through.
    */
-  getAuthClient(): AuthClient<unknown> | null {
+  getAuthClient(): AuthClient<unknown> {
     return this.auth;
   }
 
@@ -320,54 +254,26 @@ export class ApiService {
   /**
    * Signs in.
    *
-   * In `identity` mode the username is sent as the standard's `email` field. An
-   * MFA challenge comes back as its own result carrying the ticket to finish with.
+   * The username is sent as the standard's `email` field. An MFA challenge comes
+   * back as its own result carrying the ticket to finish with.
    */
   async login(credentials: UserLogin): Promise<LoginResult> {
-    if (this.auth !== null) {
-      const auth = this.auth;
-      try {
-        const outcome = await auth.login({
-          email: credentials.username,
-          password: credentials.password,
-        });
-        return this.readLoginOutcome(outcome);
-      } catch (error) {
-        return this.readLoginFailure(error);
-      }
+    try {
+      const outcome = await this.auth.login({
+        email: credentials.username,
+        password: credentials.password,
+      });
+      return this.readLoginOutcome(outcome);
+    } catch (error) {
+      return this.readLoginFailure(error);
     }
-
-    const response = await this.request<Token>('/admin/login', {
-      method: 'POST',
-      body: credentials,
-    });
-
-    if (response.data) {
-      this.tokenStore?.set(response.data.access_token);
-      return { status: 'authenticated' };
-    }
-
-    return {
-      status: 'failed',
-      error: response.error ?? 'Sign in failed. Please try again.',
-    };
   }
 
-  /**
-   * Finishes an MFA login with a TOTP code.
-   *
-   * `identity` mode only; answers with a failure rather than throwing in `bearer`.
-   */
+  /** Finishes an MFA login with a TOTP code. */
   async completeTotp(input: {
     ticket: string;
     code: string;
   }): Promise<LoginResult> {
-    if (this.auth === null) {
-      return {
-        status: 'failed',
-        error: 'A second factor is not available in this mode.',
-      };
-    }
     try {
       return this.readLoginOutcome(await this.auth.completeTotp(input));
     } catch (error) {
@@ -405,21 +311,18 @@ export class ApiService {
    * The auth client, for the identity pages that call it directly.
    *
    * Those routes answer discriminated outcomes rather than this service's envelope,
-   * so the pages get the client itself. Null in `bearer` mode.
+   * so the pages get the client itself.
    */
-  getIdentityClient(): AuthClient<unknown> | null {
+  getIdentityClient(): AuthClient<unknown> {
     return this.auth;
   }
 
   /**
    * Spends the refresh cookie on page load to restore the in-memory token.
    * Resolves to whether a session came back; false rather than throwing when
-   * there is no cookie. In `bearer` mode reports the stored token instead.
+   * there is no cookie.
    */
   async restoreSession(): Promise<boolean> {
-    if (this.auth === null) {
-      return this.isAuthenticated();
-    }
     try {
       await this.auth.initialize();
     } catch {
@@ -435,19 +338,11 @@ export class ApiService {
    * token is cleared either way.
    */
   logout(): void {
-    if (this.auth !== null) {
-      void this.auth.logout().catch(logApiFailure);
-      return;
-    }
-    this.tokenStore?.clear();
+    void this.auth.logout().catch(logApiFailure);
   }
 
   isAuthenticated(): boolean {
-    if (this.auth !== null) {
-      return this.auth.getState().status === 'authenticated';
-    }
-    const token = this.tokenStore?.get() ?? null;
-    return token !== null && token !== '';
+    return this.auth.getState().status === 'authenticated';
   }
 
   async getProjects(

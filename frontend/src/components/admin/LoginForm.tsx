@@ -47,19 +47,14 @@ export const LoginForm: React.FC<LoginFormProps> = ({
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
-  /**
-   * The identity client, or null in bearer mode.
-   *
-   * Read at render so the forgot password control appears exactly when something
-   * is behind it.
-   */
+  /** The identity client that backs sign-in, OAuth and password reset. */
   const identity = apiService.getIdentityClient();
 
   /**
    * The providers this deployment configured, or an empty list.
    *
-   * Empty in bearer mode, in flight, and with no OAuth configured; `OAuthButtons`
-   * renders nothing for all three.
+   * Empty while in flight and with no OAuth configured; `OAuthButtons` renders
+   * nothing for both.
    */
   const providers = useOAuthProviders(
     identity,
@@ -70,7 +65,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
    * Whether a passkey button belongs on this page, and whether this browser can
    * offer one through autofill.
    *
-   * Both false in bearer mode, without WebAuthn, or with passwordless switched off.
+   * Both false without WebAuthn, or with passwordless switched off.
    */
   const passkeys = usePasskeySignIn(identity, identityOriginFrom(API_BASE_URL));
 
@@ -124,7 +119,6 @@ export const LoginForm: React.FC<LoginFormProps> = ({
    * cannot be outstanding at once.
    */
   const handlePasskeySignIn = useCallback(async () => {
-    if (identity === null) return;
     abortConditional();
     setPasskeyBusy(true);
     setPasskeyError(null);
@@ -144,7 +138,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
    * cleanup aborts, as does submitting the password form.
    */
   useEffect(() => {
-    if (identity === null || !passkeys.offered || !passkeys.conditional) {
+    if (!passkeys.offered || !passkeys.conditional) {
       return;
     }
     const controller = new AbortController();
@@ -176,7 +170,6 @@ export const LoginForm: React.FC<LoginFormProps> = ({
 
   const handleResetRequest = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (identity === null) return;
     setResetBusy(true);
     try {
       const outcome = await identity.requestPasswordReset({
@@ -271,16 +264,14 @@ export const LoginForm: React.FC<LoginFormProps> = ({
             </Button>
           </form>
 
-          {identity !== null && (
-            <OAuthButtons
-              providers={providers}
-              startUrl={(provider) =>
-                identity.oauthStartUrl(provider, {
-                  returnTo: window.location.pathname,
-                })
-              }
-            />
-          )}
+          <OAuthButtons
+            providers={providers}
+            startUrl={(provider) =>
+              identity.oauthStartUrl(provider, {
+                returnTo: window.location.pathname,
+              })
+            }
+          />
 
           <PasskeySignInButton
             offered={passkeys.offered}
@@ -295,57 +286,55 @@ export const LoginForm: React.FC<LoginFormProps> = ({
             </p>
           )}
 
-          {identity !== null && (
-            <div className="mt-4">
-              {resetOpen ? (
-                <form
-                  onSubmit={(e) => void handleResetRequest(e)}
-                  className="space-y-3"
+          <div className="mt-4">
+            {resetOpen ? (
+              <form
+                onSubmit={(e) => void handleResetRequest(e)}
+                className="space-y-3"
+              >
+                <label
+                  htmlFor="reset-email"
+                  className="block text-sm font-medium text-gray-700 dark:text-gray-300"
                 >
-                  <label
-                    htmlFor="reset-email"
-                    className="block text-sm font-medium text-gray-700 dark:text-gray-300"
-                  >
-                    Email address
-                  </label>
-                  <input
-                    type="email"
-                    id="reset-email"
-                    value={resetEmail}
-                    onChange={(e) => setResetEmail(e.target.value)}
-                    autoComplete="email"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-                    required
-                    disabled={resetBusy}
-                  />
-                  <Button
-                    type="submit"
-                    variant="secondary"
-                    className="w-full"
-                    disabled={resetBusy}
-                  >
-                    {resetBusy ? 'Sending...' : 'Send reset link'}
-                  </Button>
-                </form>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setResetOpen(true)}
-                  className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                  Email address
+                </label>
+                <input
+                  type="email"
+                  id="reset-email"
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  autoComplete="email"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                  required
+                  disabled={resetBusy}
+                />
+                <Button
+                  type="submit"
+                  variant="secondary"
+                  className="w-full"
+                  disabled={resetBusy}
                 >
-                  Forgot password?
-                </button>
-              )}
-              {resetNotice !== null && (
-                <p
-                  role="status"
-                  className="mt-3 text-sm text-gray-600 dark:text-gray-400"
-                >
-                  {resetNotice}
-                </p>
-              )}
-            </div>
-          )}
+                  {resetBusy ? 'Sending...' : 'Send reset link'}
+                </Button>
+              </form>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setResetOpen(true)}
+                className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                Forgot password?
+              </button>
+            )}
+            {resetNotice !== null && (
+              <p
+                role="status"
+                className="mt-3 text-sm text-gray-600 dark:text-gray-400"
+              >
+                {resetNotice}
+              </p>
+            )}
+          </div>
 
           <div className="mt-6 text-center">
             <Link to="/">

@@ -1,8 +1,9 @@
 # Identity runbook
 
 The identity cutover is complete in both environments except for the two steps
-below. Production runs on `AUTH_MODE=identity` with gateway JWT enforcement on
-the 24 admin route keys. Staging runs on `identity` in `gate` mode with the
+below. Identity is the only auth mode the frontend can build: the mode switch
+was removed, so there is nothing left to select. Production runs with gateway
+JWT enforcement on the 24 admin route keys. Staging runs in `gate` mode with the
 legacy column already cleared.
 
 This file is the current state, the two remaining steps, and the operational
@@ -13,7 +14,7 @@ reference for the optional identity features. The migration narrative is in
 
 | | Staging | Production |
 | --- | --- | --- |
-| `AUTH_MODE` | `identity` | `identity` |
+| Frontend auth mode | identity, the only mode | identity, the only mode |
 | `identity_jwt_mode` | `gate` | `native` |
 | `domain_jwt_enforced` | n/a in gate mode | `true` on the workspace |
 | Legacy `hashed_password` column | cleared | **still populated** |
@@ -26,27 +27,39 @@ overridden to `true` as an HCP workspace variable on `WebbPulse-Portfolio`
 (`terraform` category, `hcl = true`). The repository default is not evidence
 that enforcement is off. Read the workspace through the HCP API to confirm.
 
-**Rollback from either environment is fix-forward on the staging side.** Staging
-has run the column clear, so setting `AUTH_MODE` back to `bearer` there produces
-a sign-in page nobody can get past. Production still has its legacy column, so
-its rollback still works in full until Step 11 runs.
+**Rollback from either environment is fix-forward.** There is no build time
+switch back: the bearer branch, its token store and `authMode.ts` are deleted,
+so a rollback means reverting the frontend to a commit that still carried them.
+Staging has also run the column clear, so a bearer bundle there would produce a
+sign-in page nobody can get past. Production still has its legacy column until
+Step 11 runs.
 
-### Open defect: the deploy workflow no longer forwards `VITE_AUTH_MODE`
+### Resolved: the build time auth mode switch is gone
 
-`deploy-frontend.yml` builds `build-env-json` with `VITE_API_BASE_URL` only.
-`VITE_AUTH_MODE` forwarding was added in `ff29cd2` and dropped in `ce34362`,
-the commit that moved the deploy onto the org `spa-deploy.yml`. No workflow
-references `AUTH_MODE` today.
+`VITE_AUTH_MODE` forwarding was added in `ff29cd2` and dropped in `ce34362`, the
+commit that moved the deploy onto the org `spa-deploy.yml`. Because
+`authMode.ts` fell back to `bearer` when the variable was absent, every frontend
+build after `ce34362` shipped a bearer bundle against gateway routes that
+enforce identity JWTs. That included the production deploy of `ec1c3e5f` on
+2026-09-12, so the defect reached production rather than merely threatening it.
 
-`frontend/src/services/authMode.ts` falls back to `bearer` when the variable is
-absent, so **the next frontend deploy on `main` rebuilds the bundle in bearer
-mode** while the gateway still enforces identity JWTs on the 24 admin route
-keys. Admin writes would 401 from the gateway. The currently served bundle was
-built before the regression and still carries `VITE_AUTH_MODE:"identity"`, so
-nothing is broken until something triggers a frontend deploy.
+Forwarding the variable again would have restored the same fragile coupling: a
+bundle whose auth mechanism depended on an environment variable that nothing
+verified. Both environments had already been on `AUTH_MODE=identity` since
+2026-09-11, so the bearer branch was dead configuration.
 
-Fix before the next frontend deploy: add `VITE_AUTH_MODE` back into the
-`build-env-json` the `resolve-env` job assembles, reading `vars.AUTH_MODE`.
+The switch was therefore removed rather than repaired. `authMode.ts` and
+`bearerTokenStore.ts` are deleted, `ApiService` always constructs an
+`AuthClient`, and `getAuthClient` and `getIdentityClient` no longer return null.
+Identity is structural, not configured, so no GitHub Environment variable
+selects it and none can turn it off. The `AUTH_MODE` variables still present on
+both environments are inert and can be deleted at any time.
+
+Two guards keep it that way. `frontend/src/services/api.test.ts` asserts in
+`built auth mode` that sign-in goes to `/api/auth/login`, that nothing posts to
+`/admin/login` and that no access token reaches `localStorage`. The
+`resolve-env` job in `deploy-frontend.yml` fails the deploy if `frontend/src`
+reintroduces `VITE_AUTH_MODE` or the legacy login route.
 
 ## Step 11. Clear the legacy column in production
 
@@ -105,11 +118,13 @@ store is the system of record from this step onward.
 
 ## Later, in a separate PR: remove the legacy routes
 
-`POST /api/v1/admin/login`, `app/domains/identity/router.py`, the
-`hashed_password` column, `BearerTokenStore` and `authMode.ts` go together, once
-both environments have run on `identity` long enough to be confident. Until that
-PR lands the legacy routes stay mounted, which is what keeps the frontend flip
-reversible. Once they are removed, rollback stops working entirely.
+The frontend half is done: `BearerTokenStore` and `authMode.ts` are deleted and
+nothing in the bundle calls `POST /api/v1/admin/login`. What remains is the
+backend half, `POST /api/v1/admin/login` with `app/domains/identity/router.py`
+and the `hashed_password` column, which go together once production has run on
+identity long enough to be confident. Until that PR lands the legacy routes stay
+mounted and unused, which is what still makes a frontend revert a working
+rollback. Once they are removed, rollback stops working entirely.
 
 ## Admin routes in identity mode
 

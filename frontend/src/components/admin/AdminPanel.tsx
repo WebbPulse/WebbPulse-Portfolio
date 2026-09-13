@@ -12,7 +12,6 @@ import {
 import { useOAuthProviders } from '../../hooks/useOAuthProviders';
 import {
   useAdminSession,
-  useBearerSession,
   type AdminSession,
 } from '../../hooks/useAdminSession';
 import { LoginForm } from './LoginForm';
@@ -137,15 +136,10 @@ const TABS: { id: AdminTab; label: string }[] = [
  *
  * Mounts the package's `AuthProvider` around the panel so the session is owned
  * by the same `AuthClient` the API client refreshes through. The provider spends
- * the refresh cookie on mount, which is this application's bootstrap, and bearer
- * mode renders the panel with no provider because it has no client to give one.
+ * the refresh cookie on mount, which is this application's bootstrap.
  */
 export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
   const authClient = apiService.getAuthClient();
-
-  if (authClient === null) {
-    return <AdminPanelBearer className={className} />;
-  }
 
   return (
     <AuthProvider client={authClient as unknown as AnyAuthClient}>
@@ -157,12 +151,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ className = '' }) => {
 /** The panel inside the provider, reading the session off `useAuth`. */
 const AdminPanelIdentity: React.FC<AdminPanelProps> = ({ className = '' }) => {
   const session = useAdminSession();
-  return <AdminPanelView session={session} className={className} />;
-};
-
-/** The panel with no provider, reading the session off the bearer store. */
-const AdminPanelBearer: React.FC<AdminPanelProps> = ({ className = '' }) => {
-  const session = useBearerSession();
   return <AdminPanelView session={session} className={className} />;
 };
 
@@ -218,10 +206,9 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   }, [session.sessionEndedMessage]);
 
   /**
-   * The identity client, which is null in bearer mode.
+   * The identity client, which backs the Security tab.
    *
-   * Null gates the Security tab. Read on every render because it is fixed for the
-   * life of the bundle.
+   * Read on every render because it is fixed for the life of the bundle.
    */
   const identityClient = apiService.getIdentityClient();
 
@@ -295,17 +282,13 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
    *
    * The hook strips the single-use parameters before this runs, so a live MFA
    * ticket does not reach the history or the next `Referer`. A no-op on every
-   * ordinary load, and in bearer mode, where there is no identity client.
+   * ordinary load.
    *
    * A landed sign-in needs no `initialize` of its own: the provider already
    * started one on mount and the client shares that in-flight request, so the
    * status arrives through `useAuth` either way.
    */
   useOAuthCallback((result) => {
-    if (identityClient === null) {
-      return;
-    }
-
     switch (result.kind) {
       case 'signed-in':
         return;
@@ -403,18 +386,16 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   /**
    * Signs in with a password.
    *
-   * Under identity the client records the session itself and `useAuth` reports
-   * it, so only the bearer branch has a flag to set.
+   * The client records the session itself and `useAuth` reports it, so a
+   * successful sign-in needs nothing set here.
    */
   const handleLogin = async (username: string, password: string) => {
     setWorking(true);
     setError(null);
     try {
       const r = await apiService.login({ username, password });
-      if (r.status === 'authenticated') {
-        session.markAuthenticated();
-      } else if (r.status === 'mfa-required') setMfaTicket(r.ticket);
-      else setError(r.error);
+      if (r.status === 'mfa-required') setMfaTicket(r.ticket);
+      else if (r.status === 'failed') setError(r.error);
     } catch {
       setError('Login failed');
     } finally {
@@ -450,7 +431,6 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       const r = await apiService.completeTotp({ ticket: mfaTicket, code });
       if (r.status === 'authenticated') {
         setMfaTicket(null);
-        session.markAuthenticated();
       } else if (r.status === 'mfa-required') {
         setMfaTicket(r.ticket);
       } else {
