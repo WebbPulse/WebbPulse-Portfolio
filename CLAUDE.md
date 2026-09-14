@@ -179,11 +179,25 @@ ruff format --check app tests
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `.github/workflows/ci.yml` | PR to `main`/`staging` | `dorny/paths-filter` gates a `Backend` job on the org `python-ci.yml@v3` (uv sync, pytest on moto per test domain, ruff, pyright, bandit, pip-audit) and a `Frontend` job on `typescript-ci.yml@v2` (lint, format check, Vitest with coverage, build). `all-checks-passed` is the aggregating gate job |
-| `.github/workflows/deploy-backend.yml` | push to `main`/`staging`, paths `backend/**` | Builds the four images via `container-image.yml@v2`, assembles a digest-pinned `function-image-map`, deploys via `lambda-image-deploy.yml@v2`, invoke-smoke-tests `GET /health` per function; the e2e suite verifies the live gateway |
+| `.github/workflows/ci.yml` | PR to `main`/`staging` | `dorny/paths-filter` gates a `Backend` job on the org `python-ci.yml@v3` (uv sync, pytest on moto per test domain, ruff, pyright, bandit, pip-audit) and a `Frontend` job on `typescript-ci.yml@v2` (lint, format check, Vitest with coverage, build). An `affected` job narrows the pytest shards to the domains the diff touches. `all-checks-passed` is the aggregating gate job |
+| `.github/workflows/deploy-backend.yml` | push to `main`/`staging`, paths `backend/**` minus tests, e2e, scripts and docs | An `affected` job picks the domains to rebuild, then `container-image.yml@v3` builds those images, a digest-pinned `function-image-map` is assembled, `lambda-image-deploy.yml@v3` points the functions at them, and each function is invoke-smoke-tested on `GET /health`; the e2e suite verifies the live gateway |
 | `.github/workflows/deploy-frontend.yml` | push to `main`/`staging`, paths `frontend/**` | Resolves the environment, then calls the org `spa-deploy.yml` (pinned to a sha): CodeArtifact login, `npm run build`, wait for any active TFC run, `s3 sync --delete`, CloudFront invalidation |
 
 There is no `test-backend.yml` or `test-frontend.yml`; CI is one `ci.yml`.
+
+### Path-scoped runs
+
+Both backend workflows run only for the domains a diff actually affects, worked
+out by the org `actions/affected-domains@v3` action from the import closure of
+each `app/domains/<name>/entrypoint.py`. In `ci.yml` the result becomes
+`domains-filter` and `run-shared` on `python-ci.yml`, so a change to one domain
+runs that domain's pytest shard plus the shared shard, while lint, type check and
+security still read the whole backend. In `deploy-backend.yml` the diff base is
+the head sha of the last successful run of that workflow on the same branch, which
+is safe because a partial failure never becomes a base and so widens the next
+diff; the result gates the build matrix, and a change to `deploy-backend.yml`
+itself rebuilds every domain. `all-checks-passed` stays the required context and
+counts a skipped shard as a pass, so no ruleset changes with this.
 
 Deploy workflows pick the `production` or `staging` GitHub Environment from the
 branch and assume `vars.AWS_DEPLOY_ROLE_ARN` via OIDC. The TFC-polling step keeps
