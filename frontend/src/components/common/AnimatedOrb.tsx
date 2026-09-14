@@ -24,7 +24,7 @@ const VARIANT_CLASS = {
 /** A decorative gradient orb, held still under reduced motion. */
 const AnimatedOrb: React.FC<AnimatedOrbProps> = ({
   gradient = 'from-accent-violet-500 to-accent-cyan-500',
-  size = 'w-[28rem] h-[28rem]',
+  size = 'w-md h-112',
   position = 'top-0 left-0',
   variant = 1,
   parallaxY = 0,
@@ -40,7 +40,7 @@ const AnimatedOrb: React.FC<AnimatedOrbProps> = ({
       }}
     >
       <div
-        className={`w-full h-full rounded-full bg-gradient-to-br ${gradient} blur-3xl`}
+        className={`w-full h-full rounded-full bg-linear-to-br ${gradient} blur-3xl`}
       />
     </div>
   );

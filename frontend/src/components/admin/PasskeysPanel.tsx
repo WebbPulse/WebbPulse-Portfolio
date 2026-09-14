@@ -72,7 +72,7 @@ const PasskeyRow: React.FC<{
   return (
     <li
       data-testid={`passkey-${passkey.credentialId}`}
-      className="flex flex-wrap items-center justify-between gap-3 p-4 border border-gray-200 dark:border-gray-700 rounded"
+      className="flex flex-wrap items-center justify-between gap-3 p-4 border border-gray-200 dark:border-gray-700 rounded-sm"
     >
       {renaming ? (
         <form
@@ -94,7 +94,7 @@ const PasskeyRow: React.FC<{
             value={draft}
             onChange={(e) => onDraftChange(e.target.value)}
             maxLength={64}
-            className="flex-1 min-w-[12rem] px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+            className="flex-1 min-w-48 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
             required
             disabled={busy}
           />
@@ -247,7 +247,7 @@ export const PasskeysPanel: React.FC<PasskeysPanelProps> = ({
       {panel.error !== null && (
         <div
           role="alert"
-          className="mb-4 p-3 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded"
+          className="mb-4 p-3 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded-sm"
         >
           {panel.error}
         </div>
@@ -255,7 +255,7 @@ export const PasskeysPanel: React.FC<PasskeysPanelProps> = ({
       {panel.notice !== null && (
         <div
           role="status"
-          className="mb-4 p-3 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded"
+          className="mb-4 p-3 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded-sm"
         >
           {panel.notice}
         </div>
@@ -298,7 +298,7 @@ export const PasskeysPanel: React.FC<PasskeysPanelProps> = ({
 
           {panel.adding ? (
             <form
-              className="mt-4 space-y-3 p-4 border border-gray-200 dark:border-gray-700 rounded max-w-md"
+              className="mt-4 space-y-3 p-4 border border-gray-200 dark:border-gray-700 rounded-sm max-w-md"
               onSubmit={(e) => {
                 e.preventDefault();
                 void panel.commitCreate();
@@ -316,7 +316,7 @@ export const PasskeysPanel: React.FC<PasskeysPanelProps> = ({
                 value={panel.draftName}
                 onChange={(e) => panel.setDraftName(e.target.value)}
                 maxLength={64}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
                 disabled={panel.busy}
               />
               <p className="text-sm text-gray-600 dark:text-gray-400">

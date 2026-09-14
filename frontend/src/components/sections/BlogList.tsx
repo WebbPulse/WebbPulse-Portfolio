@@ -42,7 +42,7 @@ const BlogPostCard: React.FC<{ post: BlogPost; index: number }> = ({
     >
       <div className="flex items-center justify-between mb-4">
         {post.category && (
-          <span className="px-2.5 py-0.5 text-xs rounded-full bg-gradient-to-r from-accent-violet-500/20 to-accent-fuchsia-500/20 border border-accent-violet-500/30 text-surface-100">
+          <span className="px-2.5 py-0.5 text-xs rounded-full bg-linear-to-r from-accent-violet-500/20 to-accent-fuchsia-500/20 border border-accent-violet-500/30 text-surface-100">
             {post.category.name}
           </span>
         )}

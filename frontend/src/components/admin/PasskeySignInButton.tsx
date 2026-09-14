@@ -38,7 +38,7 @@ export const PasskeySignInButton: React.FC<PasskeySignInButtonProps> = ({
         data-testid="passkey-sign-in"
         onClick={onClick}
         disabled={busy || disabled}
-        className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 disabled:opacity-60 transition-colors"
+        className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 disabled:opacity-60 transition-colors"
       >
         <FaFingerprint className="w-5 h-5" />
         {busy ? 'Waiting for your passkey...' : 'Sign in with a passkey'}
