@@ -21,8 +21,8 @@ locals {
     },
     ], var.environment == "staging" ? [
     {
-      sid       = "E2ESignIdentityToken"
-      actions   = ["kms:Sign"]
+      sid       = "E2EMintStagingIdentityToken"
+      actions   = ["kms:Sign", "kms:GetPublicKey"]
       resources = local.identity_signing_key_arns
     },
   ] : [])
