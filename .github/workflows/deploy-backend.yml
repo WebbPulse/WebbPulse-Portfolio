@@ -28,6 +28,7 @@ jobs:
     outputs:
       name: ${{ steps.values.outputs.name }}
       role-arn: ${{ steps.values.outputs.role-arn }}
+      dependency-stamp: ${{ steps.stamp.outputs.dependency-stamp }}
     steps:
       - name: Resolve the environment values
         id: values
@@ -43,6 +44,14 @@ jobs:
           echo "Environment: ${ENVIRONMENT}"
           echo "name=${ENVIRONMENT}" >> "$GITHUB_OUTPUT"
           echo "role-arn=${ROLE_TO_ASSUME}" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve the dependency resolution stamp
+        id: stamp
+        run: |
+          set -euo pipefail
+          STAMP=$(date -u +%Y-%m-%d)
+          echo "Dependency resolution stamp: ${STAMP}"
+          echo "dependency-stamp=${STAMP}" >> "$GITHUB_OUTPUT"
 
   build-images:
     name: Build and push domain images
@@ -65,7 +74,7 @@ jobs:
       build-args: |
         DOMAIN=${{ matrix.domain }}
         READINESS_PROTOCOL=${{ matrix.domain == 'public' && 'tcp' || 'http' }}
-        DEPENDENCY_RESOLUTION=${{ github.run_id }}
+        DEPENDENCY_RESOLUTION=${{ needs.resolve-env.outputs.dependency-stamp }}
       codeartifact-domain: webbpulse
       codeartifact-domain-owner: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
       codeartifact-repository: python
