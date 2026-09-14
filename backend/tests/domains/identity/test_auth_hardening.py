@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from webbpulse.http import REQUEST_CONTEXT_HEADER
 from webbpulse.ratelimit import RateLimiter
 
-from app.config import settings
+from app.config import get_settings, reset_settings_cache, settings
 from app.core import login_limiter as limiter_module
 from app.core.login_limiter import client_ip
 from app.core.security import create_access_token, get_password_hash, verify_password
@@ -224,6 +224,77 @@ class TestLoginLimiter:
         for _ in range(settings.LOGIN_MAX_FAILURES - 1):
             assert attempt(client, ip="10.0.0.3", username="nobody").status_code == 401
         assert attempt(client, ip="10.0.0.3", username="nobody").status_code == 429
+
+
+@pytest.fixture
+def environment(monkeypatch):
+    """Rebuild the settings under a given `ENVIRONMENT`, and restore them after.
+
+    The cache is dropped on the way in and on the way out, so the environment a
+    test chooses does not leak into the next one.
+    """
+
+    def use(name):
+        """Point the process-wide settings at `name` and return them."""
+        monkeypatch.setenv("ENVIRONMENT", name)
+        reset_settings_cache()
+        return get_settings()
+
+    yield use
+    reset_settings_cache()
+
+
+class TestRateLimitingDisabledInStaging:
+    """Staging is never rate limited, by the shared package's convention."""
+
+    @pytest.mark.auth
+    def test_staging_maps_onto_rate_limiting_disabled(self, environment):
+        """`ENVIRONMENT=staging` turns `rate_limiting_enabled` off."""
+        resolved = environment("staging")
+        assert resolved.environment == "staging"
+        assert resolved.rate_limiting_enabled is False
+
+    @pytest.mark.auth
+    def test_repeated_failures_never_answer_429(self, client: TestClient, test_admin_user, environment):
+        """In staging a wrong password stays a 401 however many times it is sent."""
+        environment("staging")
+        for _ in range(settings.LOGIN_MAX_FAILURES + 2):
+            assert attempt(client, ip="10.0.0.4").status_code == 401
+        assert attempt(client, "adminpassword123", ip="10.0.0.4").status_code == 200
+
+    @pytest.mark.auth
+    def test_nothing_is_written_to_the_rate_limits_table(self, client: TestClient, test_admin_user, environment):
+        """The limiter never reaches DynamoDB, so no counter row appears."""
+        environment("staging")
+        for _ in range(settings.LOGIN_MAX_FAILURES + 2):
+            attempt(client, ip="10.0.0.4")
+
+        table = db_client.table(RATE_LIMITS)
+        assert table.get_item(Key=limiter_key("10.0.0.4")).get("Item") is None
+
+    @pytest.mark.auth
+    def test_the_limiter_functions_answer_without_counting(self, environment):
+        """Every entry point is covered, not only the ones the router calls."""
+        environment("staging")
+        assert limiter_module.retry_after("10.0.0.4") is None
+        assert limiter_module.record_failure("10.0.0.4") is None
+        limiter_module.clear("10.0.0.4")
+
+        table = db_client.table(RATE_LIMITS)
+        assert table.get_item(Key=limiter_key("10.0.0.4")).get("Item") is None
+
+    @pytest.mark.auth
+    def test_production_still_locks_out(self, client: TestClient, test_admin_user, environment):
+        """Production keeps the lockout, so the switch is staging only."""
+        resolved = environment("production")
+        assert resolved.rate_limiting_enabled is True
+
+        for _ in range(settings.LOGIN_MAX_FAILURES - 1):
+            assert attempt(client, ip="10.0.0.4").status_code == 401
+        assert attempt(client, ip="10.0.0.4").status_code == 429
+
+        table = db_client.table(RATE_LIMITS)
+        assert table.get_item(Key=limiter_key("10.0.0.4")).get("Item") is not None
 
 
 class TestClientIp:

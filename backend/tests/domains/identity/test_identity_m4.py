@@ -405,8 +405,13 @@ class _EnvelopeKms:
         return {"Plaintext": plaintext}
 
 
-def _enrolled_app(rsa_key: Any, monkeypatch: pytest.MonkeyPatch) -> tuple[Any, ...]:
+def _enrolled_app(
+    rsa_key: Any, monkeypatch: pytest.MonkeyPatch, *, limiter_enabled: bool | None = None
+) -> tuple[Any, ...]:
     """An identity app with one enrolled user, plus the pieces to drive it.
+
+    `limiter_enabled` passes through to the router; the default follows the
+    staging environment the settings name, which mounts no limits.
 
     Returns `(app, mfa_service, user_id, access_token, recovery_codes)`.
     """
@@ -459,6 +464,7 @@ def _enrolled_app(rsa_key: Any, monkeypatch: pytest.MonkeyPatch) -> tuple[Any, .
         kms_client=fake,
         service="webbpulse-portfolio-identity",
         version=VERSION,
+        limiter_enabled=limiter_enabled,
     )
 
     from webbpulse.http import create_app
@@ -617,11 +623,22 @@ def _limit_namespaces(app: FastAPI, path: str) -> set[str]:
 
 
 def test_both_destructive_routes_carry_the_mfa_verify_rate_limit(rsa_key: Any, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The same `mfa-verify` bound `login/totp` has, added to both by 0.13.0."""
-    app, _mfa, _uid, _access, _codes, _secret = _enrolled_app(rsa_key, monkeypatch)
+    """The same `mfa-verify` bound `login/totp` has, added to both by 0.13.0.
+
+    Built with limits on explicitly, since the staging settings would mount none.
+    """
+    app, _mfa, _uid, _access, _codes, _secret = _enrolled_app(rsa_key, monkeypatch, limiter_enabled=True)
 
     expected = _limit_namespaces(app, "/api/auth/login/totp")
     assert "mfa-verify" in expected
 
     for path in ("/api/auth/totp/disable", "/api/auth/recovery-codes"):
         assert "mfa-verify" in _limit_namespaces(app, path), path
+
+
+def test_the_staging_settings_mount_no_limits_on_the_mfa_routes(rsa_key: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The 0.32.1 default: a staging deployment leaves its identity routes unlimited."""
+    app, _mfa, _uid, _access, _codes, _secret = _enrolled_app(rsa_key, monkeypatch)
+
+    for path in ("/api/auth/login/totp", "/api/auth/totp/disable", "/api/auth/recovery-codes"):
+        assert _limit_namespaces(app, path) == set(), path
