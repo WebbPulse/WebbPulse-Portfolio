@@ -44,6 +44,7 @@ export const CategoryForm: React.FC<CategoryFormProps> = ({
             type="text"
             id="name"
             name="name"
+            data-testid="category-name"
             value={form.name}
             onChange={handleInputChange}
             required
@@ -63,6 +64,7 @@ export const CategoryForm: React.FC<CategoryFormProps> = ({
             type="text"
             id="slug"
             name="slug"
+            data-testid="category-slug"
             value={form.slug}
             onChange={handleInputChange}
             required
@@ -98,6 +100,7 @@ export const CategoryForm: React.FC<CategoryFormProps> = ({
             variant="primary"
             disabled={loading}
             className="flex-1"
+            testId="category-save"
           >
             {loading
               ? 'Saving...'

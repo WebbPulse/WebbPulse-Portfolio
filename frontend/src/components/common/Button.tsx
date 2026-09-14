@@ -10,6 +10,7 @@ const Button: React.FC<ButtonProps> = ({
   onClick,
   type = 'button',
   className = '',
+  testId,
 }) => {
   const baseClasses =
     'inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2';
@@ -41,6 +42,7 @@ const Button: React.FC<ButtonProps> = ({
       className={classes}
       onClick={onClick}
       disabled={disabled}
+      data-testid={testId}
     >
       {children}
     </button>

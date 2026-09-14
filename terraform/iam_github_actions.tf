@@ -3,10 +3,40 @@ data "aws_kms_alias" "ssm" {
 }
 
 locals {
+  github_actions_e2e_statements = concat([
+    {
+      sid = "E2EReadGatewayRoutes"
+      actions = [
+        "apigateway:GET",
+      ]
+      resources = [
+        module.api.api_arn,
+        "${module.api.api_arn}/routes",
+        "${module.api.api_arn}/routes/*",
+      ]
+    },
+    {
+      sid       = "E2EReadAccessLog"
+      actions   = ["logs:FilterLogEvents"]
+      resources = [module.api.access_log_group_arn, "${module.api.access_log_group_arn}:*"]
+    },
+    ], var.environment == "staging" ? [
+    {
+      sid       = "E2ESignIdentityToken"
+      actions   = ["kms:Sign"]
+      resources = local.identity_signing_key_arns
+    },
+  ] : [])
+}
+
+locals {
   github_actions_gate_statements = [for statement in [
     {
-      actions   = ["ssm:GetParameter"]
-      resources = [one(module.staging_access_gate[*].origin_verify_ssm_parameter_arn)]
+      actions = ["ssm:GetParameter"]
+      resources = [
+        one(module.staging_access_gate[*].origin_verify_ssm_parameter_arn),
+        one(module.staging_access_gate[*].signing_key_ssm_parameter_arn),
+      ]
     },
     {
       actions   = ["kms:Decrypt"]
@@ -96,10 +126,6 @@ module "github_actions_role" {
       resources = local.lambda_domain_function_arns
     },
     {
-      actions   = ["s3:GetObject", "s3:ListBucket"]
-      resources = [module.lambda_artifacts.bucket_arn, "${module.lambda_artifacts.bucket_arn}/*"]
-    },
-    {
       actions = [
         "s3:PutObject",
         "s3:GetObject",
@@ -147,7 +173,7 @@ module "github_actions_role" {
       ]
       resources = [local.shared_base_image_repository_arn]
     },
-  ], local.github_actions_codeartifact_statements, local.github_actions_gate_statements)
+  ], local.github_actions_codeartifact_statements, local.github_actions_gate_statements, local.github_actions_e2e_statements)
 }
 
 module "github_actions_ci_role" {

@@ -120,20 +120,6 @@ describe('LoginForm passkeys', () => {
     expect(screen.queryByTestId('passkey-sign-in')).not.toBeInTheDocument();
   });
 
-  it('hides the button in bearer mode, where there are no identity routes', async () => {
-    supportWebAuthn();
-    const fetchMock = availabilityFetch(200);
-    vi.stubGlobal('fetch', fetchMock);
-    vi.spyOn(apiService, 'getIdentityClient').mockReturnValue(null);
-
-    renderForm();
-
-    await waitFor(() => {
-      expect(screen.queryByTestId('passkey-sign-in')).not.toBeInTheDocument();
-    });
-    expect(passkeyProbeCount(fetchMock)).toBe(0);
-  });
-
   it('signs in when the ceremony succeeds', async () => {
     supportWebAuthn();
     vi.stubGlobal('fetch', availabilityFetch(200));

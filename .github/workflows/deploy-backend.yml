@@ -6,7 +6,6 @@ on:
     branches: [main, staging]
     paths:
       - "backend/**"
-      - "scripts/verify_route_cut.sh"
       - ".github/workflows/deploy-backend.yml"
 
 permissions:
@@ -66,6 +65,7 @@ jobs:
       build-args: |
         DOMAIN=${{ matrix.domain }}
         READINESS_PROTOCOL=${{ matrix.domain == 'public' && 'tcp' || 'http' }}
+        DEPENDENCY_RESOLUTION=${{ github.run_id }}
       codeartifact-domain: webbpulse
       codeartifact-domain-owner: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
       codeartifact-repository: python
@@ -263,67 +263,3 @@ jobs:
             exit 1
           fi
           echo "All probed domain functions answered GET /health with 200."
-
-  verify-route-cuts:
-    name: Verify gateway route cuts
-    needs: [deploy-images, smoke-domains]
-    if: >-
-      always()
-      && needs.deploy-images.result != 'failure'
-      && needs.smoke-domains.result != 'failure'
-    runs-on: ubuntu-latest
-    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
-    permissions:
-      contents: read
-      id-token: write
-
-    env:
-      AWS_REGION: us-west-2
-      ORIGIN_VERIFY_PARAMETER: ${{ github.ref_name == 'main' && '' || '/webbpulse-staging/access-gate/origin-verify' }}
-
-    steps:
-      - name: Check out the repository
-        uses: actions/checkout@v7
-
-      - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
-        with:
-          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Read the staging access gate origin-verify value
-        if: env.ORIGIN_VERIFY_PARAMETER != ''
-        run: |
-          if VALUE=$(aws ssm get-parameter --with-decryption --name "$ORIGIN_VERIFY_PARAMETER" \
-              --query Parameter.Value --output text 2>/dev/null) && [ -n "$VALUE" ]; then
-            echo "::add-mask::$VALUE"
-            echo "WEBBPULSE_ORIGIN_VERIFY=$VALUE" >> "$GITHUB_ENV"
-            echo "Using the staging access gate origin-verify header."
-          else
-            echo "No origin-verify parameter found; calling the API host without the header."
-          fi
-
-      - name: Verify each cut domain
-        env:
-          ENVIRONMENT: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
-          DOMAINS: "public resume content identity"
-        run: |
-          set -uo pipefail
-
-          FAILED=0
-          for DOMAIN in $DOMAINS; do
-            echo "::group::${ENVIRONMENT} ${DOMAIN}"
-            if bash scripts/verify_route_cut.sh "$ENVIRONMENT" "$DOMAIN"; then
-              echo "The '${DOMAIN}' cut verified."
-            else
-              echo "The '${DOMAIN}' cut did not verify."
-              FAILED=1
-            fi
-            echo "::endgroup::"
-          done
-
-          if [ "$FAILED" -ne 0 ]; then
-            echo "One or more route cuts did not verify."
-            exit 1
-          fi
-          echo "Every cut domain is served by its own function."
