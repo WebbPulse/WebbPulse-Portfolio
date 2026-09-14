@@ -32,8 +32,11 @@ locals {
 locals {
   github_actions_gate_statements = [for statement in [
     {
-      actions   = ["ssm:GetParameter"]
-      resources = [one(module.staging_access_gate[*].origin_verify_ssm_parameter_arn)]
+      actions = ["ssm:GetParameter"]
+      resources = [
+        one(module.staging_access_gate[*].origin_verify_ssm_parameter_arn),
+        one(module.staging_access_gate[*].signing_key_ssm_parameter_arn),
+      ]
     },
     {
       actions   = ["kms:Decrypt"]
