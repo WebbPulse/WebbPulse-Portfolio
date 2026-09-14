@@ -141,7 +141,7 @@ const ProvisioningQr: React.FC<{ uri: string; secret: string }> = ({
   uri,
   secret,
 }) => {
-  let drawing: { path: string; viewBox: string } | null = null;
+  let drawing: { path: string; viewBox: string } | null;
   try {
     drawing = qrCodeSvgPath(uri);
   } catch {

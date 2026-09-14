@@ -760,15 +760,13 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   return (
     <div
       className={`min-h-screen bg-gray-50 dark:bg-gray-900 py-12 ${className}`}
+      data-testid="signed-in"
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md">
           <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center justify-between">
-              <h1
-                className="text-2xl font-bold text-gray-900 dark:text-white"
-                data-testid="signed-in"
-              >
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
                 Admin Panel
               </h1>
               <div className="flex gap-3">
