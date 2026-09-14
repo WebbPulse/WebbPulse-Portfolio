@@ -2917,15 +2917,15 @@ wheels = [
 
 [[package]]
 name = "webbpulse"
-version = "0.30.0"
+version = "0.31.0"
 source = { registry = "https://webbpulse-432410731887.d.codeartifact.us-west-2.amazonaws.com/pypi/python/simple/" }
 dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
 ]
-sdist = { url = "https://webbpulse-432410731887.d.codeartifact.us-west-2.amazonaws.com/pypi/python/simple/webbpulse/0.30.0/webbpulse-0.30.0.tar.gz", hash = "sha512:df2bba26aa9e3f7161e74abd71b058ed0e77aa70f57d83784a8906cdd1e9ef90dfc075ba41e4799c31006bc351297973a0fe11576c43a8d08265a8de2d4d5f92", size = 199663, upload-time = "2026-09-13T23:08:04.052Z" }
+sdist = { url = "https://webbpulse-432410731887.d.codeartifact.us-west-2.amazonaws.com/pypi/python/simple/webbpulse/0.31.0/webbpulse-0.31.0.tar.gz", hash = "sha512:52f800716e459f076aa1f2619ee8a9bd63e2dcbba272decd6d21b58c8e3ae0555f380c179ac0dc24b75a4ceda8f38cae3d842a330927f8b82231cdb3e3a010ae", size = 205435, upload-time = "2026-09-14T01:11:49.44Z" }
 wheels = [
-    { url = "https://webbpulse-432410731887.d.codeartifact.us-west-2.amazonaws.com/pypi/python/simple/webbpulse/0.30.0/webbpulse-0.30.0-py3-none-any.whl", hash = "sha512:c711672eeeee710b1b7ed21f72dd834493fc6c4bf34ea6810695e813c4c3092a48c0b21f0b44ccc4a0e014b32974c39edf942db825d69e915bfd0ba7602d294a", size = 233581, upload-time = "2026-09-13T23:08:03.698Z" },
+    { url = "https://webbpulse-432410731887.d.codeartifact.us-west-2.amazonaws.com/pypi/python/simple/webbpulse/0.31.0/webbpulse-0.31.0-py3-none-any.whl", hash = "sha512:1939490974261735a353d37f1eb9245f71d5979a8d12a2b93f29fa908f225db44d9bc57008784b2ff021d30584dce7fb64ff7dbd4485f08c7e729974f4cc0b7f", size = 239505, upload-time = "2026-09-14T01:11:49.087Z" },
 ]
 
 [package.optional-dependencies]
@@ -3038,7 +3038,7 @@ dev = [
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "ruff", specifier = ">=0.16.6" },
-    { name = "webbpulse", extras = ["testing"], specifier = ">=0.30.0,<1", index = "https://webbpulse-432410731887.d.codeartifact.us-west-2.amazonaws.com/pypi/python/simple/" },
+    { name = "webbpulse", extras = ["testing"], specifier = ">=0.31.0,<1", index = "https://webbpulse-432410731887.d.codeartifact.us-west-2.amazonaws.com/pypi/python/simple/" },
 ]
 e2e = [
     { name = "email-validator", specifier = ">=2.3.0" },
