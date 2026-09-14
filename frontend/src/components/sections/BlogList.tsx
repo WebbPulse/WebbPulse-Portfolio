@@ -111,7 +111,10 @@ export const BlogList: React.FC = () => {
   return (
     <div className="min-h-screen">
       <Header navigationItems={NAV} />
-      <main className="relative py-20 sm:py-28 overflow-hidden">
+      <main
+        className="relative py-20 sm:py-28 overflow-hidden"
+        data-testid="page-blog-list"
+      >
         <div className="absolute inset-0 bg-mesh-1 opacity-40 pointer-events-none" />
         <div className="relative z-10 max-w-7xl mx-auto px-6 sm:px-8">
           <div className="text-center mb-12 max-w-2xl mx-auto">

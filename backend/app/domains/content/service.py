@@ -1,6 +1,6 @@
 """Seeding of the site content singleton, done once per process."""
 
-from botocore.exceptions import ClientError
+from webbpulse.dynamodb import TransactionCanceled
 
 from ...core.logging import logger
 from .defaults import SITE_CONTENT_DEFAULTS
@@ -19,9 +19,7 @@ def seed_site_content() -> None:
     try:
         site_content.create(SITE_CONTENT_DEFAULTS, item_id=SITE_CONTENT_ID)
         logger.info("Seeded site content", extra={"id": SITE_CONTENT_ID})
-    except ClientError as error:
-        if error.response["Error"]["Code"] != "TransactionCanceledException":
-            raise
+    except TransactionCanceled:
         if site_content.get(SITE_CONTENT_ID) is None:
             raise
 

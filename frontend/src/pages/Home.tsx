@@ -25,7 +25,7 @@ const Home: React.FC = () => {
   return (
     <div className="min-h-screen">
       <Header navigationItems={navigationItems} />
-      <main>
+      <main data-testid="page-home">
         <Hero />
         <About />
         <Skills />

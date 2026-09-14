@@ -76,7 +76,10 @@ export const VerifyEmail: React.FC = () => {
         : null;
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-12">
+    <div
+      className="min-h-screen bg-gray-50 dark:bg-gray-900 py-12"
+      data-testid="page-verify-email"
+    >
       <div className="max-w-md mx-auto">
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8 text-center">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">

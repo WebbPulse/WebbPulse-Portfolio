@@ -144,9 +144,9 @@ class Settings(BaseServiceSettings):
         if not arn:
             return None
 
-        from app.secrets import load_app_secrets
+        from webbpulse.security import app_secrets
 
-        loaded = load_app_secrets(arn)
+        loaded = app_secrets(arn)
         for name in SECRET_FIELDS:
             if object.__getattribute__(self, name) is None:
                 value = loaded.get(name)

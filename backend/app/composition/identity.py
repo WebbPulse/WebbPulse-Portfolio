@@ -123,9 +123,9 @@ def build_oauth_client_secrets(settings: Settings) -> dict[str, str]:
     if not arn:
         return {}
 
-    from app.secrets import load_app_secrets
+    from webbpulse.security import app_secrets
 
-    loaded = load_app_secrets(arn)
+    loaded = app_secrets(arn)
     return {provider: loaded[key] for provider, key in OAUTH_SECRET_KEYS.items() if loaded.get(key)}
 
 

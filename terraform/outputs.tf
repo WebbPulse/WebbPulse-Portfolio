@@ -48,6 +48,16 @@ output "api_gateway_url" {
   value       = module.api.api_endpoint
 }
 
+output "api_id" {
+  description = "Id of the HTTP API, set as the API_ID GitHub environment variable so the e2e suite can read the deployed route keys"
+  value       = module.api.api_id
+}
+
+output "api_access_log_group_name" {
+  description = "Name of the HTTP API access log group, set as the API_ACCESS_LOG_GROUP GitHub environment variable so the e2e suite can prove which route key served a request"
+  value       = module.api.access_log_group_name
+}
+
 output "api_custom_domain" {
   description = "Regional target hostname of the API Gateway custom domain, null when custom domains are disabled"
   value       = module.api.custom_domain_target_domain_name
@@ -81,4 +91,19 @@ output "domain_lambda_function_names" {
 output "domain_lambda_log_group_names" {
   description = "CloudWatch log group name keyed by domain, read by the error metric filters and by responders"
   value       = { for name, fn in module.lambda_domain : name => fn.log_group_name }
+}
+
+output "e2e_gate_signing_key_ssm_parameter_name" {
+  description = "SSM SecureString holding the gate's CloudFront cookie signing key, set as the E2E_GATE_SIGNING_KEY_SSM_PARAMETER environment variable. Null when the gate is off"
+  value       = one(module.staging_access_gate[*].signing_key_ssm_parameter_name)
+}
+
+output "e2e_gate_key_pair_id" {
+  description = "CloudFront public key id the gate trusts, set as the E2E_GATE_KEY_PAIR_ID environment variable. Null when the gate is off"
+  value       = one(module.staging_access_gate[*].signing_key_pair_id)
+}
+
+output "e2e_gate_cookie_domain" {
+  description = "Domain the gate's signed cookies are scoped to, set as the E2E_GATE_COOKIE_DOMAIN environment variable. Null when the gate is off"
+  value       = one(module.staging_access_gate[*].cookie_domain)
 }

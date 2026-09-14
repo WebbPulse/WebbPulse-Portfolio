@@ -247,6 +247,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
               <input
                 type="text"
                 id="username"
+                data-testid="login-email"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 autoComplete={
@@ -267,6 +268,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
               <input
                 type="password"
                 id="password"
+                data-testid="login-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
@@ -279,6 +281,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
               variant="primary"
               className="w-full"
               disabled={loading}
+              testId="login-submit"
             >
               {loading ? 'Logging in...' : 'Login'}
             </Button>
