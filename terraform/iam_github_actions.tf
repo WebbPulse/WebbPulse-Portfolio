@@ -11,8 +11,7 @@ locals {
       ]
       resources = [
         module.api.api_arn,
-        "${module.api.api_arn}/routes",
-        "${module.api.api_arn}/routes/*",
+        "${module.api.api_arn}/*",
       ]
     },
     {
