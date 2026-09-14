@@ -9,8 +9,8 @@ import pytest
 from fastapi import FastAPI
 from webbpulse.testing import FakeKms
 
-from app.composition.identity_hooks import PortfolioIdentityHooks
-from app.db import entities
+from app.common.db import entities
+from app.domains.identity.identity_hooks import PortfolioIdentityHooks
 
 from ...routes import all_paths, paths_for_method
 from .test_identity_m1 import AUDIENCE, ISSUER, KEY_ARN
@@ -157,14 +157,14 @@ def test_the_token_table_name_is_the_packages_own_constant() -> None:
     """A copied name, checked against the source it was copied from."""
     from webbpulse.identity import IDENTITY_TOKENS_TABLE
 
-    from app.db import tables
+    from app.common.db import tables
 
     assert tables.IDENTITY_TOKENS == IDENTITY_TOKENS_TABLE
 
 
 def test_the_token_table_is_keyed_on_the_hash_and_nothing_else() -> None:
     """Hash `token_hash`, a string, no range key."""
-    from app.db.tables import TABLES
+    from app.common.db.tables import TABLES
 
     spec = TABLES["identity-tokens"]
 
@@ -174,14 +174,14 @@ def test_the_token_table_is_keyed_on_the_hash_and_nothing_else() -> None:
 
 def test_the_token_table_has_no_secondary_index() -> None:
     """Deliberately, and it should stay that way."""
-    from app.db.tables import TABLES
+    from app.common.db.tables import TABLES
 
     assert "GlobalSecondaryIndexes" not in TABLES["identity-tokens"]
 
 
 def test_the_token_table_expires_on_the_attribute_the_package_writes() -> None:
     """`expires_at`, the same name `refresh-tokens` and `login-attempts` use."""
-    from app.db.tables import ALL_TABLES
+    from app.common.db.tables import ALL_TABLES
 
     assert dict(ALL_TABLES)["identity-tokens"] == "expires_at"
 
@@ -190,8 +190,8 @@ def test_the_token_table_is_created_by_the_suite() -> None:
     """Registered in `ALL_TABLES`, which is what `conftest` walks."""
     import boto3
 
-    from app.config import settings
-    from app.db.tables import ALL_TABLES
+    from app.common.config import settings
+    from app.common.db.tables import ALL_TABLES
 
     assert "identity-tokens" in dict(ALL_TABLES)
 
@@ -207,8 +207,8 @@ def test_the_composition_root_supplies_a_token_store(
     import webbpulse.identity as package
     from webbpulse.identity.storage import DynamoIdentityTokenStore
 
-    from app.composition.identity import build_router
-    from app.composition.settings import Settings
+    from app.common.composition.settings import Settings
+    from app.domains.identity.package_glue import build_router
 
     _identity_environment(monkeypatch)
     monkeypatch.setenv("IDENTITY_EMAIL_FROM", FROM_ADDRESS)
@@ -248,8 +248,8 @@ def identity_app(rsa_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     """The identity router as the composition root builds it with email on."""
     import boto3
 
-    from app.composition.identity import build_router
-    from app.composition.settings import Settings
+    from app.common.composition.settings import Settings
+    from app.domains.identity.package_glue import build_router
 
     _identity_environment(monkeypatch)
     monkeypatch.setenv("IDENTITY_EMAIL_FROM", FROM_ADDRESS)
@@ -309,8 +309,8 @@ def test_the_email_routes_do_not_mount_without_a_sender(rsa_key: Any, monkeypatc
     """The switch, from the off side, through this product's own builder."""
     import boto3
 
-    from app.composition.identity import build_router
-    from app.composition.settings import Settings
+    from app.common.composition.settings import Settings
+    from app.domains.identity.package_glue import build_router
 
     from .test_identity_m2 import FLOW_PATHS
 
@@ -333,7 +333,7 @@ def test_an_empty_from_address_builds_no_sender(
     """`build_email_sender` itself, isolated from the router."""
     from webbpulse.identity import IdentitySettings
 
-    from app.composition.identity import build_email_sender
+    from app.domains.identity.package_glue import build_email_sender
 
     _identity_environment(monkeypatch)
     monkeypatch.setenv("IDENTITY_EMAIL_FROM", "")
@@ -349,7 +349,7 @@ def test_a_from_address_builds_an_ses_sender_carrying_the_configuration_set(
     from webbpulse.identity import IdentitySettings
     from webbpulse.identity.email import SesV2EmailSender
 
-    from app.composition.identity import build_email_sender
+    from app.domains.identity.package_glue import build_email_sender
 
     _identity_environment(monkeypatch)
     monkeypatch.setenv("IDENTITY_EMAIL_FROM", FROM_ADDRESS)

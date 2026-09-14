@@ -12,13 +12,13 @@ from fastapi.testclient import TestClient
 from webbpulse.http import REQUEST_CONTEXT_HEADER
 from webbpulse.ratelimit import RateLimiter
 
-from app.config import get_settings, reset_settings_cache, settings
-from app.core import login_limiter as limiter_module
-from app.core.login_limiter import client_ip
-from app.core.security import create_access_token, get_password_hash, verify_password
-from app.db import client as db_client
-from app.db import entities
-from app.db.tables import META, RATE_LIMIT_TTL_ATTRIBUTE, RATE_LIMITS
+from app.common.config import get_settings, reset_settings_cache, settings
+from app.common.core import login_limiter as limiter_module
+from app.common.core.login_limiter import client_ip
+from app.common.core.security import create_access_token, get_password_hash, verify_password
+from app.common.db import client as db_client
+from app.common.db import entities
+from app.common.db.tables import META, RATE_LIMIT_TTL_ATTRIBUTE, RATE_LIMITS
 from app.domains.identity.service import (
     ensure_admin_seeded,
     reset_seed_state,

@@ -22,7 +22,7 @@ for _name, _placeholder in (
 
 from webbpulse.identity import PASSWORD_CREDENTIAL_TYPE  # noqa: E402
 
-from app.db.tables import CREDENTIALS  # noqa: E402
+from app.common.db.tables import CREDENTIALS  # noqa: E402
 
 LEGACY_HASH_FIELD = "hashed_password"
 """The legacy column holding the bcrypt hash on a Portfolio user row."""
@@ -229,7 +229,7 @@ def main(argv=None):
     """Run the migration and return the process exit code."""
     args = parse_args(argv)
 
-    from app.db import entities
+    from app.common.db import entities
 
     store = build_store(args.prefix, args.endpoint_url)
     try:

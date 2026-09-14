@@ -1,6 +1,6 @@
 """Root A: every domain's routers on one application, in one process.
 
-What the test suite and a local `uvicorn app.composition.app:app` run against.
+What the test suite and a local `uvicorn app.common.composition.app:app` run against.
 Nothing deploys it; the four domain functions serve every route in production.
 """
 

@@ -9,9 +9,10 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from slugify import slugify
 
-from ...core.security import CurrentUser, require_admin
-from ...db import ordering
-from ...db.repository import UniqueViolation
+from app.common.core.security import CurrentUser, require_admin
+from app.common.db import ordering
+from app.common.db.repository import UniqueViolation
+
 from .repository import categories, posts
 from .schemas import Category as CategorySchema
 from .schemas import CategoryCreate, CategoryUpdate, PostCreate, PostList, PostUpdate

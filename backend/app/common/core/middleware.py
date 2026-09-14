@@ -73,14 +73,14 @@ def reset_admin_credential_store() -> None:
 
 def _seed_admin() -> None:
     """Seed the administrator user, importing the identity domain lazily."""
-    from ..domains.identity.service import ensure_admin_seeded
+    from app.domains.identity.service import ensure_admin_seeded
 
     ensure_admin_seeded(_admin_credential_store())
 
 
 def _seed_site_content() -> None:
     """Seed the site content singleton, importing the content domain lazily."""
-    from ..domains.content.service import ensure_site_content_seeded
+    from app.domains.content.service import ensure_site_content_seeded
 
     ensure_site_content_seeded()
 

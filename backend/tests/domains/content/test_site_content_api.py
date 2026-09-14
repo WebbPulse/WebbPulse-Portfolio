@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from app.db import entities
+from app.common.db import entities
 from app.domains.content.defaults import SITE_CONTENT_DEFAULTS
 from app.domains.content.service import (
     ensure_site_content_seeded,

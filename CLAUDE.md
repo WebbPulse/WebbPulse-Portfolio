@@ -35,12 +35,12 @@ export DYNAMODB_ENDPOINT_URL=http://localhost:8001
 python scripts/create_local_tables.py
 
 # All 44 routes in one process (root A, every domain's routers on one app)
-uvicorn app.composition.app:app --reload
+uvicorn app.common.composition.app:app --reload
 
 # One domain, exactly as the image runs it (root B; the Dockerfile CMD is
-# `python -m app.entrypoints.${DOMAIN}`). run_uvicorn binds AWS_LWA_PORT,
+# `python -m app.domains.${DOMAIN}.entrypoint`). run_uvicorn binds AWS_LWA_PORT,
 # then PORT, then 8080
-PORT=8010 python -m app.entrypoints.content
+PORT=8010 python -m app.domains.content.entrypoint
 
 # All four as the real images, under the Lambda Web Adapter. Needs a
 # CodeArtifact token; see backend/README.md
@@ -106,9 +106,9 @@ ruff format --check app tests
 - **REST API**: All routes under `/api/v1/`. OpenAPI docs at `/docs`. Ids stay
   integers and list endpoints keep `skip`/`limit`, so the frontend contract is
   unchanged. The `/api/auth` surface comes from `webbpulse.identity` through
-  `app/composition/identity.py`, not from repo code
+  `app/domains/identity/package_glue.py`, not from repo code
 - **Auth**: the legacy bearer path is JWT HS256 and bcrypt from
-  `webbpulse.security`; `app/core/security.py` is a thin adapter that keeps
+  `webbpulse.security`; `app/common/core/security.py` is a thin adapter that keeps
   `verify_token`'s `sub`-or-`None` contract, so an expired and a forged token
   are the same 401 to a caller. `get_current_user` tries that token first and
   falls back to authorizer claims read by `app/core/identity_claims.py`. **The
@@ -126,7 +126,7 @@ ruff format --check app tests
   `CORS_ORIGINS`, `SITE_URL`, `LOG_LEVEL`; `DYNAMODB_ENDPOINT_URL` points at a
   local DynamoDB
 - **Secrets resolve lazily and are checked once at startup.** Importing
-  `app.config` reads nothing and constructing `Settings` makes no Secrets
+  `app.common.config` reads nothing and constructing `Settings` makes no Secrets
   Manager call, so every entrypoint is importable with no credentials. An env var
   wins per field; otherwise the blob is fetched on first read and cached for the
   life of the execution environment. Each domain declares what it needs in
@@ -148,14 +148,14 @@ ruff format --check app tests
 
 | File | Purpose |
 |---|---|
-| `backend/app/composition/wiring.py` | The four domains and `build_domain_app` |
-| `backend/app/composition/app.py` | Root A: every domain's routers on one app. Nothing deploys it |
-| `backend/app/composition/identity.py` | Builds the `/api/auth` router from `webbpulse.identity` |
-| `backend/app/entrypoints/<domain>.py` | Root B: one module per deployed function |
+| `backend/app/common/composition/wiring.py` | The four domains and `build_domain_app` |
+| `backend/app/common/composition/app.py` | Root A: every domain's routers on one app. Nothing deploys it |
+| `backend/app/domains/identity/package_glue.py` | Builds the `/api/auth` router from `webbpulse.identity` |
+| `backend/app/domains/<domain>/entrypoint.py` | Root B: one module per deployed function |
 | `backend/Dockerfile` | Builds all four images; `DOMAIN` selects the entrypoint, `READINESS_PROTOCOL` the adapter check |
-| `backend/app/config.py` | Pydantic Settings and the `APP_SECRETS_ARN` JSON secret |
+| `backend/app/common/config.py` | Pydantic Settings and the `APP_SECRETS_ARN` JSON secret |
 | `backend/app/core/identity_claims.py` | Reads authorizer claims in both native and gate shapes |
-| `backend/app/db/tables.py` | Canonical table and index definitions |
+| `backend/app/common/db/tables.py` | Canonical table and index definitions |
 | `backend/tests/fixtures/route_contract.json` | The published contract: 44 routes |
 | `backend/tests/entrypoints/test_gateway_routes.py` | Keeps route keys, served paths and flagged admin routes in agreement |
 | `terraform/dynamodb.tf` | Table map |

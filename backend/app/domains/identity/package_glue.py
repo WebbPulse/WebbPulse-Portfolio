@@ -13,7 +13,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from webbpulse.identity import KmsClient
     from webbpulse.identity.email import SesV2Client
 
-    from .settings import Settings
+    from app.common.config import Settings
 
 
 def build_identity_settings(settings: Settings) -> Any:
@@ -51,7 +51,7 @@ def build_router(settings: Settings) -> APIRouter:
         build_identity_router,
     )
 
-    from ..db.tables import (
+    from app.common.db.tables import (
         CREDENTIALS,
         IDENTITY_TOKENS,
         LOGIN_ATTEMPTS,
@@ -63,7 +63,8 @@ def build_router(settings: Settings) -> APIRouter:
         TOTP_FACTORS,
         WEBAUTHN_CHALLENGES,
     )
-    from ..version import VERSION
+    from app.common.version import VERSION
+
     from .identity_hooks import PortfolioIdentityHooks
 
     def repository(logical_name: str) -> Repository:

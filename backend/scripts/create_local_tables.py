@@ -10,7 +10,7 @@ from botocore.exceptions import ClientError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.db.tables import ALL_TABLES, table_definition  # noqa: E402
+from app.common.db.tables import ALL_TABLES, table_definition  # noqa: E402
 
 
 def parse_args():

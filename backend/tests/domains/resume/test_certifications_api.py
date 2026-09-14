@@ -24,7 +24,7 @@ class TestCertificationsAPI:
     @pytest.mark.api
     def test_certifications_ordering(self, client: TestClient):
         """Certifications order by order ascending, then issued date descending."""
-        from app.db.entities import certifications
+        from app.common.db.entities import certifications
 
         for name, year, order in (("A", 2020, 20), ("B", 2023, 10), ("C", 2022, 10)):
             certifications.create(

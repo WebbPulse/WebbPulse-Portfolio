@@ -63,7 +63,7 @@ class TestProjectsAPI:
     @pytest.mark.api
     def test_get_inactive_project_fails(self, client: TestClient):
         """Test that inactive projects are not accessible via public endpoint"""
-        from app.db.entities import projects
+        from app.common.db.entities import projects
 
         inactive_project = projects.create(
             {
@@ -237,7 +237,7 @@ class TestProjectsAPIPerformance:
     @pytest.mark.slow
     def test_get_projects_large_dataset(self, client: TestClient):
         """Test getting projects with a large dataset"""
-        from app.db.entities import projects
+        from app.common.db.entities import projects
 
         for i in range(25):
             projects.create(

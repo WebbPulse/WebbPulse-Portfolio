@@ -1,8 +1,7 @@
 """The public API contract, pinned."""
 
-from app.composition.app import build_app
-
-from .routes import method_path_pairs
+from app.common.composition.app import build_app
+from tests.routes import method_path_pairs
 
 app = build_app()
 
@@ -239,7 +238,7 @@ def test_the_whole_surface_orders_paths_by_domain():
     assert len(runs) == len(set(runs)) == 4, runs
     assert runs == ["content", "resume", "identity", "public"]
 
-    from app.composition.wiring import build_domain_app
+    from app.common.composition.wiring import build_domain_app
 
     for name in ("content", "resume", "identity", "public"):
         served = [p for p in paths if domain_of(p) == name]
@@ -287,7 +286,7 @@ def test_route_count_matches_the_domain_map():
 
 def test_the_split_serves_this_exact_contract():
     """The monolith's pinned document, reassembled from the four domain apps."""
-    from app.composition.wiring import DOMAIN_NAMES, build_domain_app
+    from app.common.composition.wiring import DOMAIN_NAMES, build_domain_app
 
     union = set()
     for name in DOMAIN_NAMES:

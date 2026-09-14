@@ -39,6 +39,10 @@ class Domain:
     title: str
     load_routers: Callable[[], "list[APIRouter]"]
     """Called lazily so importing this module imports no domain package."""
+    load_unprefixed_routers: Callable[[Settings], "list[APIRouter]"] | None = None
+    """Routers the domain mounts at the root with no prefix and no tags, because
+    the router itself declares its full paths. Called lazily, like `load_routers`,
+    so the glue behind it belongs to this domain's import closure alone."""
     router_prefix: str = API_PREFIX
     """Where the domain's routers mount, so both roots supply the same prefix."""
     router_tags: tuple[str, ...] = ()
@@ -48,7 +52,7 @@ class Domain:
     needs no `secretsmanager:GetSecretValue` grant."""
     seeds: tuple[str, ...] = ()
     """Seeders the domain runs on the first request, by the names in
-    `app.core.middleware.SEEDERS`. A domain seeds only the tables it owns."""
+    `app.common.core.middleware.SEEDERS`. A domain seeds only the tables it owns."""
     extra: dict = field(default_factory=dict)
     """Extra keyword arguments for `create_app`."""
 
@@ -65,28 +69,42 @@ class Domain:
 
 def _content_routers() -> "list[APIRouter]":
     """Import and return the content domain's routers."""
-    from ..domains.content.router import router
+    from app.domains.content.router import router
 
     return [router]
 
 
 def _resume_routers() -> "list[APIRouter]":
     """Import and return the resume domain's routers."""
-    from ..domains.resume.router import router
+    from app.domains.resume.router import router
 
     return [router]
 
 
 def _identity_routers() -> "list[APIRouter]":
     """Import and return the identity domain's routers."""
-    from ..domains.identity.router import router
+    from app.domains.identity.router import router
 
     return [router]
 
 
+def _identity_unprefixed_routers(settings: Settings) -> "list[APIRouter]":
+    """The shared package's identity router, when this deployment configures one.
+
+    Empty when `IDENTITY_ISSUER` is unset, so a deployment without an issuer
+    builds none of the glue's AWS clients.
+    """
+    if not settings.IDENTITY_ISSUER:
+        return []
+
+    from app.domains.identity.package_glue import build_router
+
+    return [build_router(settings)]
+
+
 def _public_routers() -> "list[APIRouter]":
     """Import and return the public domain's routers."""
-    from ..domains.public.router import router
+    from app.domains.public.router import router
 
     return [router]
 
@@ -109,6 +127,7 @@ DOMAINS: dict[str, Domain] = {
         name="identity",
         title="WebbPulse Portfolio identity",
         load_routers=_identity_routers,
+        load_unprefixed_routers=_identity_unprefixed_routers,
         router_prefix=f"{API_PREFIX}/admin",
         router_tags=("admin",),
         requires_secrets=(
@@ -185,10 +204,9 @@ def build_domain_app(domain: Domain | str, *, settings: Settings | None = None) 
     for router in domain.load_routers():
         app.include_router(router, prefix=domain.router_prefix, tags=list(domain.router_tags))
 
-    if domain.name == "identity" and resolved.IDENTITY_ISSUER:
-        from .identity import build_router
-
-        app.include_router(build_router(resolved))
+    if domain.load_unprefixed_routers is not None:
+        for router in domain.load_unprefixed_routers(resolved):
+            app.include_router(router)
 
     if domain.seeds:
         from ..core.middleware import SeedMiddleware

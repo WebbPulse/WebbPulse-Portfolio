@@ -8,12 +8,12 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.db import entities
+from app.common.db import entities
 
 
 def load_script():
     """Import the migration script by path, since scripts is not a package."""
-    path = Path(__file__).resolve().parents[1] / "scripts" / "migrate_postgres_to_dynamo.py"
+    path = Path(__file__).resolve().parents[2] / "scripts" / "migrate_postgres_to_dynamo.py"
     spec = importlib.util.spec_from_file_location("migrate_postgres_to_dynamo", path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module

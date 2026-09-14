@@ -76,7 +76,7 @@ def _merged_document() -> dict[str, Any]:
         os.environ.setdefault(name, value)
     os.environ.pop("APP_SECRETS_ARN", None)
 
-    from app.composition.wiring import DOMAIN_NAMES, build_domain_app
+    from app.common.composition.wiring import DOMAIN_NAMES, build_domain_app
 
     merged: dict[str, Any] = {}
     info: dict[str, Any] = {}

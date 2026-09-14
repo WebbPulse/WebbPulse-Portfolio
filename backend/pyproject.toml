@@ -77,4 +77,3 @@ exclude_dirs = [
 [tool.webbpulse.ci]
 test-root = "tests"
 domains-root = "tests/domains"
-entrypoints = "app/entrypoints"
