@@ -265,9 +265,8 @@ four images through the org `container-image.yml@v2`, `image-map` assembles a
 digest-pinned map from the uploaded manifests, `deploy-images` points each
 function at its digest through `lambda-image-deploy.yml@v2`, `smoke-domains`
 invokes each function with a synthesised HTTP API v2 event asserting
-`GET /health` is 200, and `verify-route-cuts` probes the live gateway with
-`scripts/verify_route_cut.sh` to confirm each domain's paths are served by that
-domain's function.
+`GET /health` is 200. The e2e suite, which the deploy triggers, verifies that
+each domain's paths are served by that domain's function.
 
 Two repository variables gate it: `BACKEND_IMAGE_BUILD_ENABLED` on `resolve-env`
 and `BACKEND_IMAGE_DEPLOY_ENABLED` on `deploy-images`. They are separate on
