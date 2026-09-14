@@ -8,7 +8,7 @@ dependencies = [
   "boto3>=1.43.90",
   "pydantic>=2.13.5",
   "pydantic-settings>=2.15.0",
-  "python-slugify>=8.0.4",
+  "python-slugify>=9.0.0",
   "email-validator>=2.3.0",
   "uvicorn[standard]>=0.52.4",
 ]
@@ -19,7 +19,7 @@ e2e = [
   "fastapi>=0.141.1",
   "pydantic>=2.13.5",
   "pydantic-settings>=2.15.0",
-  "python-slugify>=8.0.4",
+  "python-slugify>=9.0.0",
   "email-validator>=2.3.0",
 ]
 dev = [
