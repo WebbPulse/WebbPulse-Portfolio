@@ -10,10 +10,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: e2e-${{ github.event.workflow_run.head_branch || github.ref_name }}
-  cancel-in-progress: false
-
 jobs:
   e2e:
     name: Verify the deployed environment
@@ -27,7 +23,7 @@ jobs:
       deploy-workflows: "Deploy Backend, Deploy Frontend"
       working-directory: backend
       install-command: uv lock --upgrade-package webbpulse && uv sync --locked --group e2e
-      pytest-args: -o addopts=
+      pytest-args: ${{ (github.event.workflow_run.head_branch || github.ref_name) == 'main' && '-o addopts=' || '-o addopts= -n auto --dist loadgroup' }}
       codeartifact-domain: webbpulse
     secrets:
       E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}

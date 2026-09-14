@@ -22,18 +22,21 @@ from e2e.resources import CREATED_CATEGORY, CREATED_CERTIFICATION, CREATED_POST
 def _created(response: Any, path: str) -> dict[str, Any]:
     """Assert a create succeeded and return its body.
 
-    A 401 or 403 here means the durable e2e user is not an admin, which every write
-    route requires, so it is called out rather than left as a bare status mismatch.
+    A 401 or 403 here means the user this run signed in as is not an admin, which every
+    write route requires, so it is called out rather than left as a bare status mismatch.
     """
     if response.status_code in (401, 403):
         pytest.fail(
             f"POST {path} answered {response.status_code}. Every write route in this "
-            "product is admin only, so the durable e2e user needs its admin flag set."
+            "product is admin only, so the user this run signed in as needs its admin "
+            "flag set. An ephemeral user gets it from the on_user_created hook, and the "
+            "durable one carries it on its row."
         )
     assert response.status_code in (200, 201), f"POST {path} answered {response.status_code}: {response.text[:300]}"
     return response.json()
 
 
+@pytest.mark.e2e_writes
 class TestResumeWrites:
     """The resume domain: create a certification, read it back, delete it."""
 
@@ -71,6 +74,7 @@ class TestResumeWrites:
         )
 
 
+@pytest.mark.e2e_writes
 class TestContentWrites:
     """The content domain: a category, a post inside it, and the site content singleton."""
 

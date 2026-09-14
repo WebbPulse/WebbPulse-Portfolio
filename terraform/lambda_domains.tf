@@ -130,6 +130,8 @@ module "lambda_domain" {
       IDENTITY_PASSKEYS_ENABLED      = tostring(local.passkeys_enabled)
       IDENTITY_PASSKEYS_PASSWORDLESS = tostring(local.passkeys_passwordless)
       IDENTITY_WEBAUTHN_ORIGINS      = local.identity_webauthn_origins
+
+      IDENTITY_EPHEMERAL_USERS_ENABLED = tostring(local.ephemeral_users_enabled)
       },
 
     module.identity.identity_environment) : {},

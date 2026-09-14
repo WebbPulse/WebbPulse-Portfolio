@@ -15,12 +15,13 @@ dependencies = [
 
 [dependency-groups]
 e2e = [
-  "webbpulse[e2e,fastapi,dynamodb,identity,oauth,passkeys,security]>=0.32.1,<1",
+  "webbpulse[e2e,fastapi,dynamodb,identity,oauth,passkeys,security]>=0.37.0,<1",
   "fastapi>=0.141.1",
   "pydantic>=2.13.5",
   "pydantic-settings>=2.15.0",
   "python-slugify>=9.0.0",
   "email-validator>=2.3.0",
+  "pytest-xdist>=3.8.0",
 ]
 dev = [
   "webbpulse[testing]>=0.32.1,<1",
