@@ -12,81 +12,22 @@ permissions:
 
 concurrency:
   group: e2e-${{ github.event.workflow_run.head_branch || github.ref_name }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
-  resolve-env:
-    name: Resolve the deployed environment
-    if: >-
-      github.event_name == 'workflow_dispatch'
-      || github.event.workflow_run.conclusion == 'success'
-    runs-on: ubuntu-latest
-    environment: ${{ (github.event.workflow_run.head_branch || github.ref_name) == 'main' && 'production' || 'staging' }}
-    permissions: {}
-    outputs:
-      environment: ${{ steps.values.outputs.environment }}
-      sha: ${{ steps.values.outputs.sha }}
-      role-arn: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-      api-base-url: ${{ vars.API_BASE_URL }}
-      web-base-url: ${{ vars.WEB_BASE_URL }}
-      api-id: ${{ vars.API_ID }}
-      access-log-group: ${{ vars.API_ACCESS_LOG_GROUP }}
-      gate-ssm-parameter: ${{ vars.GATE_SSM_PARAMETER }}
-      user-email: ${{ vars.E2E_USER_EMAIL }}
-      legacy-route-names: ${{ vars.LEGACY_ROUTE_NAMES }}
-      mint-enabled: ${{ vars.E2E_MINT_ENABLED == 'true' }}
-      kms-key-id: ${{ vars.IDENTITY_KMS_KEY_ID }}
-      issuer: ${{ vars.IDENTITY_ISSUER }}
-      audience: ${{ vars.IDENTITY_AUDIENCE }}
-    steps:
-      - name: Resolve the environment and the deployed commit
-        id: values
-        env:
-          BRANCH: ${{ github.event.workflow_run.head_branch || github.ref_name }}
-          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
-          ROLE_TO_ASSUME: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-        run: |
-          set -euo pipefail
-          if [ "$BRANCH" = "main" ]; then
-            ENVIRONMENT=production
-          else
-            ENVIRONMENT=staging
-          fi
-          if [ -z "$ROLE_TO_ASSUME" ]; then
-            echo "::error::vars.AWS_DEPLOY_ROLE_ARN is not set on the ${ENVIRONMENT} environment."
-            exit 1
-          fi
-          echo "Verifying ${ENVIRONMENT} at ${SHA}."
-          echo "environment=${ENVIRONMENT}" >> "$GITHUB_OUTPUT"
-          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
-
   e2e:
     name: Verify the deployed environment
-    needs: resolve-env
     permissions:
       contents: read
+      actions: read
       id-token: write
       checks: write
     uses: WebbPulse/.github/.github/workflows/e2e.yml@v3
     with:
-      environment: ${{ needs.resolve-env.outputs.environment }}
-      sha: ${{ needs.resolve-env.outputs.sha }}
-      api-base-url: ${{ needs.resolve-env.outputs.api-base-url }}
-      web-base-url: ${{ needs.resolve-env.outputs.web-base-url }}
-      aws-region: us-west-2
-      api-id: ${{ needs.resolve-env.outputs.api-id }}
-      access-log-group: ${{ needs.resolve-env.outputs.access-log-group }}
-      gate-ssm-parameter: ${{ needs.resolve-env.outputs.gate-ssm-parameter }}
-      user-email: ${{ needs.resolve-env.outputs.user-email }}
+      deploy-workflows: "Deploy Backend, Deploy Frontend"
       working-directory: backend
+      install-command: uv sync --locked --group e2e
       pytest-args: -o addopts=
-      legacy-route-names: ${{ needs.resolve-env.outputs.legacy-route-names }}
-      mint-enabled: ${{ needs.resolve-env.outputs.mint-enabled == 'true' }}
-      kms-key-id: ${{ needs.resolve-env.outputs.kms-key-id }}
-      issuer: ${{ needs.resolve-env.outputs.issuer }}
-      audience: ${{ needs.resolve-env.outputs.audience }}
       codeartifact-domain: webbpulse
     secrets:
-      role-to-assume: ${{ needs.resolve-env.outputs.role-arn }}
       E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
-      codeartifact-domain-owner: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}

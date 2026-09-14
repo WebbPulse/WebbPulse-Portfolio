@@ -765,7 +765,10 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md">
           <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center justify-between">
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+              <h1
+                className="text-2xl font-bold text-gray-900 dark:text-white"
+                data-testid="signed-in"
+              >
                 Admin Panel
               </h1>
               <div className="flex gap-3">
@@ -776,7 +779,12 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                 >
                   Back to Main Page
                 </Button>
-                <Button variant="outline" onClick={session.logout} size="sm">
+                <Button
+                  variant="outline"
+                  onClick={session.logout}
+                  size="sm"
+                  testId="sign-out"
+                >
                   Logout
                 </Button>
               </div>
@@ -788,6 +796,7 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
               {TABS.map((tab) => (
                 <button
                   key={tab.id}
+                  data-testid={`tab-${tab.id}`}
                   onClick={() => setActiveTab(tab.id)}
                   className={`py-2 px-3 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${
                     activeTab === tab.id
@@ -1364,6 +1373,7 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                       setCategoryForm(EMPTY_CATEGORY);
                     }}
                     disabled={loading}
+                    testId="category-add"
                   >
                     Add New Category
                   </Button>
@@ -1382,7 +1392,7 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                     loading={loading}
                   />
                 )}
-                <div className="space-y-4">
+                <div className="space-y-4" data-testid="category-list">
                   {categories.map((category) => (
                     <div
                       key={category.id}
