@@ -4,7 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       fresh-dependencies:
-        description: "Resolve the newest webbpulse now instead of reusing today's cached dependency layer."
+        description: >-
+          Resolve the newest webbpulse now instead of reusing today's cached
+          dependency layer. The images are pushed under their own tag, so this
+          rebuilds and redeploys even on a commit that is already deployed.
         type: boolean
         required: false
         default: false
@@ -93,6 +96,7 @@ jobs:
       codeartifact-domain-owner: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
       codeartifact-repository: python
       additional-ecr-registries: "432410731887"
+      image-tag-suffix: ${{ inputs.fresh-dependencies == true && format('deps-{0}', github.run_id) || '' }}
       upload-manifest-artifact: true
     secrets:
       role-to-assume: ${{ needs.resolve-env.outputs.role-arn }}
@@ -138,15 +142,24 @@ jobs:
           MAP=$(python3 -c 'import json,sys; print(json.dumps(json.load(open("function-image-map.json"))))')
           echo "function-image-map=${MAP}" >> "$GITHUB_OUTPUT"
 
+          TAGS=$(python3 -c '
+          import json, pathlib
+
+          tags = sorted({json.loads(p.read_text())["tag"] for p in pathlib.Path("manifests").glob("*.json")})
+          print(", ".join(tags) if tags else "none")
+          ')
+          echo "image-tag=${TAGS}" >> "$GITHUB_OUTPUT"
+
       - name: Write the image map to the summary
         env:
           RESULT: ${{ needs.build-images.result }}
+          IMAGE_TAG: ${{ steps.map.outputs.image-tag }}
         run: |
           set -euo pipefail
           {
             echo "## Domain images"
             echo
-            echo "Matrix result: \`${RESULT}\`. Tag: \`sha-${GITHUB_SHA}\`."
+            echo "Matrix result: \`${RESULT}\`. Tag: \`${IMAGE_TAG}\`."
             echo
             echo "The map PR 10 passes to \`lambda-image-deploy.yml\` as"
             echo "\`function-image-map\`, once the functions exist. Every value is"
