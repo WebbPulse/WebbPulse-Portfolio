@@ -129,7 +129,7 @@ const addCustomStyling = (html: string): string => {
     )
     .replace(
       /<code([^>]*)>/g,
-      '<code$1 class="bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 px-2 py-1 rounded text-sm font-mono">'
+      '<code$1 class="bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 px-2 py-1 rounded-sm text-sm font-mono">'
     )
     .replace(
       /<table([^>]*)>/g,

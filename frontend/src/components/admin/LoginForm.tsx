@@ -1,6 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { PasskeySignInOutcome } from '@webbpulse/auth';
+import { usePasskeySignInSupport } from '@webbpulse/auth/react';
+import {
+  identityUrl,
+  passkeyLoginAvailability,
+  PASSKEY_AVAILABILITY_PATH,
+} from '@webbpulse/discovery';
+import { useOAuthProviders } from '@webbpulse/discovery/react';
 
 import { Button } from '../common';
 import {
@@ -10,8 +17,6 @@ import {
 } from '../../services/api';
 import { OAuthButtons } from './OAuthButtons';
 import { PasskeySignInButton } from './PasskeySignInButton';
-import { useOAuthProviders } from '../../hooks/useOAuthProviders';
-import { usePasskeySignIn } from '../../hooks/usePasskeySignIn';
 
 /**
  * The one sentence the reset request ever shows, whatever happened.
@@ -50,15 +55,27 @@ export const LoginForm: React.FC<LoginFormProps> = ({
   /** The identity client that backs sign-in, OAuth and password reset. */
   const identity = apiService.getIdentityClient();
 
+  /** The origin the identity routes are mounted on. */
+  const identityOrigin = identityOriginFrom(API_BASE_URL);
+
   /**
    * The providers this deployment configured, or an empty list.
    *
    * Empty while in flight and with no OAuth configured; `OAuthButtons` renders
    * nothing for both.
    */
-  const providers = useOAuthProviders(
-    identity,
-    identityOriginFrom(API_BASE_URL)
+  const providers = useOAuthProviders({
+    identityOrigin,
+    enabled: typeof identity.oauthStartUrl === 'function',
+  });
+
+  /** Answers whether this deployment offers passwordless sign-in. */
+  const probe = useCallback(
+    () =>
+      passkeyLoginAvailability(
+        identityUrl(identityOrigin, PASSKEY_AVAILABILITY_PATH)
+      ),
+    [identityOrigin]
   );
 
   /**
@@ -67,7 +84,10 @@ export const LoginForm: React.FC<LoginFormProps> = ({
    *
    * Both false without WebAuthn, or with passwordless switched off.
    */
-  const passkeys = usePasskeySignIn(identity, identityOriginFrom(API_BASE_URL));
+  const passkeys = usePasskeySignInSupport({
+    probe,
+    enabled: typeof identity.signInWithPasskey === 'function',
+  });
 
   const [passkeyBusy, setPasskeyBusy] = useState(false);
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
@@ -204,14 +224,14 @@ export const LoginForm: React.FC<LoginFormProps> = ({
             Admin Login
           </h2>
           {error && (
-            <div className="mb-4 p-3 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded">
+            <div className="mb-4 p-3 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded-sm">
               {error}
             </div>
           )}
           {passkeyError !== null && (
             <div
               role="alert"
-              className="mb-4 p-3 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded"
+              className="mb-4 p-3 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded-sm"
             >
               {passkeyError}
             </div>
@@ -227,12 +247,13 @@ export const LoginForm: React.FC<LoginFormProps> = ({
               <input
                 type="text"
                 id="username"
+                data-testid="login-email"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 autoComplete={
                   passkeys.conditional ? 'username webauthn' : 'username'
                 }
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
                 required
                 disabled={loading}
               />
@@ -247,9 +268,10 @@ export const LoginForm: React.FC<LoginFormProps> = ({
               <input
                 type="password"
                 id="password"
+                data-testid="login-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
                 required
                 disabled={loading}
               />
@@ -259,6 +281,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
               variant="primary"
               className="w-full"
               disabled={loading}
+              testId="login-submit"
             >
               {loading ? 'Logging in...' : 'Login'}
             </Button>
@@ -304,7 +327,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
                   value={resetEmail}
                   onChange={(e) => setResetEmail(e.target.value)}
                   autoComplete="email"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
                   required
                   disabled={resetBusy}
                 />

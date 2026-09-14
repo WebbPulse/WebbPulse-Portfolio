@@ -158,7 +158,7 @@ export const MarkdownCheatsheet: React.FC = () => {
                       <div key={exampleIndex} className="group">
                         <div className="flex items-center justify-between p-2 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-150">
                           <div className="flex-1 min-w-0">
-                            <code className="block text-xs bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded text-gray-800 dark:text-gray-200 font-mono break-all">
+                            <code className="block text-xs bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded-sm text-gray-800 dark:text-gray-200 font-mono break-all">
                               {example.syntax}
                             </code>
                             <span className="block text-xs text-gray-600 dark:text-gray-400 mt-1">

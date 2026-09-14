@@ -57,7 +57,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
                   title: e.target.value,
                 }))
               }
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
               required
             />
           </div>
@@ -74,7 +74,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
                   image: e.target.value,
                 }))
               }
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
             />
           </div>
         </div>
@@ -91,7 +91,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
               }))
             }
             rows={3}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
             required
           />
         </div>
@@ -109,7 +109,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
                   github_url: e.target.value,
                 }))
               }
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
             />
           </div>
           <div>
@@ -125,7 +125,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
                   live_url: e.target.value,
                 }))
               }
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
             />
           </div>
         </div>
@@ -171,7 +171,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
                   featured: e.target.checked,
                 }))
               }
-              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded-sm"
             />
             <label
               htmlFor="featured"
@@ -197,7 +197,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
                   display_order: Number(e.target.value),
                 }))
               }
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
             />
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
               Lower numbers appear first (used when site sort mode is "Manual").

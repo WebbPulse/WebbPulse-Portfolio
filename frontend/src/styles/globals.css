@@ -1,8 +1,229 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap')
+layer(base);
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+
+@plugin '@tailwindcss/typography';
+
+@theme {
+  --color-surface-50: #f8fafc;
+  --color-surface-100: #e2e8f0;
+  --color-surface-200: #cbd5e1;
+  --color-surface-300: #94a3b8;
+  --color-surface-400: #64748b;
+  --color-surface-500: #475569;
+  --color-surface-600: #334155;
+  --color-surface-700: #1e293b;
+  --color-surface-800: #0f172a;
+  --color-surface-850: #0a1020;
+  --color-surface-900: #070b18;
+  --color-surface-950: #03060f;
+
+  --color-accent-cyan-300: #67e8f9;
+  --color-accent-cyan-400: #22d3ee;
+  --color-accent-cyan-500: #06b6d4;
+  --color-accent-cyan-600: #0891b2;
+
+  --color-accent-violet-300: #c4b5fd;
+  --color-accent-violet-400: #a78bfa;
+  --color-accent-violet-500: #8b5cf6;
+  --color-accent-violet-600: #7c3aed;
+
+  --color-accent-fuchsia-300: #f0abfc;
+  --color-accent-fuchsia-400: #e879f9;
+  --color-accent-fuchsia-500: #d946ef;
+  --color-accent-fuchsia-600: #c026d3;
+
+  --font-sans:
+    'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-display: 'Space Grotesk', Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+    'Courier New', monospace;
+
+  --shadow-glow-cyan:
+    0 0 24px -4px rgba(6, 182, 212, 0.4), 0 0 64px -16px rgba(6, 182, 212, 0.25);
+  --shadow-glow-violet:
+    0 0 24px -4px rgba(139, 92, 246, 0.4),
+    0 0 64px -16px rgba(139, 92, 246, 0.25);
+  --shadow-glow-fuchsia:
+    0 0 24px -4px rgba(217, 70, 239, 0.4),
+    0 0 64px -16px rgba(217, 70, 239, 0.25);
+  --shadow-glow-soft:
+    0 0 16px -2px rgba(139, 92, 246, 0.25),
+    0 0 48px -12px rgba(6, 182, 212, 0.15);
+
+  --animate-fade-in-up: fade-in-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  --animate-fade-in: fade-in 0.6s ease-out forwards;
+  --animate-gradient-shift: gradient-shift 8s ease infinite;
+  --animate-glow-pulse: glow-pulse 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-blob-1: blob-float-1 18s ease-in-out infinite;
+  --animate-blob-2: blob-float-2 22s ease-in-out infinite;
+  --animate-blob-3: blob-float-3 26s ease-in-out infinite;
+  --animate-slow-spin: slow-spin 12s linear infinite;
+
+  @keyframes fade-in-up {
+    0% {
+      opacity: 0;
+      transform: translateY(24px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes fade-in {
+    0% {
+      opacity: 0;
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+
+  @keyframes gradient-shift {
+    0%,
+    100% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+  }
+
+  @keyframes glow-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.4);
+    }
+    50% {
+      box-shadow: 0 0 0 14px rgba(139, 92, 246, 0);
+    }
+  }
+
+  @keyframes blob-float-1 {
+    0%,
+    100% {
+      transform: translate(0px, 0px) scale(1);
+    }
+    33% {
+      transform: translate(30px, -50px) scale(1.1);
+    }
+    66% {
+      transform: translate(-20px, 30px) scale(0.95);
+    }
+  }
+
+  @keyframes blob-float-2 {
+    0%,
+    100% {
+      transform: translate(0px, 0px) scale(1);
+    }
+    33% {
+      transform: translate(-40px, 30px) scale(1.05);
+    }
+    66% {
+      transform: translate(20px, -40px) scale(1.1);
+    }
+  }
+
+  @keyframes blob-float-3 {
+    0%,
+    100% {
+      transform: translate(0px, 0px) scale(1);
+    }
+    50% {
+      transform: translate(40px, 40px) scale(1.08);
+    }
+  }
+
+  @keyframes slow-spin {
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
+  }
+}
+
+@utility bg-gradient-radial {
+  background-image: radial-gradient(var(--tw-gradient-stops));
+}
+
+@utility bg-gradient-conic {
+  background-image: conic-gradient(
+    from 180deg at 50% 50%,
+    var(--tw-gradient-stops)
+  );
+}
+
+@utility bg-mesh-1 {
+  background-image:
+    radial-gradient(at 20% 20%, rgba(6, 182, 212, 0.18) 0px, transparent 50%),
+    radial-gradient(at 80% 0%, rgba(139, 92, 246, 0.18) 0px, transparent 50%),
+    radial-gradient(at 80% 80%, rgba(217, 70, 239, 0.15) 0px, transparent 50%),
+    radial-gradient(at 0% 100%, rgba(6, 182, 212, 0.1) 0px, transparent 50%);
+}
+
+@utility bg-gradient-accent {
+  background-image: linear-gradient(
+    135deg,
+    #06b6d4 0%,
+    #8b5cf6 50%,
+    #d946ef 100%
+  );
+}
+
+@utility surface-glass {
+  @apply bg-surface-900/60 backdrop-blur-xl border border-surface-700/50;
+}
+
+@utility surface-glass-hover {
+  @apply hover:bg-surface-900/80 hover:border-accent-violet-500/40 transition-colors duration-300;
+}
+
+@utility text-gradient {
+  @apply bg-linear-to-r from-accent-cyan-400 via-accent-violet-400 to-accent-fuchsia-400 bg-clip-text text-transparent;
+  background-size: 200% 200%;
+}
+
+@utility text-gradient-animated {
+  @apply text-gradient animate-gradient-shift;
+}
+
+@utility gradient-border {
+  position: relative;
+  isolation: isolate;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    padding: 1px;
+    border-radius: inherit;
+    background: linear-gradient(
+      135deg,
+      rgba(6, 182, 212, 0.5),
+      rgba(139, 92, 246, 0.5),
+      rgba(217, 70, 239, 0.5)
+    );
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+    z-index: -1;
+  }
+}
+
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(139, 92, 246, 0.3) transparent;
+}
 
 @layer base {
   html {
@@ -33,56 +254,129 @@
   }
 }
 
-@layer components {
-  .surface-glass {
-    @apply bg-surface-900/60 backdrop-blur-xl border border-surface-700/50;
-  }
+.prose {
+  --tw-prose-body: #cbd5e1;
+  --tw-prose-headings: #f8fafc;
+  --tw-prose-links: #22d3ee;
+  --tw-prose-bold: #f8fafc;
+  --tw-prose-counters: #94a3b8;
+  --tw-prose-bullets: #475569;
+  --tw-prose-hr: rgba(148, 163, 184, 0.15);
+  --tw-prose-quotes: #94a3b8;
+  --tw-prose-quote-borders: #22d3ee;
+  --tw-prose-captions: #94a3b8;
+  --tw-prose-code: #e0e7ff;
+  --tw-prose-pre-code: #e5e7eb;
+  --tw-prose-pre-bg: #0a1020;
+  --tw-prose-th-borders: rgba(148, 163, 184, 0.2);
+  --tw-prose-td-borders: rgba(148, 163, 184, 0.1);
 
-  .surface-glass-hover {
-    @apply hover:bg-surface-900/80 hover:border-accent-violet-500/40 transition-colors duration-300;
-  }
+  max-width: none;
 }
 
-@layer utilities {
-  .text-gradient {
-    @apply bg-gradient-to-r from-accent-cyan-400 via-accent-violet-400 to-accent-fuchsia-400 bg-clip-text text-transparent;
-    background-size: 200% 200%;
-  }
+.prose :is(h1, h2, h3, h4, h5, h6) {
+  font-family: 'Space Grotesk', Inter, sans-serif;
+  font-weight: 700;
+  line-height: 1.2;
+}
 
-  .text-gradient-animated {
-    @apply text-gradient animate-gradient-shift;
-  }
+.prose h1 {
+  font-size: 2.25rem;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+}
 
-  .gradient-border {
-    position: relative;
-    isolation: isolate;
-  }
+.prose h2 {
+  font-size: 1.875rem;
+  margin-top: 0.75rem;
+  margin-bottom: 0.375rem;
+}
 
-  .gradient-border::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    padding: 1px;
-    border-radius: inherit;
-    background: linear-gradient(
-      135deg,
-      rgba(6, 182, 212, 0.5),
-      rgba(139, 92, 246, 0.5),
-      rgba(217, 70, 239, 0.5)
-    );
-    -webkit-mask:
-      linear-gradient(#000 0 0) content-box,
-      linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-    pointer-events: none;
-    z-index: -1;
-  }
+.prose h3 {
+  font-size: 1.5rem;
+  margin-top: 0.75rem;
+  margin-bottom: 0.375rem;
+}
 
-  .scrollbar-thin {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(139, 92, 246, 0.3) transparent;
-  }
+.prose :is(p, ul, ol) {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.prose :is(ul, ol) {
+  padding-left: 1.625rem;
+}
+
+.prose li {
+  margin-top: 0.125rem;
+  margin-bottom: 0.125rem;
+}
+
+.prose li > p {
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+
+.prose li > :is(ul, ol) {
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+
+.prose a:hover {
+  color: #67e8f9;
+}
+
+.prose blockquote {
+  border-left-width: 4px;
+  font-style: italic;
+  background-color: rgba(15, 23, 42, 0.6);
+  border-radius: 0.375rem;
+  padding: 1rem;
+  padding-left: 1rem;
+  margin: 0.75rem 0;
+}
+
+.prose code {
+  background-color: rgba(15, 23, 42, 0.7);
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.375rem;
+  font-size: 0.875em;
+  font-weight: 500;
+  border: 1px solid rgba(99, 102, 241, 0.15);
+}
+
+.prose pre code {
+  background-color: transparent;
+  padding: 0;
+  border: none;
+}
+
+.prose pre {
+  padding: 1rem;
+  border-radius: 0.5rem;
+  overflow: auto;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  border: 1px solid rgba(99, 102, 241, 0.12);
+}
+
+.prose img {
+  border-radius: 0.5rem;
+  margin: 1rem auto;
+}
+
+.prose thead th {
+  background-color: rgba(15, 23, 42, 0.6);
+  padding: 0.75rem;
+  font-weight: 600;
+}
+
+.prose tbody td {
+  padding: 0.75rem;
+}
+
+.prose hr {
+  margin: 1rem 0;
 }
 
 @media (prefers-reduced-motion: reduce) {

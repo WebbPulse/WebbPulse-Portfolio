@@ -1,11 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import type {
-  Passkey,
-  PasskeyDeleteOutcome,
-  PasskeyListOutcome,
-  PasskeyRegistrationOutcome,
-  PasskeyRenameOutcome,
-} from '@webbpulse/auth';
+import React, { useMemo, useState } from 'react';
+import type { AuthClient, Passkey } from '@webbpulse/auth';
+import { usePasskeyPanel } from '@webbpulse/auth/panels';
 
 import { Button } from '../common';
 import { defaultPasskeyName } from '../../services/passkeyNames';
@@ -13,62 +8,24 @@ import { defaultPasskeyName } from '../../services/passkeyNames';
 /**
  * The passkeys on this account, with enrol, rename and remove.
  *
- * Capability is read off any call's `unavailable` outcome rather than a second
- * request. Removal asks twice because a removed credential cannot be recovered,
- * and `last-credential` disables the control with its remedy beside it.
+ * State comes from `usePasskeyPanel`, so capability, busy, the banners and the
+ * two drafts are the package's. Removal asks twice because a removed credential
+ * cannot be recovered, and the confirmation is the only state left here.
  */
 
 /** The subset of `AuthClient` this component calls. */
-export interface PasskeysClient {
-  listPasskeys: () => Promise<PasskeyListOutcome>;
-  registerPasskey: (input?: {
-    name?: string;
-  }) => Promise<PasskeyRegistrationOutcome>;
-  renamePasskey: (
-    credentialId: string,
-    name: string
-  ) => Promise<PasskeyRenameOutcome>;
-  deletePasskey: (credentialId: string) => Promise<PasskeyDeleteOutcome>;
-}
+export type PasskeysClient = AuthClient<unknown>;
 
 interface PasskeysPanelProps {
   client: PasskeysClient;
   className?: string;
 }
 
-/**
- * A sentence per refusal reason, used when the server sends an empty message.
- *
- * The server's own sentence is preferred; these differ per reason because the
- * remedy does.
- */
-const REASON_FALLBACKS: Record<string, string> = {
-  'last-credential':
-    'This is the only way to sign in to this account. Set a password first, then remove this passkey.',
-  'already-registered':
-    'That device already has a passkey for this site. Use the one it has, or remove it first.',
-  rejected: 'That passkey could not be verified. Try again.',
-  'not-found':
-    'That passkey is not on this account any more. The list has been reloaded.',
-  'name-required': 'A passkey needs a name.',
-  unavailable: 'Passkeys are not available on this deployment.',
-  'rate-limited': 'Too many attempts. Wait a few minutes and try again.',
-};
-
-/** The sentence to render for a refusal, preferring the server's own. */
-function refusalMessage(refusal: {
-  reason: string;
-  message: string;
-  retryAfter?: number | undefined;
-}): string {
-  const base =
-    refusal.message.trim() !== ''
-      ? refusal.message
-      : (REASON_FALLBACKS[refusal.reason] ?? 'That request was refused.');
-  if (refusal.reason === 'rate-limited' && refusal.retryAfter !== undefined) {
-    return `${base} Try again in ${refusal.retryAfter} seconds.`;
-  }
-  return base;
+/** The sentence for a `last-credential` refusal, preferring the server's own. */
+function refusalMessage(refusal: { message: string }): string {
+  return refusal.message.trim() !== ''
+    ? refusal.message
+    : 'This is the only way to sign in to this account. Set a password first, then remove this passkey.';
 }
 
 /** An ISO instant as a readable date, or nothing when the server sent none. */
@@ -86,11 +43,27 @@ const PasskeyRow: React.FC<{
   busy: boolean;
   /** The `last-credential` explanation, when the last delete hit it. */
   blockedReason: string | null;
-  onRename: (name: string) => void;
+  /** Whether the rename form is open on this row. */
+  renaming: boolean;
+  /** The rename draft, owned by the panel hook. */
+  draft: string;
+  onDraftChange: (name: string) => void;
+  onStartRename: () => void;
+  onCancelRename: () => void;
+  onCommitRename: () => void;
   onDelete: () => void;
-}> = ({ passkey, busy, blockedReason, onRename, onDelete }) => {
-  const [renaming, setRenaming] = useState(false);
-  const [draft, setDraft] = useState(passkey.name);
+}> = ({
+  passkey,
+  busy,
+  blockedReason,
+  renaming,
+  draft,
+  onDraftChange,
+  onStartRename,
+  onCancelRename,
+  onCommitRename,
+  onDelete,
+}) => {
   const [confirming, setConfirming] = useState(false);
 
   const createdAt = formatInstant(passkey.createdAt);
@@ -99,15 +72,14 @@ const PasskeyRow: React.FC<{
   return (
     <li
       data-testid={`passkey-${passkey.credentialId}`}
-      className="flex flex-wrap items-center justify-between gap-3 p-4 border border-gray-200 dark:border-gray-700 rounded"
+      className="flex flex-wrap items-center justify-between gap-3 p-4 border border-gray-200 dark:border-gray-700 rounded-sm"
     >
       {renaming ? (
         <form
           className="flex flex-wrap items-center gap-2 w-full"
           onSubmit={(e) => {
             e.preventDefault();
-            onRename(draft.trim());
-            setRenaming(false);
+            onCommitRename();
           }}
         >
           <label
@@ -120,9 +92,9 @@ const PasskeyRow: React.FC<{
             id={`passkey-name-${passkey.credentialId}`}
             type="text"
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => onDraftChange(e.target.value)}
             maxLength={64}
-            className="flex-1 min-w-[12rem] px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+            className="flex-1 min-w-48 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
             required
             disabled={busy}
           />
@@ -132,10 +104,7 @@ const PasskeyRow: React.FC<{
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              setDraft(passkey.name);
-              setRenaming(false);
-            }}
+            onClick={onCancelRename}
             disabled={busy}
           >
             Cancel
@@ -166,10 +135,7 @@ const PasskeyRow: React.FC<{
             <Button
               variant="outline"
               size="sm"
-              onClick={() => {
-                setDraft(passkey.name);
-                setRenaming(true);
-              }}
+              onClick={onStartRename}
               disabled={busy}
             >
               Rename
@@ -218,131 +184,53 @@ export const PasskeysPanel: React.FC<PasskeysPanelProps> = ({
   client,
   className = '',
 }) => {
-  const [passkeys, setPasskeys] = useState<Passkey[] | null>(null);
-  const [unavailable, setUnavailable] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [naming, setNaming] = useState(false);
-  const [newName, setNewName] = useState('');
-
   /**
    * The credential the server refused to remove, and why.
    *
-   * Held per credential rather than as one flag, and cleared on every reload, so
-   * enrolling a second passkey re-enables the first one's Remove.
+   * The hook reduces a refusal to a sentence without saying which row it was
+   * about, so the delete call is observed here to attribute `last-credential` to
+   * its row. Cleared on every reload, so enrolling a second passkey re-enables
+   * the first one's Remove.
    */
   const [blocked, setBlocked] = useState<Record<string, string>>({});
 
-  const reload = useCallback(async () => {
-    try {
+  /** The client, with the delete leg observed for a `last-credential` refusal. */
+  const watched = useMemo<PasskeysClient>(() => {
+    const deletePasskey: PasskeysClient['deletePasskey'] = async (
+      credentialId
+    ) => {
+      const outcome = await client.deletePasskey(credentialId);
+      if (!outcome.ok && outcome.reason === 'last-credential') {
+        setBlocked((current) => ({
+          ...current,
+          [credentialId]: refusalMessage(outcome),
+        }));
+      }
+      return outcome;
+    };
+    const listPasskeys: PasskeysClient['listPasskeys'] = async () => {
       const outcome = await client.listPasskeys();
       if (outcome.ok) {
-        setPasskeys(outcome.passkeys);
-        setUnavailable(false);
         setBlocked({});
-        return;
       }
-      setPasskeys([]);
-      setUnavailable(true);
-    } catch {
-      setPasskeys([]);
-      setError('Your passkeys could not be loaded. Try again.');
-    }
+      return outcome;
+    };
+    return Object.assign(Object.create(client) as PasskeysClient, {
+      deletePasskey,
+      listPasskeys,
+    });
   }, [client]);
 
-  useEffect(() => {
-    void reload();
-  }, [reload]);
-
-  const handleRegister = useCallback(
-    async (name: string) => {
-      setBusy(true);
-      setError(null);
-      setNotice(null);
-      try {
-        const outcome = await client.registerPasskey(
-          name === '' ? {} : { name }
-        );
-        if (outcome.ok) {
-          setNaming(false);
-          setNotice(`${outcome.passkey.name} is ready to sign in with.`);
-          await reload();
-          return;
-        }
-        if (outcome.reason === 'cancelled') {
-          setNaming(false);
-          return;
-        }
-        setError(refusalMessage(outcome));
-      } catch {
-        setError('That passkey could not be added. Try again.');
-      } finally {
-        setBusy(false);
-      }
+  const panel = usePasskeyPanel({
+    client: watched,
+    messages: {
+      created: (passkey) => `${passkey.name} is ready to sign in with.`,
+      renamed: 'That passkey was renamed.',
+      removed: 'That passkey was removed.',
     },
-    [client, reload]
-  );
+  });
 
-  const handleRename = useCallback(
-    async (credentialId: string, name: string) => {
-      setBusy(true);
-      setError(null);
-      setNotice(null);
-      try {
-        const outcome = await client.renamePasskey(credentialId, name);
-        if (outcome.ok) {
-          setPasskeys((current) =>
-            (current ?? []).map((entry) =>
-              entry.credentialId === credentialId ? outcome.passkey : entry
-            )
-          );
-          setNotice('That passkey was renamed.');
-          return;
-        }
-        setError(refusalMessage(outcome));
-        if (outcome.reason === 'not-found') {
-          await reload();
-        }
-      } catch {
-        setError('That passkey could not be renamed. Try again.');
-      } finally {
-        setBusy(false);
-      }
-    },
-    [client, reload]
-  );
-
-  const handleDelete = useCallback(
-    async (credentialId: string) => {
-      setBusy(true);
-      setError(null);
-      setNotice(null);
-      try {
-        const outcome = await client.deletePasskey(credentialId);
-        if (outcome.ok) {
-          setNotice('That passkey was removed.');
-          await reload();
-          return;
-        }
-        const message = refusalMessage(outcome);
-        setError(message);
-        if (outcome.reason === 'last-credential') {
-          setBlocked((current) => ({ ...current, [credentialId]: message }));
-        }
-        if (outcome.reason === 'not-found') {
-          await reload();
-        }
-      } catch {
-        setError('That passkey could not be removed. Try again.');
-      } finally {
-        setBusy(false);
-      }
-    },
-    [client, reload]
-  );
-
-  const list = passkeys ?? [];
+  const list = panel.items ?? [];
 
   return (
     <div className={className} data-testid="passkeys-panel">
@@ -356,31 +244,31 @@ export const PasskeysPanel: React.FC<PasskeysPanelProps> = ({
         removing the last one.
       </p>
 
-      {error !== null && (
+      {panel.error !== null && (
         <div
           role="alert"
-          className="mb-4 p-3 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded"
+          className="mb-4 p-3 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded-sm"
         >
-          {error}
+          {panel.error}
         </div>
       )}
-      {notice !== null && (
+      {panel.notice !== null && (
         <div
           role="status"
-          className="mb-4 p-3 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded"
+          className="mb-4 p-3 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded-sm"
         >
-          {notice}
+          {panel.notice}
         </div>
       )}
 
-      {unavailable ? (
+      {panel.unavailable ? (
         <p
           data-testid="passkeys-unavailable"
           className="text-sm text-gray-600 dark:text-gray-400"
         >
           Passkeys are not switched on for this deployment.
         </p>
-      ) : passkeys === null ? (
+      ) : panel.items === null ? (
         <p className="text-sm text-gray-600 dark:text-gray-400">Loading...</p>
       ) : (
         <>
@@ -394,23 +282,26 @@ export const PasskeysPanel: React.FC<PasskeysPanelProps> = ({
                 <PasskeyRow
                   key={passkey.credentialId}
                   passkey={passkey}
-                  busy={busy}
+                  busy={panel.busy}
+                  renaming={panel.renaming === passkey.credentialId}
+                  draft={panel.draftRename}
+                  onDraftChange={panel.setDraftRename}
+                  onStartRename={() => panel.startRename(passkey)}
+                  onCancelRename={panel.cancelRename}
+                  onCommitRename={() => void panel.commitRename()}
+                  onDelete={() => void panel.remove(passkey.credentialId)}
                   blockedReason={blocked[passkey.credentialId] ?? null}
-                  onRename={(name) =>
-                    void handleRename(passkey.credentialId, name)
-                  }
-                  onDelete={() => void handleDelete(passkey.credentialId)}
                 />
               ))}
             </ul>
           )}
 
-          {naming ? (
+          {panel.adding ? (
             <form
-              className="mt-4 space-y-3 p-4 border border-gray-200 dark:border-gray-700 rounded max-w-md"
+              className="mt-4 space-y-3 p-4 border border-gray-200 dark:border-gray-700 rounded-sm max-w-md"
               onSubmit={(e) => {
                 e.preventDefault();
-                void handleRegister(newName.trim());
+                void panel.commitCreate();
               }}
             >
               <label
@@ -422,27 +313,24 @@ export const PasskeysPanel: React.FC<PasskeysPanelProps> = ({
               <input
                 id="new-passkey-name"
                 type="text"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
+                value={panel.draftName}
+                onChange={(e) => panel.setDraftName(e.target.value)}
                 maxLength={64}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-                disabled={busy}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                disabled={panel.busy}
               />
               <p className="text-sm text-gray-600 dark:text-gray-400">
                 Something you will recognise in this list later. Your browser
                 will ask for your device unlock next.
               </p>
               <div className="flex gap-3">
-                <Button type="submit" variant="primary" disabled={busy}>
-                  {busy ? 'Waiting for your device...' : 'Add passkey'}
+                <Button type="submit" variant="primary" disabled={panel.busy}>
+                  {panel.busy ? 'Waiting for your device...' : 'Add passkey'}
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={() => {
-                    setNaming(false);
-                    setError(null);
-                  }}
-                  disabled={busy}
+                  onClick={panel.cancelCreate}
+                  disabled={panel.busy}
                 >
                   Cancel
                 </Button>
@@ -452,12 +340,11 @@ export const PasskeysPanel: React.FC<PasskeysPanelProps> = ({
             <Button
               variant="primary"
               onClick={() => {
-                setNewName(defaultPasskeyName());
-                setNaming(true);
-                setError(null);
-                setNotice(null);
+                panel.startCreate();
+                panel.setDraftName(defaultPasskeyName());
+                panel.dismiss();
               }}
-              disabled={busy}
+              disabled={panel.busy}
             >
               Add a passkey
             </Button>

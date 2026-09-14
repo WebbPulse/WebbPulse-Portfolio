@@ -42,7 +42,7 @@ const BlogPostCard: React.FC<{ post: BlogPost; index: number }> = ({
     >
       <div className="flex items-center justify-between mb-4">
         {post.category && (
-          <span className="px-2.5 py-0.5 text-xs rounded-full bg-gradient-to-r from-accent-violet-500/20 to-accent-fuchsia-500/20 border border-accent-violet-500/30 text-surface-100">
+          <span className="px-2.5 py-0.5 text-xs rounded-full bg-linear-to-r from-accent-violet-500/20 to-accent-fuchsia-500/20 border border-accent-violet-500/30 text-surface-100">
             {post.category.name}
           </span>
         )}
@@ -111,7 +111,10 @@ export const BlogList: React.FC = () => {
   return (
     <div className="min-h-screen">
       <Header navigationItems={NAV} />
-      <main className="relative py-20 sm:py-28 overflow-hidden">
+      <main
+        className="relative py-20 sm:py-28 overflow-hidden"
+        data-testid="page-blog-list"
+      >
         <div className="absolute inset-0 bg-mesh-1 opacity-40 pointer-events-none" />
         <div className="relative z-10 max-w-7xl mx-auto px-6 sm:px-8">
           <div className="text-center mb-12 max-w-2xl mx-auto">

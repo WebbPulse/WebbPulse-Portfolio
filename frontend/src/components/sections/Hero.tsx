@@ -24,7 +24,7 @@ const Hero: React.FC = () => {
   return (
     <section
       id="hero"
-      className="relative min-h-[100svh] flex items-center justify-center overflow-hidden bg-surface-950"
+      className="relative min-h-svh flex items-center justify-center overflow-hidden bg-surface-950"
     >
       <div
         className="absolute inset-0 bg-mesh-1 pointer-events-none"
@@ -33,7 +33,7 @@ const Hero: React.FC = () => {
 
       <AnimatedOrb
         gradient="from-accent-cyan-500 to-accent-cyan-400"
-        size="w-[32rem] h-[32rem]"
+        size="w-lg h-128"
         position="-top-32 -left-32"
         variant={1}
         parallaxY={-parallaxSlow}
@@ -41,7 +41,7 @@ const Hero: React.FC = () => {
       />
       <AnimatedOrb
         gradient="from-accent-violet-500 to-accent-fuchsia-500"
-        size="w-[36rem] h-[36rem]"
+        size="w-xl h-144"
         position="-bottom-40 -right-32"
         variant={2}
         parallaxY={parallaxFast}
@@ -49,7 +49,7 @@ const Hero: React.FC = () => {
       />
       <AnimatedOrb
         gradient="from-accent-fuchsia-400 to-accent-violet-500"
-        size="w-[24rem] h-[24rem]"
+        size="w-[24rem] h-96"
         position="top-1/3 left-1/2"
         variant={3}
         parallaxY={-parallaxFast * 0.5}
@@ -91,7 +91,7 @@ const Hero: React.FC = () => {
                 .querySelector('#projects')
                 ?.scrollIntoView({ behavior: 'smooth' });
             }}
-            className="group relative inline-flex items-center justify-center px-8 py-3.5 rounded-full font-medium text-surface-50 bg-gradient-accent shadow-glow-violet hover:shadow-glow-fuchsia transition-shadow duration-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-fuchsia-400 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950"
+            className="group relative inline-flex items-center justify-center px-8 py-3.5 rounded-full font-medium text-surface-50 bg-gradient-accent shadow-glow-violet hover:shadow-glow-fuchsia transition-shadow duration-500 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-fuchsia-400 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950"
             style={{ backgroundSize: '200% 200%' }}
           >
             <span className="relative z-10">View My Work</span>
@@ -107,7 +107,7 @@ const Hero: React.FC = () => {
                 .querySelector('#contact')
                 ?.scrollIntoView({ behavior: 'smooth' });
             }}
-            className="inline-flex items-center justify-center px-8 py-3.5 rounded-full font-medium text-surface-100 surface-glass surface-glass-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950"
+            className="inline-flex items-center justify-center px-8 py-3.5 rounded-full font-medium text-surface-100 surface-glass surface-glass-hover focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950"
           >
             Get In Touch
           </a>
@@ -122,10 +122,10 @@ const Hero: React.FC = () => {
             ?.scrollIntoView({ behavior: 'smooth' })
         }
         aria-label="Scroll to next section"
-        className="absolute bottom-8 left-1/2 -translate-x-1/2 z-10 flex flex-col items-center gap-2 text-surface-400 hover:text-surface-200 transition-colors group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950 rounded-full p-2"
+        className="absolute bottom-8 left-1/2 -translate-x-1/2 z-10 flex flex-col items-center gap-2 text-surface-400 hover:text-surface-200 transition-colors group focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950 rounded-full p-2"
       >
         <span className="text-xs uppercase tracking-[0.2em]">Scroll</span>
-        <span className="w-px h-10 bg-gradient-to-b from-surface-400 to-transparent group-hover:from-accent-cyan-400" />
+        <span className="w-px h-10 bg-linear-to-b from-surface-400 to-transparent group-hover:from-accent-cyan-400" />
       </button>
     </section>
   );

@@ -134,7 +134,9 @@ ruff format --check app tests
   and `production` and warns elsewhere. `identity` needs all four, `content` and
   `resume` need `SECRET_KEY`, `public` needs none
 - **Rate limiting**: API Gateway stage throttling (burst 200, rate 100), plus
-  the login limiter. There is no general in-process limiter
+  the login limiter. There is no general in-process limiter. Staging is never
+  rate limited: every limiter follows `settings.rate_limiting_enabled`, the
+  shared `webbpulse` convention that is False on `staging` and True elsewhere
 - **Observability**: OpenTelemetry through `webbpulse.otel`, X-Ray active
   tracing, and 7-day CloudWatch log groups. Logging is `webbpulse.logging`'s
   JSON formatter with `request_id` and `user_id` merged onto every line from
@@ -161,7 +163,6 @@ ruff format --check app tests
 | `terraform/apigateway.tf` | HTTP API, routes, the 24 flagged admin keys |
 | `terraform/identity.tf` | The identity platform module |
 | `frontend/src/services/api.ts` | Centralized API client |
-| `scripts/verify_route_cut.sh` | Probes the live gateway per domain |
 
 ### Deployment
 
@@ -179,7 +180,7 @@ ruff format --check app tests
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `.github/workflows/ci.yml` | PR to `main`/`staging` | `dorny/paths-filter` gates a `Backend` job on the org `python-ci.yml@v3` (uv sync, pytest on moto per test domain, ruff, pyright, bandit, pip-audit) and a `Frontend` job on `typescript-ci.yml@v2` (lint, format check, Vitest with coverage, build). `all-checks-passed` is the aggregating gate job |
-| `.github/workflows/deploy-backend.yml` | push to `main`/`staging`, paths `backend/**`, `scripts/verify_route_cut.sh` | Builds the four images via `container-image.yml@v2`, assembles a digest-pinned `function-image-map`, deploys via `lambda-image-deploy.yml@v2`, invoke-smoke-tests `GET /health` per function, then verifies the live gateway with `verify_route_cut.sh` |
+| `.github/workflows/deploy-backend.yml` | push to `main`/`staging`, paths `backend/**` | Builds the four images via `container-image.yml@v2`, assembles a digest-pinned `function-image-map`, deploys via `lambda-image-deploy.yml@v2`, invoke-smoke-tests `GET /health` per function; the e2e suite verifies the live gateway |
 | `.github/workflows/deploy-frontend.yml` | push to `main`/`staging`, paths `frontend/**` | Resolves the environment, then calls the org `spa-deploy.yml` (pinned to a sha): CodeArtifact login, `npm run build`, wait for any active TFC run, `s3 sync --delete`, CloudFront invalidation |
 
 There is no `test-backend.yml` or `test-frontend.yml`; CI is one `ci.yml`.

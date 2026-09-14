@@ -162,10 +162,10 @@ const SkillCard: React.FC<{ skill: Skill; index: number }> = ({
 const SkillSkeletonCard: React.FC = () => (
   <div className="surface-glass rounded-2xl p-5 animate-pulse">
     <div className="flex items-center justify-between">
-      <div className="w-8 h-8 bg-surface-800 rounded" />
-      <div className="w-16 h-3 bg-surface-800 rounded" />
+      <div className="w-8 h-8 bg-surface-800 rounded-sm" />
+      <div className="w-16 h-3 bg-surface-800 rounded-sm" />
     </div>
-    <div className="mt-4 h-4 bg-surface-800 rounded w-2/3" />
+    <div className="mt-4 h-4 bg-surface-800 rounded-sm w-2/3" />
   </div>
 );
 
@@ -261,7 +261,7 @@ export const Skills: React.FC = () => {
                     >
                       {meta.label}
                     </span>
-                    <span className="flex-1 h-px bg-gradient-to-r from-surface-700 to-transparent" />
+                    <span className="flex-1 h-px bg-linear-to-r from-surface-700 to-transparent" />
                     <span className="text-xs text-surface-500">
                       {skills.length}
                     </span>

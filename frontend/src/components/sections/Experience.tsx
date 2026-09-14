@@ -27,7 +27,7 @@ const ExperienceCard: React.FC<{ item: ExperienceType; index: number }> = ({
     >
       <div className="absolute left-4 md:left-1/2 -translate-x-1/2 z-10 flex items-center justify-center">
         <span className="absolute w-4 h-4 rounded-full bg-accent-violet-500 animate-glow-pulse" />
-        <span className="relative w-3 h-3 rounded-full bg-gradient-to-br from-accent-cyan-400 to-accent-fuchsia-500 border-2 border-surface-950" />
+        <span className="relative w-3 h-3 rounded-full bg-linear-to-br from-accent-cyan-400 to-accent-fuchsia-500 border-2 border-surface-950" />
       </div>
 
       <div
@@ -75,7 +75,7 @@ const ExperienceCard: React.FC<{ item: ExperienceType; index: number }> = ({
                   className={`text-sm text-surface-300 flex items-start gap-2 ${isEven ? 'md:flex-row-reverse md:text-right' : ''}`}
                 >
                   <svg
-                    className="flex-shrink-0 w-4 h-4 mt-0.5 text-accent-cyan-400"
+                    className="shrink-0 w-4 h-4 mt-0.5 text-accent-cyan-400"
                     viewBox="0 0 20 20"
                     fill="currentColor"
                     aria-hidden="true"
@@ -137,7 +137,7 @@ const CertificationCard: React.FC<{
   const year = item.issued_date?.slice(0, 4);
   const inner = (
     <div className="surface-glass surface-glass-hover rounded-2xl p-6 h-full transition-shadow duration-500 hover:shadow-glow-cyan">
-      <div className="flex items-center justify-center w-14 h-14 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-accent-cyan-500/20 to-accent-violet-500/20 border border-accent-violet-500/30">
+      <div className="flex items-center justify-center w-14 h-14 mx-auto mb-4 rounded-2xl bg-linear-to-br from-accent-cyan-500/20 to-accent-violet-500/20 border border-accent-violet-500/30">
         <span className="text-2xl" aria-hidden="true">
           🏆
         </span>
@@ -164,7 +164,7 @@ const CertificationCard: React.FC<{
           href={item.credential_url}
           target="_blank"
           rel="noopener noreferrer"
-          className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950 rounded-2xl"
+          className="block focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950 rounded-2xl"
         >
           {inner}
         </a>
@@ -177,9 +177,9 @@ const CertificationCard: React.FC<{
 
 const SkeletonCard: React.FC = () => (
   <div className="surface-glass rounded-2xl p-6 animate-pulse">
-    <div className="h-3 bg-surface-800 rounded w-1/3 mb-3" />
-    <div className="h-4 bg-surface-800 rounded w-2/3 mb-2" />
-    <div className="h-3 bg-surface-800 rounded w-1/2" />
+    <div className="h-3 bg-surface-800 rounded-sm w-1/3 mb-3" />
+    <div className="h-4 bg-surface-800 rounded-sm w-2/3 mb-2" />
+    <div className="h-3 bg-surface-800 rounded-sm w-1/2" />
   </div>
 );
 
@@ -198,7 +198,7 @@ export const Experience: React.FC = () => {
       id="experience"
       className="relative py-24 sm:py-32 overflow-hidden bg-surface-950"
     >
-      <div className="absolute inset-0 bg-gradient-to-b from-surface-950 via-surface-900 to-surface-950 pointer-events-none" />
+      <div className="absolute inset-0 bg-linear-to-b from-surface-950 via-surface-900 to-surface-950 pointer-events-none" />
 
       <div className="relative z-10 max-w-7xl mx-auto px-6 sm:px-8">
         <div className="text-center mb-16 max-w-2xl mx-auto">
@@ -215,7 +215,7 @@ export const Experience: React.FC = () => {
 
         {/* Timeline */}
         <div className="relative">
-          <div className="absolute left-4 md:left-1/2 -translate-x-1/2 top-0 bottom-0 w-px bg-gradient-to-b from-accent-cyan-500/0 via-accent-violet-500/60 to-accent-fuchsia-500/0" />
+          <div className="absolute left-4 md:left-1/2 -translate-x-1/2 top-0 bottom-0 w-px bg-linear-to-b from-accent-cyan-500/0 via-accent-violet-500/60 to-accent-fuchsia-500/0" />
 
           {expLoading && (
             <div className="space-y-12">

@@ -78,7 +78,10 @@ export const ResetPassword: React.FC = () => {
   };
 
   const shell = (children: React.ReactNode) => (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-12">
+    <div
+      className="min-h-screen bg-gray-50 dark:bg-gray-900 py-12"
+      data-testid="page-reset-password"
+    >
       <div className="max-w-md mx-auto">
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6 text-center">
@@ -125,7 +128,7 @@ export const ResetPassword: React.FC = () => {
       {error !== null && (
         <div
           role="alert"
-          className="mb-4 p-3 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded"
+          className="mb-4 p-3 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded-sm"
         >
           {error}
         </div>
@@ -144,7 +147,7 @@ export const ResetPassword: React.FC = () => {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="new-password"
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
             required
             disabled={busy}
           />
@@ -162,7 +165,7 @@ export const ResetPassword: React.FC = () => {
             value={confirmation}
             onChange={(e) => setConfirmation(e.target.value)}
             autoComplete="new-password"
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
             required
             disabled={busy}
           />

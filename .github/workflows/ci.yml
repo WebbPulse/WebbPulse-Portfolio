@@ -48,6 +48,7 @@ jobs:
       python-version: "3.13"
       working-directory: backend
       install-command: >-
+        uv lock --check &&
         uv lock --upgrade-package webbpulse &&
         uv sync --locked &&
         uv run --no-sync python -c "import importlib.metadata as m; print('webbpulse', m.version('webbpulse'))"
@@ -71,7 +72,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    uses: WebbPulse/.github/.github/workflows/typescript-ci.yml@v2
+    uses: WebbPulse/.github/.github/workflows/typescript-ci.yml@v3
     with:
       node-version: "22"
       working-directory: frontend

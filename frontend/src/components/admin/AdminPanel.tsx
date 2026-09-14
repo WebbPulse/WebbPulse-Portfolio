@@ -9,7 +9,7 @@ import {
   apiService,
   identityOriginFrom,
 } from '../../services/api';
-import { useOAuthProviders } from '../../hooks/useOAuthProviders';
+import { useOAuthProviders } from '@webbpulse/discovery/react';
 import {
   useAdminSession,
   type AdminSession,
@@ -217,10 +217,10 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
    *
    * Passed to the Security tab so Connect buttons appear only for real providers.
    */
-  const oauthProviders = useOAuthProviders(
-    identityClient,
-    identityOriginFrom(API_BASE_URL)
-  );
+  const oauthProviders = useOAuthProviders({
+    identityOrigin: identityOriginFrom(API_BASE_URL),
+    enabled: typeof identityClient.oauthStartUrl === 'function',
+  });
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [showProjectForm, setShowProjectForm] = useState(false);
@@ -760,6 +760,7 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   return (
     <div
       className={`min-h-screen bg-gray-50 dark:bg-gray-900 py-12 ${className}`}
+      data-testid="signed-in"
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md">
@@ -776,7 +777,12 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                 >
                   Back to Main Page
                 </Button>
-                <Button variant="outline" onClick={session.logout} size="sm">
+                <Button
+                  variant="outline"
+                  onClick={session.logout}
+                  size="sm"
+                  testId="sign-out"
+                >
                   Logout
                 </Button>
               </div>
@@ -788,6 +794,7 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
               {TABS.map((tab) => (
                 <button
                   key={tab.id}
+                  data-testid={`tab-${tab.id}`}
                   onClick={() => setActiveTab(tab.id)}
                   className={`py-2 px-3 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${
                     activeTab === tab.id
@@ -1364,6 +1371,7 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                       setCategoryForm(EMPTY_CATEGORY);
                     }}
                     disabled={loading}
+                    testId="category-add"
                   >
                     Add New Category
                   </Button>
@@ -1382,7 +1390,7 @@ const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                     loading={loading}
                   />
                 )}
-                <div className="space-y-4">
+                <div className="space-y-4" data-testid="category-list">
                   {categories.map((category) => (
                     <div
                       key={category.id}

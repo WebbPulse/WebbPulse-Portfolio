@@ -1,10 +1,6 @@
-import React, { useCallback, useState } from 'react';
-import type {
-  RecoveryCodesOutcome,
-  TotpActivationOutcome,
-  TotpDisableOutcome,
-  TotpEnrolmentOutcome,
-} from '@webbpulse/auth';
+import React, { useCallback, useMemo, useState } from 'react';
+import type { AuthClient } from '@webbpulse/auth';
+import { useTotpPanel } from '@webbpulse/auth/panels';
 
 import { qrCodeSvgPath } from '@webbpulse/qrcode';
 import type { OAuthProviderInfo } from '@webbpulse/discovery';
@@ -16,62 +12,16 @@ import { PasskeysPanel, type PasskeysClient } from './PasskeysPanel';
 /**
  * The admin panel's second factor management, in identity mode.
  *
- * No route reports whether TOTP is on, so enrolment state is tracked per session
- * and starts `unknown`. The seed and the recovery codes are each shown once,
- * so the codes sit behind an explicit confirmation.
+ * State comes from `useTotpPanel`. No route reports whether TOTP is on, so the
+ * factor starts `unknown` and the hook reports only what it has seen. The seed
+ * and the recovery codes are each shown once, so the codes sit behind an
+ * explicit confirmation.
  */
 
-/** What this session knows about the account's factor. See the note above. */
-type FactorState = 'unknown' | 'enabled' | 'disabled';
+/** The subset of `AuthClient` this component calls. */
+export type SecurityClient = AuthClient<unknown>;
 
-/** Which step of the enrolment sequence is on screen. */
-type EnrolStep =
-  | { step: 'idle' }
-  | { step: 'scanning'; secret: string; provisioningUri: string }
-  | { step: 'codes'; codes: string[] };
-
-/**
- * The subset of `AuthClient` this component calls.
- *
- * Function properties rather than method shorthand, so a reference in a test is
- * not an `unbound-method` finding.
- */
-export interface SecurityClient {
-  enrolTotp: () => Promise<TotpEnrolmentOutcome>;
-  activateTotp: (input: { code: string }) => Promise<TotpActivationOutcome>;
-  disableTotp: (input: { code: string }) => Promise<TotpDisableOutcome>;
-  regenerateRecoveryCodes: (input: {
-    code: string;
-  }) => Promise<RecoveryCodesOutcome>;
-}
-
-interface SecuritySectionProps {
-  client: SecurityClient;
-  /**
-   * The three OAuth link routes, or null where they are not offered.
-   *
-   * Separate from `client` because OAuth needs a configured provider while MFA
-   * does not. Null renders no Connected accounts block at all.
-   */
-  oauthClient?: OAuthLinksClient | null;
-  /** The providers that deployment has configured. See `oauthClient`. */
-  availableProviders?: readonly OAuthProviderInfo[];
-  /**
-   * The four passkey management routes, or null where they are not offered.
-   *
-   * Separate from `client` for the reason `oauthClient` is. Needs no availability
-   * list, since every passkey route reports the capability as `unavailable`.
-   */
-  passkeysClient?: PasskeysClient | null;
-  className?: string;
-}
-
-/**
- * A sentence for each refusal reason the five routes can answer with.
- *
- * Fallbacks only: the server's own message is preferred. They differ per reason
- * because the remedy does.
- */
+/** The sentence for each refusal the identity service answers MFA calls with. */
 const REASON_FALLBACKS: Record<string, string> = {
   'invalid-code': 'That code is not valid. Check the app and try again.',
   'already-enabled':
@@ -96,6 +46,59 @@ function refusalMessage(refusal: {
     return `${base} Try again in ${refusal.retryAfter} seconds.`;
   }
   return base;
+}
+
+/**
+ * One MFA leg, with its refusal given this product's sentence.
+ *
+ * The hook renders `message` verbatim, and the identity service leaves it empty
+ * for the reasons it considers self explanatory, so the fallback table is
+ * applied before the hook ever sees the outcome. A thrown error becomes a
+ * refusal for the same reason: the hook re-throws rather than rendering one.
+ */
+async function described<T extends { ok: boolean }>(
+  call: () => Promise<T>
+): Promise<T> {
+  try {
+    const outcome = await call();
+    if (outcome.ok) {
+      return outcome;
+    }
+    const refusal = outcome as unknown as {
+      reason: string;
+      message: string;
+      retryAfter?: number | undefined;
+    };
+    return { ...outcome, message: refusalMessage(refusal) };
+  } catch {
+    return {
+      ok: false,
+      reason: 'failed',
+      message: 'That request could not be completed. Try again.',
+      code: undefined,
+    } as unknown as T;
+  }
+}
+
+interface SecuritySectionProps {
+  client: SecurityClient;
+  /**
+   * The three OAuth link routes, or null where they are not offered.
+   *
+   * Separate from `client` because OAuth needs a configured provider while MFA
+   * does not. Null renders no Connected accounts block at all.
+   */
+  oauthClient?: OAuthLinksClient | null;
+  /** The providers that deployment has configured. See `oauthClient`. */
+  availableProviders?: readonly OAuthProviderInfo[];
+  /**
+   * The four passkey management routes, or null where they are not offered.
+   *
+   * Separate from `client` for the reason `oauthClient` is. Needs no availability
+   * list, since every passkey route reports the capability as `unavailable`.
+   */
+  passkeysClient?: PasskeysClient | null;
+  className?: string;
 }
 
 /** Copies text, reporting whether the platform allowed it. */
@@ -138,7 +141,7 @@ const ProvisioningQr: React.FC<{ uri: string; secret: string }> = ({
   uri,
   secret,
 }) => {
-  let drawing: { path: string; viewBox: string } | null = null;
+  let drawing: { path: string; viewBox: string } | null;
   try {
     drawing = qrCodeSvgPath(uri);
   } catch {
@@ -157,7 +160,7 @@ const ProvisioningQr: React.FC<{ uri: string; secret: string }> = ({
           role="img"
           aria-label="QR code for the authenticator app"
           viewBox={drawing.viewBox}
-          className="w-56 h-56 bg-white rounded"
+          className="w-56 h-56 bg-white rounded-sm"
           shapeRendering="crispEdges"
         >
           <path d={drawing.path} fill="#000000" />
@@ -170,7 +173,7 @@ const ProvisioningQr: React.FC<{ uri: string; secret: string }> = ({
         <div className="flex items-center gap-2">
           <code
             data-testid="totp-secret"
-            className="flex-1 px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded text-sm break-all text-gray-900 dark:text-gray-100"
+            className="flex-1 px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-sm text-sm break-all text-gray-900 dark:text-gray-100"
           >
             {secret}
           </code>
@@ -214,7 +217,7 @@ const RecoveryCodes: React.FC<{
       </div>
       <ul
         data-testid="recovery-codes"
-        className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-4 bg-gray-100 dark:bg-gray-700 rounded"
+        className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-4 bg-gray-100 dark:bg-gray-700 rounded-sm"
       >
         {codes.map((code) => (
           <li
@@ -233,7 +236,7 @@ const RecoveryCodes: React.FC<{
           type="checkbox"
           checked={saved}
           onChange={(e) => setSaved(e.target.checked)}
-          className="rounded border-gray-300 dark:border-gray-600"
+          className="rounded-sm border-gray-300 dark:border-gray-600"
         />
         I have saved these codes
       </label>
@@ -251,17 +254,28 @@ const CodePrompt: React.FC<{
   description: string;
   submitLabel: string;
   busy: boolean;
-  onSubmit: (code: string) => void;
+  /** The code field's value, owned by the panel hook. */
+  code: string;
+  onCodeChange: (code: string) => void;
+  onSubmit: () => void;
   onCancel: () => void;
-}> = ({ id, title, description, submitLabel, busy, onSubmit, onCancel }) => {
-  const [code, setCode] = useState('');
-
+}> = ({
+  id,
+  title,
+  description,
+  submitLabel,
+  busy,
+  code,
+  onCodeChange,
+  onSubmit,
+  onCancel,
+}) => {
   return (
     <form
-      className="space-y-3 p-4 border border-gray-200 dark:border-gray-700 rounded"
+      className="space-y-3 p-4 border border-gray-200 dark:border-gray-700 rounded-sm"
       onSubmit={(e) => {
         e.preventDefault();
-        onSubmit(code.trim());
+        onSubmit();
       }}
     >
       <h4 className="text-base font-semibold text-gray-900 dark:text-white">
@@ -279,9 +293,9 @@ const CodePrompt: React.FC<{
           id={id}
           type="text"
           value={code}
-          onChange={(e) => setCode(e.target.value)}
+          onChange={(e) => onCodeChange(e.target.value)}
           autoComplete="one-time-code"
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
           required
           disabled={busy}
         />
@@ -306,95 +320,34 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
   passkeysClient = null,
   className = '',
 }) => {
-  const [factor, setFactor] = useState<FactorState>('unknown');
-  const [enrol, setEnrol] = useState<EnrolStep>({ step: 'idle' });
-  const [prompt, setPrompt] = useState<'none' | 'disable' | 'regenerate'>(
-    'none'
-  );
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  /** The client, with every MFA refusal carrying this product's sentence. */
+  const describedClient = useMemo<SecurityClient>(() => {
+    const enrolTotp: SecurityClient['enrolTotp'] = () =>
+      described(() => client.enrolTotp());
+    const activateTotp: SecurityClient['activateTotp'] = (input) =>
+      described(() => client.activateTotp(input));
+    const disableTotp: SecurityClient['disableTotp'] = (input) =>
+      described(() => client.disableTotp(input));
+    const regenerateRecoveryCodes: SecurityClient['regenerateRecoveryCodes'] = (
+      input
+    ) => described(() => client.regenerateRecoveryCodes(input));
+    return Object.assign(Object.create(client) as SecurityClient, {
+      enrolTotp,
+      activateTotp,
+      disableTotp,
+      regenerateRecoveryCodes,
+    });
+  }, [client]);
 
-  /** Runs one MFA call, turning a thrown error into a rendered sentence. */
-  const run = useCallback(
-    async <T,>(call: () => Promise<T>): Promise<T | null> => {
-      setBusy(true);
-      setError(null);
-      setNotice(null);
-      try {
-        return await call();
-      } catch {
-        setError('That request could not be completed. Try again.');
-        return null;
-      } finally {
-        setBusy(false);
-      }
+  const totp = useTotpPanel({
+    client: describedClient,
+    messages: {
+      disabled:
+        'The authenticator app is off. Every recovery code for it is void.',
     },
-    []
-  );
+  });
 
-  const handleEnrol = useCallback(async () => {
-    const outcome = await run(() => client.enrolTotp());
-    if (outcome === null) return;
-    if (outcome.ok) {
-      setEnrol({
-        step: 'scanning',
-        secret: outcome.secret,
-        provisioningUri: outcome.provisioningUri,
-      });
-      return;
-    }
-    if (outcome.reason === 'already-enabled') {
-      setFactor('enabled');
-    }
-    setError(refusalMessage(outcome));
-  }, [client, run]);
-
-  const handleActivate = useCallback(
-    async (code: string) => {
-      const outcome = await run(() => client.activateTotp({ code }));
-      if (outcome === null) return;
-      if (outcome.ok) {
-        setFactor('enabled');
-        setEnrol({ step: 'codes', codes: outcome.recoveryCodes });
-        return;
-      }
-      setError(refusalMessage(outcome));
-    },
-    [client, run]
-  );
-
-  const handleDisable = useCallback(
-    async (code: string) => {
-      const outcome = await run(() => client.disableTotp({ code }));
-      if (outcome === null) return;
-      if (outcome.ok) {
-        setFactor('disabled');
-        setPrompt('none');
-        setEnrol({ step: 'idle' });
-        setNotice(
-          'The authenticator app is off. Every recovery code for it is void.'
-        );
-        return;
-      }
-      setError(refusalMessage(outcome));
-    },
-    [client, run]
-  );
-
-  const handleRegenerate = useCallback(
-    async (code: string) => {
-      const outcome = await run(() => client.regenerateRecoveryCodes({ code }));
-      if (outcome === null) return;
-      if (outcome.ok) {
-        setPrompt('none');
-        setEnrol({ step: 'codes', codes: outcome.recoveryCodes });
-        return;
-      }
-      setError(refusalMessage(outcome));
-    },
-    [client, run]
-  );
+  const { factor, step, prompt, code, busy, error, notice, setCode } = totp;
 
   const statusLine =
     factor === 'enabled'
@@ -416,7 +369,7 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
       {error !== null && (
         <div
           role="alert"
-          className="mb-4 p-3 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded"
+          className="mb-4 p-3 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded-sm"
         >
           {error}
         </div>
@@ -424,7 +377,7 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
       {notice !== null && (
         <div
           role="status"
-          className="mb-4 p-3 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded"
+          className="mb-4 p-3 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded-sm"
         >
           {notice}
         </div>
@@ -437,25 +390,21 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
         {statusLine}
       </p>
 
-      {enrol.step === 'codes' ? (
-        <RecoveryCodes
-          codes={enrol.codes}
-          onConfirm={() => setEnrol({ step: 'idle' })}
-        />
-      ) : enrol.step === 'scanning' ? (
+      {step.kind === 'codes' ? (
+        <RecoveryCodes codes={step.codes} onConfirm={totp.acknowledgeCodes} />
+      ) : step.kind === 'scanning' ? (
         <div className="space-y-6 max-w-md">
-          <ProvisioningQr uri={enrol.provisioningUri} secret={enrol.secret} />
+          <ProvisioningQr uri={step.provisioningUri} secret={step.secret} />
           <CodePrompt
             id="totp-activate-code"
             title="Confirm the app"
             description="Enter the code your authenticator app shows now. This turns the second factor on and issues your recovery codes."
             submitLabel="Turn on"
             busy={busy}
-            onSubmit={(code) => void handleActivate(code)}
-            onCancel={() => {
-              setEnrol({ step: 'idle' });
-              setError(null);
-            }}
+            code={code}
+            onCodeChange={setCode}
+            onSubmit={() => void totp.activate()}
+            onCancel={totp.reset}
           />
         </div>
       ) : prompt === 'disable' ? (
@@ -466,11 +415,10 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
             description="Enter a current code from the app, or one of your recovery codes. Turning the factor off also voids every recovery code."
             submitLabel="Turn off"
             busy={busy}
-            onSubmit={(code) => void handleDisable(code)}
-            onCancel={() => {
-              setPrompt('none');
-              setError(null);
-            }}
+            code={code}
+            onCodeChange={setCode}
+            onSubmit={() => void totp.disable()}
+            onCancel={totp.reset}
           />
         </div>
       ) : prompt === 'regenerate' ? (
@@ -481,40 +429,31 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
             description="Enter a current code from the app, or one of your remaining recovery codes. The new set replaces every code in the old one."
             submitLabel="Generate"
             busy={busy}
-            onSubmit={(code) => void handleRegenerate(code)}
-            onCancel={() => {
-              setPrompt('none');
-              setError(null);
-            }}
+            code={code}
+            onCodeChange={setCode}
+            onSubmit={() => void totp.regenerate()}
+            onCancel={totp.reset}
           />
         </div>
       ) : (
         <div className="flex flex-wrap gap-3">
           <Button
             variant="primary"
-            onClick={() => void handleEnrol()}
+            onClick={() => void totp.enrol()}
             disabled={busy}
           >
             {busy ? 'Working...' : 'Set up an authenticator app'}
           </Button>
           <Button
             variant="outline"
-            onClick={() => {
-              setPrompt('regenerate');
-              setError(null);
-              setNotice(null);
-            }}
+            onClick={() => totp.ask('regenerate')}
             disabled={busy}
           >
             Generate new recovery codes
           </Button>
           <Button
             variant="outline"
-            onClick={() => {
-              setPrompt('disable');
-              setError(null);
-              setNotice(null);
-            }}
+            onClick={() => totp.ask('disable')}
             disabled={busy}
           >
             Turn off the authenticator app

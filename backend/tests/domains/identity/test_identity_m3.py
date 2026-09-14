@@ -7,12 +7,13 @@ from typing import Any
 
 import pytest
 from fastapi import FastAPI
+from webbpulse.testing import FakeKms
 
 from app.composition.identity_hooks import PortfolioIdentityHooks
 from app.db import entities
 
 from ...routes import all_paths, paths_for_method
-from .test_identity_m1 import AUDIENCE, ISSUER, KEY_ARN, FakeKms
+from .test_identity_m1 import AUDIENCE, ISSUER, KEY_ARN
 
 EMAIL_PATHS = (
     "/api/auth/verify-email",
@@ -232,15 +233,6 @@ class _Captured(Exception):
     """Unwinds `build_router` once the bundle it built has been captured."""
 
 
-@pytest.fixture(scope="module")
-def private_key() -> Any:
-    """One 2048-bit key for the module, for the reason M2's copy gives: a module
-    scoped fixture does not cross files."""
-    from cryptography.hazmat.primitives.asymmetric import rsa
-
-    return rsa.generate_private_key(public_exponent=65537, key_size=2048)
-
-
 def _identity_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """The `IDENTITY_*` variables `terraform/lambda_domains.tf` sets."""
     monkeypatch.setenv("IDENTITY_ENVIRONMENT", "staging")
@@ -252,7 +244,7 @@ def _identity_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def identity_app(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
+def identity_app(rsa_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     """The identity router as the composition root builds it with email on."""
     import boto3
 
@@ -263,7 +255,7 @@ def identity_app(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     monkeypatch.setenv("IDENTITY_EMAIL_FROM", FROM_ADDRESS)
     monkeypatch.setenv("IDENTITY_SES_CONFIGURATION_SET", CONFIGURATION_SET)
 
-    fake = FakeKms(private_key)
+    fake = FakeKms(rsa_key)
     monkeypatch.setattr(boto3, "client", lambda service, *a, **kw: fake)
 
     app = FastAPI()
@@ -313,7 +305,7 @@ def test_no_email_route_is_served_at_the_origin(identity_app: FastAPI) -> None:
     assert leaked == set(), sorted(leaked)
 
 
-def test_the_email_routes_do_not_mount_without_a_sender(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_email_routes_do_not_mount_without_a_sender(rsa_key: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     """The switch, from the off side, through this product's own builder."""
     import boto3
 
@@ -325,7 +317,7 @@ def test_the_email_routes_do_not_mount_without_a_sender(private_key: Any, monkey
     _identity_environment(monkeypatch)
     monkeypatch.setenv("IDENTITY_EMAIL_FROM", "")
 
-    fake = FakeKms(private_key)
+    fake = FakeKms(rsa_key)
     monkeypatch.setattr(boto3, "client", lambda service, *a, **kw: fake)
 
     app = FastAPI()

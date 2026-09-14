@@ -44,10 +44,11 @@ export const CategoryForm: React.FC<CategoryFormProps> = ({
             type="text"
             id="name"
             name="name"
+            data-testid="category-name"
             value={form.name}
             onChange={handleInputChange}
             required
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white"
             placeholder="e.g., Web Development"
           />
         </div>
@@ -63,10 +64,11 @@ export const CategoryForm: React.FC<CategoryFormProps> = ({
             type="text"
             id="slug"
             name="slug"
+            data-testid="category-slug"
             value={form.slug}
             onChange={handleInputChange}
             required
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white"
             placeholder="e.g., web-development"
           />
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -87,7 +89,7 @@ export const CategoryForm: React.FC<CategoryFormProps> = ({
             value={form.description}
             onChange={handleInputChange}
             rows={3}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white"
             placeholder="Brief description of the category"
           />
         </div>
@@ -98,6 +100,7 @@ export const CategoryForm: React.FC<CategoryFormProps> = ({
             variant="primary"
             disabled={loading}
             className="flex-1"
+            testId="category-save"
           >
             {loading
               ? 'Saving...'

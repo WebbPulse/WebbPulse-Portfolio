@@ -55,7 +55,7 @@ const ProjectCard: React.FC<{ project: Project; index: number }> = ({
       style={{ animationDelay: `${(index % 6) * 70}ms` }}
       className={`group gradient-border relative rounded-2xl bg-surface-900/70 backdrop-blur-xl overflow-hidden flex flex-col transition-all duration-500 hover:-translate-y-1 hover:shadow-glow-soft ${isInView ? 'animate-fade-in-up' : 'opacity-0'}`}
     >
-      <div className="relative aspect-[16/10] overflow-hidden bg-gradient-to-br from-accent-violet-500/20 via-accent-cyan-500/10 to-accent-fuchsia-500/20">
+      <div className="relative aspect-16/10 overflow-hidden bg-linear-to-br from-accent-violet-500/20 via-accent-cyan-500/10 to-accent-fuchsia-500/20">
         {project.image ? (
           <img
             src={project.image}
@@ -68,7 +68,7 @@ const ProjectCard: React.FC<{ project: Project; index: number }> = ({
             ✨
           </div>
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-surface-950 via-surface-950/40 to-transparent" />
+        <div className="absolute inset-0 bg-linear-to-t from-surface-950 via-surface-950/40 to-transparent" />
         {project.featured && (
           <span className="absolute top-3 right-3 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] font-medium rounded-full bg-gradient-accent text-surface-50 shadow-glow-violet">
             Featured
@@ -130,11 +130,11 @@ const ProjectCard: React.FC<{ project: Project; index: number }> = ({
 
 const SkeletonCard: React.FC = () => (
   <div className="surface-glass rounded-2xl overflow-hidden animate-pulse">
-    <div className="aspect-[16/10] bg-surface-800" />
+    <div className="aspect-16/10 bg-surface-800" />
     <div className="p-6 space-y-3">
-      <div className="h-5 bg-surface-800 rounded w-2/3" />
-      <div className="h-3 bg-surface-800 rounded" />
-      <div className="h-3 bg-surface-800 rounded w-5/6" />
+      <div className="h-5 bg-surface-800 rounded-sm w-2/3" />
+      <div className="h-3 bg-surface-800 rounded-sm" />
+      <div className="h-3 bg-surface-800 rounded-sm w-5/6" />
     </div>
   </div>
 );
@@ -154,7 +154,7 @@ export const Projects: React.FC = () => {
       id="projects"
       className="relative py-24 sm:py-32 overflow-hidden bg-surface-950"
     >
-      <div className="absolute inset-0 bg-gradient-to-b from-surface-950 via-surface-900/60 to-surface-950 pointer-events-none" />
+      <div className="absolute inset-0 bg-linear-to-b from-surface-950 via-surface-900/60 to-surface-950 pointer-events-none" />
 
       <div className="relative z-10 max-w-7xl mx-auto px-6 sm:px-8">
         <div className="text-center mb-12 max-w-2xl mx-auto">
@@ -180,7 +180,7 @@ export const Projects: React.FC = () => {
                   setFilter(cat.id);
                   setShowAll(false);
                 }}
-                className={`px-4 py-1.5 text-sm rounded-full transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950 ${
+                className={`px-4 py-1.5 text-sm rounded-full transition-all duration-300 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950 ${
                   active
                     ? 'bg-gradient-accent text-surface-50 shadow-glow-violet'
                     : 'surface-glass text-surface-300 hover:text-surface-50'

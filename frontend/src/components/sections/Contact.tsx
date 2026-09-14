@@ -15,9 +15,9 @@ const ContactTile: React.FC<{
     target={href.startsWith('mailto:') ? undefined : '_blank'}
     rel={href.startsWith('mailto:') ? undefined : 'noopener noreferrer'}
     aria-label={label}
-    className={`group surface-glass surface-glass-hover rounded-2xl p-6 flex items-center gap-4 transition-all duration-500 hover:-translate-y-0.5 ${glow} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950`}
+    className={`group surface-glass surface-glass-hover rounded-2xl p-6 flex items-center gap-4 transition-all duration-500 hover:-translate-y-0.5 ${glow} focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950`}
   >
-    <span className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-accent-cyan-500/20 via-accent-violet-500/20 to-accent-fuchsia-500/20 border border-accent-violet-500/30 text-surface-100">
+    <span className="flex items-center justify-center w-12 h-12 rounded-xl bg-linear-to-br from-accent-cyan-500/20 via-accent-violet-500/20 to-accent-fuchsia-500/20 border border-accent-violet-500/30 text-surface-100">
       <SocialIcon platform={platform} className="w-5 h-5" />
     </span>
     <div className="flex-1 min-w-0">
@@ -52,14 +52,14 @@ export const Contact: React.FC = () => {
       <div className="absolute inset-0 bg-mesh-1 opacity-60 pointer-events-none" />
       <AnimatedOrb
         gradient="from-accent-cyan-500 to-accent-violet-500"
-        size="w-[28rem] h-[28rem]"
+        size="w-md h-112"
         position="-top-32 -left-20"
         variant={1}
         opacity="opacity-25"
       />
       <AnimatedOrb
         gradient="from-accent-fuchsia-500 to-accent-violet-500"
-        size="w-[24rem] h-[24rem]"
+        size="w-[24rem] h-96"
         position="-bottom-24 -right-16"
         variant={3}
         opacity="opacity-25"

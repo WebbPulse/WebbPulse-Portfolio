@@ -14,7 +14,6 @@ backend/    Four per-domain FastAPI apps, DynamoDB repositories
 frontend/   React + Vite + Tailwind CSS
 terraform/  AWS infrastructure
 docs/       The identity runbook, the migration retrospective, the resume PDF
-scripts/    verify_route_cut.sh, used by the backend deploy workflow
 ```
 
 ## Development

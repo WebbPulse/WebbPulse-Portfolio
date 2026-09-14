@@ -3,6 +3,12 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { ConnectedAccounts, type OAuthLinksClient } from './ConnectedAccounts';
 
+/**
+ * The OAuth link legs of `AuthClient`, as much of it as the panel ever calls.
+ *
+ * The prop is the whole client now that the panel hook owns the calls, so the
+ * stub is cast rather than spelling out every unrelated member.
+ */
 function stubClient(
   overrides: Partial<OAuthLinksClient> = {}
 ): OAuthLinksClient {
@@ -11,7 +17,7 @@ function stubClient(
     linkOAuthProvider: vi.fn(),
     unlinkOAuthProvider: vi.fn(),
     ...overrides,
-  };
+  } as unknown as OAuthLinksClient;
 }
 
 /** A link in the shape `parseOAuthLinks` produces. */
@@ -199,6 +205,48 @@ describe('ConnectedAccounts', () => {
     await waitFor(() => {
       expect(listOAuthLinks).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it('renders the loading state the panel hook owns until the list settles', async () => {
+    let settle: (outcome: unknown) => void = () => {};
+    const client = stubClient({
+      listOAuthLinks: vi.fn().mockReturnValue(
+        new Promise((resolve) => {
+          settle = resolve;
+        })
+      ),
+    });
+
+    render(<ConnectedAccounts client={client} availableProviders={[]} />);
+
+    expect(screen.getByText('Loading...')).toBeInTheDocument();
+
+    settle({ ok: true, links: [link('google')] });
+
+    expect(await screen.findByTestId('oauth-link-google')).toBeInTheDocument();
+    expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
+  });
+
+  it('offers the connectable providers the panel hook derived', async () => {
+    const client = stubClient({
+      listOAuthLinks: vi
+        .fn()
+        .mockResolvedValue({ ok: true, links: [link('google')] }),
+    });
+
+    render(
+      <ConnectedAccounts
+        client={client}
+        availableProviders={[GOOGLE, GITHUB]}
+      />
+    );
+
+    await screen.findByTestId('oauth-link-google');
+    expect(
+      screen
+        .getAllByRole('button', { name: /^connect /i })
+        .map((b) => b.textContent)
+    ).toEqual(['Connect GitHub']);
   });
 
   it('reports a list that could not be loaded', async () => {

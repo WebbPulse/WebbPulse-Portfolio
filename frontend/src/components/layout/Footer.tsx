@@ -22,7 +22,7 @@ const Footer: React.FC = () => {
 
   return (
     <footer className="relative bg-surface-950 border-t border-surface-800">
-      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-accent-violet-500/60 to-transparent" />
+      <div className="absolute top-0 left-0 right-0 h-px bg-linear-to-r from-transparent via-accent-violet-500/60 to-transparent" />
 
       <div className="max-w-7xl mx-auto px-6 sm:px-8 py-12">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-8">
