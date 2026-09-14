@@ -10,63 +10,15 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from webbpulse.testing import FakeKms
 
 cryptography = pytest.importorskip("cryptography")
-
-from cryptography.hazmat.primitives import hashes, serialization  # noqa: E402
-from cryptography.hazmat.primitives.asymmetric import (  # noqa: E402
-    padding,
-    rsa,
-    utils,
-)
 
 KEY_ARN = "arn:aws:kms:us-west-2:621554169154:key/11111111-2222-3333-4444-555555555555"
 
 ISSUER = "https://api.staging.webbpulse.com/api/auth"
 
 AUDIENCE = "webbpulse-portfolio-staging-api"
-
-
-class FakeKms:
-    """A KMS client for one key, signing for real with a local private key."""
-
-    def __init__(self, key: rsa.RSAPrivateKey) -> None:
-        """Hold the RSA key this fake KMS signs with."""
-        self._key = key
-
-    def _der(self) -> bytes:
-        """The public key in DER SubjectPublicKeyInfo form."""
-        return self._key.public_key().public_bytes(
-            encoding=serialization.Encoding.DER,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo,
-        )
-
-    def get_public_key(self, *, KeyId: str) -> dict[str, Any]:
-        """Answer the KMS GetPublicKey shape for the held key."""
-        from webbpulse.identity import KMS_SIGNING_ALGORITHM
-
-        return {
-            "KeyId": KeyId,
-            "PublicKey": self._der(),
-            "KeySpec": "RSA_2048",
-            "KeyUsage": "SIGN_VERIFY",
-            "SigningAlgorithms": [KMS_SIGNING_ALGORITHM],
-        }
-
-    def sign(self, *, KeyId: str, Message: bytes, MessageType: str, SigningAlgorithm: str) -> dict[str, Any]:
-        """Sign a prehashed message the way KMS would."""
-        signature = self._key.sign(Message, padding.PKCS1v15(), utils.Prehashed(hashes.SHA256()))
-        return {
-            "KeyId": KeyId,
-            "Signature": signature,
-            "SigningAlgorithm": SigningAlgorithm,
-        }
-
-
-@pytest.fixture(scope="module")
-def private_key() -> rsa.RSAPrivateKey:
-    """One 2048-bit key for the module. Generation is slow enough to share."""
-    return rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
 
 @pytest.fixture
@@ -81,14 +33,14 @@ def identity_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def client(identity_env: None, private_key: rsa.RSAPrivateKey, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+def client(identity_env: None, rsa_key: Any, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     """The identity router mounted the way the composition root mounts it."""
     import boto3
 
     from app.composition.identity import build_router
     from app.composition.settings import Settings
 
-    fake = FakeKms(private_key)
+    fake = FakeKms(rsa_key)
     monkeypatch.setattr(boto3, "client", lambda service, *a, **kw: fake)
 
     settings = Settings()

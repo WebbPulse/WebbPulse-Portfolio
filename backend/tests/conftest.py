@@ -3,6 +3,9 @@
 import os
 from datetime import date, datetime, timezone
 
+pytest_plugins = ["webbpulse.testing"]
+"""The package's own fixtures, which is where `fake_kms` and `rsa_key` come from."""
+
 os.environ.update(
     {
         "TESTING": "1",

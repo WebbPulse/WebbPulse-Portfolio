@@ -9,6 +9,11 @@ locals {
       }
     },
     {
+      users = {
+        hash_key         = "id"
+        attributes       = [{ name = "id", type = "N" }]
+        stream_view_type = "KEYS_ONLY"
+      }
       posts = {
         hash_key = "id"
         attributes = [
@@ -41,7 +46,7 @@ locals {
 
 module "dynamodb" {
   source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/dynamodb-tables"
-  version = "~> 1.6"
+  version = "~> 2.17"
 
   name_prefix = local.prefix
   tables      = local.dynamodb_tables

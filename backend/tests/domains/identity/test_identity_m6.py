@@ -7,11 +7,12 @@ from typing import Any
 
 import pytest
 from fastapi import FastAPI
+from webbpulse.testing import FakeKms
 
 from app.composition.identity_hooks import PortfolioIdentityHooks
 
-from .routes import all_paths, paths_for_method
-from .test_identity_m1 import AUDIENCE, ISSUER, KEY_ARN, FakeKms
+from ...routes import all_paths, paths_for_method
+from .test_identity_m1 import AUDIENCE, ISSUER, KEY_ARN
 
 OAUTH_GET_PATHS = (
     "/api/auth/oauth/{provider}/start",
@@ -279,15 +280,9 @@ def test_only_the_providers_whose_secret_is_present_are_returned(
         "build_oauth_client_secrets",
         composition.build_oauth_client_secrets,
     )
-    monkeypatch.setitem(
-        __import__("sys").modules,
-        "app.secrets",
-        _FakeSecretsModule(
-            {
-                "SECRET_KEY": "x",
-                "OAUTH_GOOGLE_CLIENT_SECRET": "google-secret",
-            }
-        ),
+    _fake_app_secrets(
+        monkeypatch,
+        {"SECRET_KEY": "x", "OAUTH_GOOGLE_CLIENT_SECRET": "google-secret"},
     )
 
     settings = Settings(APP_SECRETS_ARN="arn:aws:secretsmanager:us-west-2:1:secret:x")
@@ -302,11 +297,7 @@ def test_a_secret_with_no_oauth_keys_yields_an_empty_mapping(
     import app.composition.identity as composition
     from app.composition.settings import Settings
 
-    monkeypatch.setitem(
-        __import__("sys").modules,
-        "app.secrets",
-        _FakeSecretsModule({"SECRET_KEY": "x", "ADMIN_USERNAME": "admin"}),
-    )
+    _fake_app_secrets(monkeypatch, {"SECRET_KEY": "x", "ADMIN_USERNAME": "admin"})
 
     settings = Settings(APP_SECRETS_ARN="arn:aws:secretsmanager:us-west-2:1:secret:x")
 
@@ -447,9 +438,9 @@ def test_the_discovery_path_is_the_packages_own_constant() -> None:
     assert f"/api/auth{OAUTH_PROVIDERS_PATH}" == OAUTH_PROVIDERS_PATH_FULL
 
 
-def test_one_provider_is_enough_to_mount_the_routes(monkeypatch: pytest.MonkeyPatch, private_key: Any) -> None:
+def test_one_provider_is_enough_to_mount_the_routes(monkeypatch: pytest.MonkeyPatch, rsa_key: Any) -> None:
     """Google alone mounts all five, which is the likely first state."""
-    app = _build_identity_app(monkeypatch, private_key, google=GOOGLE_CLIENT_ID, github="")
+    app = _build_identity_app(monkeypatch, rsa_key, google=GOOGLE_CLIENT_ID, github="")
 
     assert "/api/auth/oauth/{provider}/start" in _paths_for_method(app, "GET")
 
@@ -458,17 +449,15 @@ class _Captured(Exception):
     """Unwinds `build_router` once the call it made has been captured."""
 
 
-class _FakeSecretsModule:
-    """Stands in for `app.secrets` so no Secrets Manager call is made."""
+def _fake_app_secrets(monkeypatch: pytest.MonkeyPatch, values: dict[str, str]) -> None:
+    """Point the shared secret reader at `values` so no Secrets Manager call is made."""
+    import webbpulse.security
 
-    def __init__(self, values: dict[str, str]) -> None:
-        """Hold the values this fake secrets loader returns."""
-        self._values = values
-
-    def load_app_secrets(self, secret_arn: str, client: Any = None) -> dict[str, str]:
-        """Return the held values, ignoring the ARN and client."""
-        del secret_arn, client
-        return dict(self._values)
+    monkeypatch.setattr(
+        webbpulse.security,
+        "app_secrets",
+        lambda *args, **kwargs: dict(values),
+    )
 
 
 def _logical_name_of(store: Any) -> str:
@@ -504,16 +493,7 @@ def _identity_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("IDENTITY_GITHUB_CLIENT_ID", raising=False)
 
 
-@pytest.fixture(scope="module")
-def private_key() -> Any:
-    """One 2048-bit key for the module, for the reason M2's copy gives: a module
-    scoped fixture does not cross files."""
-    from cryptography.hazmat.primitives.asymmetric import rsa
-
-    return rsa.generate_private_key(public_exponent=65537, key_size=2048)
-
-
-def _build_identity_app(monkeypatch: pytest.MonkeyPatch, private_key: Any, *, google: str, github: str) -> FastAPI:
+def _build_identity_app(monkeypatch: pytest.MonkeyPatch, rsa_key: Any, *, google: str, github: str) -> FastAPI:
     """The identity router as the composition root builds it, with these ids set."""
     import boto3
 
@@ -526,7 +506,7 @@ def _build_identity_app(monkeypatch: pytest.MonkeyPatch, private_key: Any, *, go
     if github:
         monkeypatch.setenv("IDENTITY_GITHUB_CLIENT_ID", github)
 
-    fake = FakeKms(private_key)
+    fake = FakeKms(rsa_key)
     monkeypatch.setattr(boto3, "client", lambda service, *a, **kw: fake)
 
     app = FastAPI()
@@ -535,15 +515,15 @@ def _build_identity_app(monkeypatch: pytest.MonkeyPatch, private_key: Any, *, go
 
 
 @pytest.fixture
-def identity_app_without_providers(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
+def identity_app_without_providers(rsa_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     """The router exactly as staging and production serve it today."""
-    return _build_identity_app(monkeypatch, private_key, google="", github="")
+    return _build_identity_app(monkeypatch, rsa_key, google="", github="")
 
 
 @pytest.fixture
-def identity_app_with_providers(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
+def identity_app_with_providers(rsa_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     """The router once the owner has registered both OAuth apps."""
-    return _build_identity_app(monkeypatch, private_key, google=GOOGLE_CLIENT_ID, github=GITHUB_CLIENT_ID)
+    return _build_identity_app(monkeypatch, rsa_key, google=GOOGLE_CLIENT_ID, github=GITHUB_CLIENT_ID)
 
 
 def _paths_for_method(app: FastAPI, method: str) -> set[str]:

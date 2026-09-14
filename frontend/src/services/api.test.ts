@@ -176,40 +176,6 @@ describe('ApiService', () => {
     expect(response.error).toBe('field required');
   });
 
-  it('sends the stored token as a bearer header', async () => {
-    localStorage.setItem('authToken', 'stored-token');
-    fetchMock.mockResolvedValue(jsonResponse({ id: 1 }));
-    const service = new ApiService(BASE);
-
-    await service.getSiteContent();
-
-    expect(callArgs().headers.get('authorization')).toBe('Bearer stored-token');
-  });
-
-  it('stores the token on login and reports authentication', async () => {
-    fetchMock.mockResolvedValue(
-      jsonResponse({ access_token: 'fresh-token', token_type: 'bearer' })
-    );
-    const service = new ApiService(BASE);
-    expect(service.isAuthenticated()).toBe(false);
-
-    await service.login({ username: 'admin', password: 'secret' });
-
-    expect(localStorage.getItem('authToken')).toBe('fresh-token');
-    expect(service.isAuthenticated()).toBe(true);
-  });
-
-  it('clears the token on logout', () => {
-    localStorage.setItem('authToken', 'stored-token');
-    const service = new ApiService(BASE);
-    expect(service.isAuthenticated()).toBe(true);
-
-    service.logout();
-
-    expect(localStorage.getItem('authToken')).toBeNull();
-    expect(service.isAuthenticated()).toBe(false);
-  });
-
   it('sends the featured filter as a query parameter, keeping the trailing slash', async () => {
     fetchMock.mockResolvedValue(jsonResponse([]));
     const service = new ApiService(BASE);
@@ -239,7 +205,7 @@ describe('ApiService', () => {
     expect(callArgs().init.credentials).toBe('include');
   });
 
-  describe('identity mode', () => {
+  describe('identity sessions', () => {
     /** The token response the standard's login and refresh routes answer. */
     function tokenResponse(token: string, expiresIn = 900): Response {
       return jsonResponse({ access_token: token, expires_in: expiresIn });
@@ -247,7 +213,7 @@ describe('ApiService', () => {
 
     it('signs in through the auth client and holds no token in localStorage', async () => {
       fetchMock.mockResolvedValue(tokenResponse('memory-token'));
-      const service = new ApiService(BASE, 'identity');
+      const service = new ApiService(BASE);
 
       const response = await service.login({
         username: 'admin@example.test',
@@ -262,7 +228,7 @@ describe('ApiService', () => {
 
     it('posts the username as the email the identity login expects', async () => {
       fetchMock.mockResolvedValue(tokenResponse('memory-token'));
-      const service = new ApiService(BASE, 'identity');
+      const service = new ApiService(BASE);
 
       await service.login({
         username: 'admin@example.test',
@@ -278,7 +244,7 @@ describe('ApiService', () => {
 
     it('sends the in memory token as a bearer header on an ordinary request', async () => {
       fetchMock.mockResolvedValueOnce(tokenResponse('memory-token'));
-      const service = new ApiService(BASE, 'identity');
+      const service = new ApiService(BASE);
       await service.login({ username: 'admin', password: 'secret' });
 
       fetchMock.mockResolvedValueOnce(jsonResponse({ id: 1 }));
@@ -292,7 +258,7 @@ describe('ApiService', () => {
 
     it('refreshes once on a 401 and replays the request', async () => {
       fetchMock.mockResolvedValueOnce(tokenResponse('first-token'));
-      const service = new ApiService(BASE, 'identity');
+      const service = new ApiService(BASE);
       await service.login({ username: 'admin', password: 'secret' });
 
       fetchMock
@@ -324,7 +290,7 @@ describe('ApiService', () => {
           { status: 401 }
         )
       );
-      const service = new ApiService(BASE, 'identity');
+      const service = new ApiService(BASE);
 
       const response = await service.login({
         username: 'admin',
@@ -342,7 +308,7 @@ describe('ApiService', () => {
       fetchMock.mockResolvedValue(
         jsonResponse({ mfa_required: true, mfa_ticket: 't', factors: ['totp'] })
       );
-      const service = new ApiService(BASE, 'identity');
+      const service = new ApiService(BASE);
 
       const response = await service.login({
         username: 'admin',
@@ -354,18 +320,13 @@ describe('ApiService', () => {
     });
 
     it('exposes the same client the API refreshes through', () => {
-      const service = new ApiService(BASE, 'identity');
-      expect(service.getIdentityClient()).not.toBeNull();
-    });
-
-    it('exposes no auth client in bearer mode', () => {
-      const service = new ApiService(BASE, 'bearer');
-      expect(service.getIdentityClient()).toBeNull();
+      const service = new ApiService(BASE);
+      expect(service.getIdentityClient()).toBe(service.getAuthClient());
     });
 
     it('calls the identity routes on the origin rather than under /api/v1', async () => {
       fetchMock.mockResolvedValue(tokenResponse('memory-token'));
-      const service = new ApiService(BASE, 'identity');
+      const service = new ApiService(BASE);
 
       await service.login({ username: 'admin', password: 'secret' });
 
@@ -380,7 +341,7 @@ describe('ApiService', () => {
           factors: ['totp'],
         })
       );
-      const service = new ApiService(BASE, 'identity');
+      const service = new ApiService(BASE);
 
       const first = await service.login({
         username: 'admin',
@@ -405,17 +366,9 @@ describe('ApiService', () => {
       });
     });
 
-    it('refuses a TOTP completion in bearer mode rather than throwing', async () => {
-      const service = new ApiService(BASE, 'bearer');
-
-      const result = await service.completeTotp({ ticket: 't', code: '1' });
-
-      expect(result.status).toBe('failed');
-    });
-
     it('restores a session from the refresh cookie on load', async () => {
       fetchMock.mockResolvedValueOnce(tokenResponse('restored-token'));
-      const service = new ApiService(BASE, 'identity');
+      const service = new ApiService(BASE);
 
       const restored = await service.restoreSession();
 
@@ -428,7 +381,7 @@ describe('ApiService', () => {
       fetchMock.mockResolvedValueOnce(
         jsonResponse({ message: 'Unauthorized' }, { status: 401 })
       );
-      const service = new ApiService(BASE, 'identity');
+      const service = new ApiService(BASE);
 
       const restored = await service.restoreSession();
 
@@ -438,7 +391,7 @@ describe('ApiService', () => {
 
     it('sends the restored token as a bearer header on the next request', async () => {
       fetchMock.mockResolvedValueOnce(tokenResponse('restored-token'));
-      const service = new ApiService(BASE, 'identity');
+      const service = new ApiService(BASE);
       await service.restoreSession();
 
       fetchMock.mockResolvedValueOnce(jsonResponse({ id: 1 }));
@@ -452,7 +405,7 @@ describe('ApiService', () => {
 
     it('records the ending on the auth client when a refresh on a 401 is refused', async () => {
       fetchMock.mockResolvedValueOnce(tokenResponse('memory-token'));
-      const service = new ApiService(BASE, 'identity');
+      const service = new ApiService(BASE);
       await service.login({ username: 'admin', password: 'secret' });
 
       fetchMock.mockResolvedValueOnce(
@@ -470,15 +423,41 @@ describe('ApiService', () => {
         'refresh-failed'
       );
     });
+  });
 
-    it('reports the stored token rather than refreshing in bearer mode', async () => {
-      localStorage.setItem('authToken', 'stored-token');
-      const service = new ApiService(BASE, 'bearer');
+  describe('built auth mode', () => {
+    it('signs in through the identity client, with no bearer login route', async () => {
+      fetchMock.mockResolvedValue(
+        jsonResponse({ access_token: 'memory-token', expires_in: 900 })
+      );
+      const service = new ApiService(BASE);
 
-      const restored = await service.restoreSession();
+      await service.login({ username: 'admin', password: 'secret' });
 
-      expect(restored).toBe(true);
-      expect(fetchMock).not.toHaveBeenCalled();
+      expect(callArgs().url).toBe(`${ORIGIN}/api/auth/login`);
+      expect(
+        fetchMock.mock.calls.some((call) =>
+          String((call as [string])[0]).includes('/admin/login')
+        )
+      ).toBe(false);
+    });
+
+    it('keeps no access token in localStorage', async () => {
+      fetchMock.mockResolvedValue(
+        jsonResponse({ access_token: 'memory-token', expires_in: 900 })
+      );
+      const service = new ApiService(BASE);
+
+      await service.login({ username: 'admin', password: 'secret' });
+
+      expect(service.isAuthenticated()).toBe(true);
+      expect(localStorage.length).toBe(0);
+    });
+
+    it('always has an identity client, whatever the build environment set', () => {
+      const service = new ApiService(BASE);
+      expect(service.getAuthClient()).not.toBeNull();
+      expect(service.getIdentityClient()).not.toBeNull();
     });
   });
 

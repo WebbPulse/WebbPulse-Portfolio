@@ -237,9 +237,8 @@ export const Projects: React.FC = () => {
               Have something in mind?
             </h3>
             <p className="text-surface-300 max-w-xl mx-auto mb-6">
-              Always interested in interesting work — backend systems,
-              full-stack projects, or anything that needs a careful pair of
-              hands.
+              Always interested in interesting work: backend systems, full-stack
+              projects, or anything that needs a careful pair of hands.
             </p>
             <a
               href="#contact"

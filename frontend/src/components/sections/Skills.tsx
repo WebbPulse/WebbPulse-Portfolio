@@ -141,7 +141,7 @@ const SkillCard: React.FC<{ skill: Skill; index: number }> = ({
       ref={ref}
       style={{ animationDelay: `${(index % 8) * 60}ms` }}
       className={`group relative surface-glass rounded-2xl p-5 transition-all duration-500 hover:-translate-y-1 ${meta.glow} ${isInView ? 'animate-fade-in-up' : 'opacity-0'}`}
-      title={`${tierMeta.label} — ${tierMeta.description}`}
+      title={`${tierMeta.label}: ${tierMeta.description}`}
     >
       <div className="flex items-start justify-between">
         <SkillIcon icon={skill.icon} name={skill.name} />
