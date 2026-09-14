@@ -67,7 +67,7 @@ export const BlogPostForm: React.FC<BlogPostFormProps> = ({
                 title: e.target.value,
               }))
             }
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
             required
           />
         </div>
@@ -85,7 +85,7 @@ export const BlogPostForm: React.FC<BlogPostFormProps> = ({
                   slug: e.target.value,
                 }))
               }
-              className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
+              className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
               required
             />
             <Button
@@ -112,7 +112,7 @@ export const BlogPostForm: React.FC<BlogPostFormProps> = ({
                   : undefined,
               }))
             }
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
             disabled={categoriesLoading}
           >
             <option value="">Select a category</option>
@@ -137,7 +137,7 @@ export const BlogPostForm: React.FC<BlogPostFormProps> = ({
             }
             rows={3}
             placeholder="Brief summary of the post..."
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
           />
         </div>
         <div>
@@ -154,7 +154,7 @@ export const BlogPostForm: React.FC<BlogPostFormProps> = ({
               }))
             }
             placeholder="e.g., 5 min read"
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
           />
         </div>
         <div>
@@ -224,7 +224,7 @@ export const BlogPostForm: React.FC<BlogPostFormProps> = ({
                     }
                     rows={15}
                     placeholder="Write your blog post content here... (Markdown supported)"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white font-mono text-sm"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white font-mono text-sm"
                     required
                   />
                 </div>
@@ -249,7 +249,7 @@ export const BlogPostForm: React.FC<BlogPostFormProps> = ({
                   }
                   rows={15}
                   placeholder="Write your blog post content here... (Markdown supported)"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white font-mono text-sm"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white font-mono text-sm"
                   required
                 />
               </div>

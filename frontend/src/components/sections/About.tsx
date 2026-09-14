@@ -82,7 +82,7 @@ export const About: React.FC = () => {
 
   return (
     <section id="about" className="relative py-24 sm:py-32 overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-b from-surface-950 via-surface-900 to-surface-950 pointer-events-none" />
+      <div className="absolute inset-0 bg-linear-to-b from-surface-950 via-surface-900 to-surface-950 pointer-events-none" />
 
       <div
         ref={sectionRef}
@@ -137,9 +137,9 @@ export const About: React.FC = () => {
               ))
             ) : (
               <div className="space-y-4">
-                <div className="h-4 bg-surface-800 rounded animate-pulse" />
-                <div className="h-4 bg-surface-800 rounded animate-pulse w-11/12" />
-                <div className="h-4 bg-surface-800 rounded animate-pulse w-10/12" />
+                <div className="h-4 bg-surface-800 rounded-sm animate-pulse" />
+                <div className="h-4 bg-surface-800 rounded-sm animate-pulse w-11/12" />
+                <div className="h-4 bg-surface-800 rounded-sm animate-pulse w-10/12" />
               </div>
             )}
           </div>

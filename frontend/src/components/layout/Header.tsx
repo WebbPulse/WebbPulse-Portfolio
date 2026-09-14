@@ -87,7 +87,7 @@ const Header: React.FC<HeaderProps> = ({ navigationItems = [] }) => {
             onClick={() => setIsMobileMenuOpen((prev) => !prev)}
             aria-label={isMobileMenuOpen ? 'Close menu' : 'Open menu'}
             aria-expanded={isMobileMenuOpen}
-            className="md:hidden text-surface-200 hover:text-surface-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-cyan-400 rounded-md p-1"
+            className="md:hidden text-surface-200 hover:text-surface-50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-cyan-400 rounded-md p-1"
           >
             <svg
               className="h-6 w-6"

@@ -22,7 +22,7 @@ const FeaturedCard: React.FC<{ post: BlogPost }> = ({ post }) => {
       ref={ref as React.Ref<HTMLAnchorElement>}
       className={`gradient-border group relative grid md:grid-cols-2 rounded-3xl bg-surface-900/70 backdrop-blur-xl overflow-hidden hover:shadow-glow-soft transition-shadow duration-500 ${isInView ? 'animate-fade-in-up' : 'opacity-0'}`}
     >
-      <div className="relative aspect-[4/3] md:aspect-auto md:min-h-[20rem] overflow-hidden">
+      <div className="relative aspect-4/3 md:aspect-auto md:min-h-80 overflow-hidden">
         <div className="absolute inset-0 bg-mesh-1" />
         <AnimatedOrb
           gradient="from-accent-cyan-500 to-accent-violet-500"
@@ -45,7 +45,7 @@ const FeaturedCard: React.FC<{ post: BlogPost }> = ({ post }) => {
       <div className="p-8 sm:p-10 flex flex-col">
         <div className="flex items-center gap-3 mb-4">
           {post.category && (
-            <span className="px-2.5 py-0.5 text-xs rounded-full bg-gradient-to-r from-accent-violet-500/30 to-accent-fuchsia-500/30 border border-accent-violet-500/40 text-surface-100">
+            <span className="px-2.5 py-0.5 text-xs rounded-full bg-linear-to-r from-accent-violet-500/30 to-accent-fuchsia-500/30 border border-accent-violet-500/40 text-surface-100">
               {post.category.name}
             </span>
           )}
@@ -92,7 +92,7 @@ const BlogPostCard: React.FC<{ post: BlogPost; index: number }> = ({
     >
       <div className="flex items-center justify-between mb-4">
         {post.category && (
-          <span className="px-2.5 py-0.5 text-xs rounded-full bg-gradient-to-r from-accent-violet-500/20 to-accent-fuchsia-500/20 border border-accent-violet-500/30 text-surface-100">
+          <span className="px-2.5 py-0.5 text-xs rounded-full bg-linear-to-r from-accent-violet-500/20 to-accent-fuchsia-500/20 border border-accent-violet-500/30 text-surface-100">
             {post.category.name}
           </span>
         )}
@@ -156,7 +156,7 @@ export const Blog: React.FC = () => {
       id="blog"
       className="relative py-24 sm:py-32 overflow-hidden bg-surface-950"
     >
-      <div className="absolute inset-0 bg-gradient-to-b from-surface-950 via-surface-900 to-surface-950 pointer-events-none" />
+      <div className="absolute inset-0 bg-linear-to-b from-surface-950 via-surface-900 to-surface-950 pointer-events-none" />
 
       <div className="relative z-10 max-w-7xl mx-auto px-6 sm:px-8">
         <div className="text-center mb-16 max-w-2xl mx-auto">

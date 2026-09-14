@@ -74,7 +74,7 @@ export const ExperienceForm: React.FC<ExperienceFormProps> = ({
                   title: e.target.value,
                 }))
               }
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
               required
             />
           </div>
@@ -91,7 +91,7 @@ export const ExperienceForm: React.FC<ExperienceFormProps> = ({
                   company: e.target.value,
                 }))
               }
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
               required
             />
           </div>
@@ -110,7 +110,7 @@ export const ExperienceForm: React.FC<ExperienceFormProps> = ({
                   location: e.target.value,
                 }))
               }
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
               required
             />
           </div>
@@ -128,7 +128,7 @@ export const ExperienceForm: React.FC<ExperienceFormProps> = ({
                 }))
               }
               placeholder="e.g., Jul 2024 - Present"
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
               required
             />
           </div>
@@ -147,7 +147,7 @@ export const ExperienceForm: React.FC<ExperienceFormProps> = ({
                   start_date: e.target.value,
                 }))
               }
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
               required
             />
           </div>
@@ -164,7 +164,7 @@ export const ExperienceForm: React.FC<ExperienceFormProps> = ({
                   end_date: e.target.value,
                 }))
               }
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
             />
           </div>
         </div>
@@ -181,7 +181,7 @@ export const ExperienceForm: React.FC<ExperienceFormProps> = ({
               }))
             }
             rows={3}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-600 dark:text-white"
             required
           />
         </div>

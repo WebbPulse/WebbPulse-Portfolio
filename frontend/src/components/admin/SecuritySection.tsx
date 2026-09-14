@@ -160,7 +160,7 @@ const ProvisioningQr: React.FC<{ uri: string; secret: string }> = ({
           role="img"
           aria-label="QR code for the authenticator app"
           viewBox={drawing.viewBox}
-          className="w-56 h-56 bg-white rounded"
+          className="w-56 h-56 bg-white rounded-sm"
           shapeRendering="crispEdges"
         >
           <path d={drawing.path} fill="#000000" />
@@ -173,7 +173,7 @@ const ProvisioningQr: React.FC<{ uri: string; secret: string }> = ({
         <div className="flex items-center gap-2">
           <code
             data-testid="totp-secret"
-            className="flex-1 px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded text-sm break-all text-gray-900 dark:text-gray-100"
+            className="flex-1 px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-sm text-sm break-all text-gray-900 dark:text-gray-100"
           >
             {secret}
           </code>
@@ -217,7 +217,7 @@ const RecoveryCodes: React.FC<{
       </div>
       <ul
         data-testid="recovery-codes"
-        className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-4 bg-gray-100 dark:bg-gray-700 rounded"
+        className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-4 bg-gray-100 dark:bg-gray-700 rounded-sm"
       >
         {codes.map((code) => (
           <li
@@ -236,7 +236,7 @@ const RecoveryCodes: React.FC<{
           type="checkbox"
           checked={saved}
           onChange={(e) => setSaved(e.target.checked)}
-          className="rounded border-gray-300 dark:border-gray-600"
+          className="rounded-sm border-gray-300 dark:border-gray-600"
         />
         I have saved these codes
       </label>
@@ -272,7 +272,7 @@ const CodePrompt: React.FC<{
 }) => {
   return (
     <form
-      className="space-y-3 p-4 border border-gray-200 dark:border-gray-700 rounded"
+      className="space-y-3 p-4 border border-gray-200 dark:border-gray-700 rounded-sm"
       onSubmit={(e) => {
         e.preventDefault();
         onSubmit();
@@ -295,7 +295,7 @@ const CodePrompt: React.FC<{
           value={code}
           onChange={(e) => onCodeChange(e.target.value)}
           autoComplete="one-time-code"
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-xs focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
           required
           disabled={busy}
         />
@@ -369,7 +369,7 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
       {error !== null && (
         <div
           role="alert"
-          className="mb-4 p-3 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded"
+          className="mb-4 p-3 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded-sm"
         >
           {error}
         </div>
@@ -377,7 +377,7 @@ export const SecuritySection: React.FC<SecuritySectionProps> = ({
       {notice !== null && (
         <div
           role="status"
-          className="mb-4 p-3 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded"
+          className="mb-4 p-3 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded-sm"
         >
           {notice}
         </div>

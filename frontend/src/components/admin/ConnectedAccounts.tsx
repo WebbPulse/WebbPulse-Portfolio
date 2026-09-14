@@ -122,7 +122,7 @@ const LinkRow: React.FC<{
   return (
     <li
       data-testid={`oauth-link-${link.provider}`}
-      className="flex flex-wrap items-center justify-between gap-3 p-4 border border-gray-200 dark:border-gray-700 rounded"
+      className="flex flex-wrap items-center justify-between gap-3 p-4 border border-gray-200 dark:border-gray-700 rounded-sm"
     >
       <div>
         <p className="text-base font-medium text-gray-900 dark:text-white">
@@ -210,7 +210,7 @@ export const ConnectedAccounts: React.FC<ConnectedAccountsProps> = ({
       {panel.error !== null && (
         <div
           role="alert"
-          className="mb-4 p-3 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded"
+          className="mb-4 p-3 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded-sm"
         >
           {panel.error}
         </div>
@@ -218,7 +218,7 @@ export const ConnectedAccounts: React.FC<ConnectedAccountsProps> = ({
       {panel.notice !== null && (
         <div
           role="status"
-          className="mb-4 p-3 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded"
+          className="mb-4 p-3 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded-sm"
         >
           {panel.notice}
         </div>
