@@ -166,6 +166,75 @@ def test_create_user_writes_a_non_administrator_that_cannot_then_sign_in(
         hooks.may_authenticate(user)
 
 
+def test_on_user_created_promotes_an_ephemeral_e2e_user_to_administrator(
+    hooks: PortfolioIdentityHooks,
+) -> None:
+    """`may_authenticate` admits only administrators, so an e2e run needs the flag."""
+    from webbpulse.identity.flows import EPHEMERAL_VIA
+
+    user = hooks.create_user(email="e2e-run-gw0@e2e.invalid", attributes={"email_verified": True})
+    hooks.on_user_created(user, EPHEMERAL_VIA)
+
+    promoted = hooks.load_user_by_id(str(user["id"]))
+    assert promoted is not None
+    assert promoted["is_admin"] is True
+    assert hooks.may_authenticate(promoted) is None
+
+
+def test_on_user_created_leaves_every_other_via_a_non_administrator(
+    hooks: PortfolioIdentityHooks,
+) -> None:
+    """Registration must not become a way to mint an administrator."""
+    user = hooks.create_user(email="new@webbpulse.com", attributes={})
+    hooks.on_user_created(user, "register")
+
+    unchanged = hooks.load_user_by_id(str(user["id"]))
+    assert unchanged is not None
+    assert unchanged["is_admin"] is False
+
+
+def test_delete_user_removes_the_row_and_reports_that_it_was_there(
+    hooks: PortfolioIdentityHooks,
+) -> None:
+    """The whole of an ephemeral run's cleanup, with the stream purging the rest."""
+    user = hooks.create_user(email="e2e-run-gw0@e2e.invalid", attributes={})
+
+    assert hooks.delete_user(str(user["id"])) is True
+    assert hooks.load_user_by_id(str(user["id"])) is None
+
+
+def test_delete_user_answers_false_for_a_row_that_is_already_gone(
+    hooks: PortfolioIdentityHooks,
+) -> None:
+    """So a retried cleanup is not an error."""
+    user = hooks.create_user(email="e2e-run-gw0@e2e.invalid", attributes={})
+    hooks.delete_user(str(user["id"]))
+
+    assert hooks.delete_user(str(user["id"])) is False
+
+
+@pytest.mark.parametrize("user_id", ["", "not-an-id", "abc"])
+def test_delete_user_answers_false_rather_than_raising_on_a_foreign_id(
+    hooks: PortfolioIdentityHooks,
+    user_id: str,
+) -> None:
+    """A `sub` that is not one of this product's integer ids names no row."""
+    assert hooks.delete_user(user_id) is False
+
+
+def test_delete_user_releases_the_address_for_the_next_run(
+    hooks: PortfolioIdentityHooks,
+) -> None:
+    """`create_ephemeral_user` refuses a taken address, so the unique claim must go."""
+    first = hooks.create_user(email="e2e-run-gw0@e2e.invalid", attributes={})
+    hooks.delete_user(str(first["id"]))
+
+    second = hooks.create_user(email="e2e-run-gw0@e2e.invalid", attributes={})
+
+    assert second["id"] != first["id"]
+    assert hooks.load_user_by_email("e2e-run-gw0@e2e.invalid") is not None
+
+
 def test_create_user_stores_the_lowercased_address_it_was_given(
     hooks: PortfolioIdentityHooks,
 ) -> None:

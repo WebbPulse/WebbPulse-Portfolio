@@ -36,13 +36,15 @@ DOCUMENT_ENVIRONMENT = {
     "DYNAMODB_TABLE_PREFIX": "webbpulse-e2e-document",
     "ENVIRONMENT": "test",
     "LOG_LEVEL": "WARNING",
+    "IDENTITY_EPHEMERAL_USERS_ENABLED": "true",
 }
 """Settings that let the app factories build without AWS.
 
 Building the document reads no table and signs no token, so these only have to satisfy
 `Settings` validation. `ENVIRONMENT` stays outside `ENFORCED_ENVIRONMENTS` so a missing
 secret warns instead of refusing, and `APP_SECRETS_ARN` is cleared so no field resolves
-through Secrets Manager.
+through Secrets Manager. `IDENTITY_EPHEMERAL_USERS_ENABLED` matches what staging deploys,
+so the document is built against the same route set the environment under test mounts.
 """
 
 SCHEMA_ONLY_PATHS = frozenset({"/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json"})
