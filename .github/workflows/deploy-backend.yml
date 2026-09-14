@@ -2,6 +2,12 @@ name: Deploy Backend
 
 on:
   workflow_dispatch:
+    inputs:
+      fresh-dependencies:
+        description: "Resolve the newest webbpulse now instead of reusing today's cached dependency layer."
+        type: boolean
+        required: false
+        default: false
   push:
     branches: [main, staging]
     paths:
@@ -28,6 +34,7 @@ jobs:
     outputs:
       name: ${{ steps.values.outputs.name }}
       role-arn: ${{ steps.values.outputs.role-arn }}
+      dependency-stamp: ${{ steps.stamp.outputs.dependency-stamp }}
     steps:
       - name: Resolve the environment values
         id: values
@@ -43,6 +50,22 @@ jobs:
           echo "Environment: ${ENVIRONMENT}"
           echo "name=${ENVIRONMENT}" >> "$GITHUB_OUTPUT"
           echo "role-arn=${ROLE_TO_ASSUME}" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve the dependency resolution stamp
+        id: stamp
+        env:
+          FRESH_DEPENDENCIES: ${{ inputs.fresh-dependencies }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ "$FRESH_DEPENDENCIES" = "true" ]; then
+            STAMP="$RUN_ID"
+            echo "fresh-dependencies was requested, so the dependency layer rebuilds."
+          else
+            STAMP="$(date -u +%Y-%m-%d)"
+          fi
+          echo "Dependency resolution stamp: ${STAMP}"
+          echo "dependency-stamp=${STAMP}" >> "$GITHUB_OUTPUT"
 
   build-images:
     name: Build and push domain images
@@ -65,7 +88,7 @@ jobs:
       build-args: |
         DOMAIN=${{ matrix.domain }}
         READINESS_PROTOCOL=${{ matrix.domain == 'public' && 'tcp' || 'http' }}
-        DEPENDENCY_RESOLUTION=${{ github.run_id }}
+        DEPENDENCY_RESOLUTION=${{ needs.resolve-env.outputs.dependency-stamp }}
       codeartifact-domain: webbpulse
       codeartifact-domain-owner: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
       codeartifact-repository: python

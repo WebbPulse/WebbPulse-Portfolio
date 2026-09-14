@@ -272,6 +272,16 @@ Two repository variables gate it: `BACKEND_IMAGE_BUILD_ENABLED` on `resolve-env`
 and `BACKEND_IMAGE_DEPLOY_ENABLED` on `deploy-images`. They are separate on
 purpose, so the build can run while nothing is updated.
 
+`resolve-env` also emits a `dependency-stamp` of the current UTC date, passed as
+the `DEPENDENCY_RESOLUTION` build arg. It sits above the CodeArtifact layer that
+floats `webbpulse` to its newest version, so that layer rebuilds at most once per
+UTC day and otherwise comes from the buildx cache. A change to `pyproject.toml`
+or `uv.lock` still rebuilds it immediately, because those are copied in above it.
+The tradeoff is a `webbpulse` version up to one UTC day stale on a rebuild that
+changes nothing else. To take the newest `webbpulse` before the stamp rolls over,
+dispatch the workflow with `fresh-dependencies=true`, which substitutes the run
+id for the date and so forces the layer to rebuild.
+
 ## Scripts
 
 | Script | What it does |
