@@ -8,8 +8,8 @@ from webbpulse.lambda_entry import run_uvicorn
 from webbpulse.logging import configure_logging
 from webbpulse.otel import configure_tracing, resolve_sample_ratio
 
-from ..composition.settings import get_settings
-from ..composition.wiring import DOMAINS, build_domain_app, check_required_secrets
+from app.common.composition.settings import get_settings
+from app.common.composition.wiring import DOMAINS, build_domain_app, check_required_secrets
 
 DOMAIN = DOMAINS["identity"]
 

@@ -10,8 +10,8 @@ from webbpulse.http import REQUEST_ID_HEADER
 from webbpulse.log_context import UNSET, request_id_var, user_id_var
 from webbpulse.logging import JsonFormatter
 
-from app.core.logging import logger
-from app.core.security import CurrentUser
+from app.common.core.logging import logger
+from app.common.core.security import CurrentUser
 
 
 @pytest.fixture

@@ -8,27 +8,31 @@ HTTP API, with DynamoDB as the datastore.
 
 ```
 app/
-├── config.py               Settings (env vars, the APP_SECRETS_ARN JSON secret)
-├── version.py              The version reported by OpenAPI, / and /health
-├── composition/            Root A: the whole surface in one process
-│   ├── wiring.py           The four domains, and build_domain_app
-│   ├── app.py              Every domain's routers on one application
-│   ├── identity.py         Builds the shared identity router from webbpulse.identity
-│   └── identity_hooks.py   Product callbacks the identity package calls
-├── entrypoints/            Root B: one module per deployed function
-│   └── {content,resume,identity,public}.py
-├── domains/                One package per domain, no imports between them
-│   ├── content/            posts, categories, the site-content singleton
-│   ├── resume/             projects, experience, skills, education, certifications
-│   ├── identity/           POST /api/v1/admin/login, the legacy bearer login
-│   └── public/             /, /health, /sitemap.xml, /robots.txt
-├── core/                   security, login_limiter, middleware, logging, identity_claims
-└── db/                     tables, client, serializer, repository, ordering, entities
+├── common/                 Non-domain logic. Imports no domain package
+│   ├── config.py           Settings (env vars, the APP_SECRETS_ARN JSON secret)
+│   ├── version.py          The version reported by OpenAPI, / and /health
+│   ├── composition/        Root A: the whole surface in one process
+│   │   ├── wiring.py       The four domains, and build_domain_app
+│   │   ├── app.py          Every domain's routers on one application
+│   │   └── settings.py     Portfolio's Settings on the shared package's base
+│   ├── core/               security, login_limiter, middleware, logging
+│   └── db/                 tables, client, serializer, repository, ordering, entities
+└── domains/                One package per domain, no imports between them
+    ├── content/            posts, categories, the site-content singleton
+    ├── resume/             projects, experience, skills, education, certifications
+    ├── identity/           POST /api/v1/admin/login, the legacy bearer login
+    │   ├── package_glue.py Builds the shared identity router from webbpulse.identity
+    │   └── identity_hooks.py  Product callbacks the identity package calls
+    └── public/             /, /health, /sitemap.xml, /robots.txt
 scripts/                    create_local_tables, build_image.sh, the migration scripts
 tests/                      pytest suite backed by moto
 ```
 
-The `/api/auth` surface is not repo code. `app/composition/identity.py` calls
+Each domain package also carries an `entrypoint.py`: root B, the module its
+deployed function runs. A change under `app/domains/<name>/` therefore belongs to
+that one Lambda, and a change under `app/common/` fans out to whoever imports it.
+
+The `/api/auth` surface is not repo code. `app/domains/identity/package_glue.py` calls
 `build_identity_router` from `webbpulse.identity`, so sessions, email links, MFA,
 OAuth and passkeys all ship in the shared package. `app/domains/identity/` holds
 only the legacy bearer login.
@@ -55,7 +59,7 @@ The identity function additionally receives `IDENTITY_*` variables from
 `module.identity` and `lambda_domains.tf`. See `docs/identity-cutover.md`.
 
 **Secrets resolve lazily and are checked once at startup.** Importing
-`app.config` reads nothing and constructing `Settings` makes no Secrets Manager
+`app.common.config` reads nothing and constructing `Settings` makes no Secrets Manager
 call, so every entrypoint is importable with no credentials. The blob is fetched
 on first read and cached for the life of the execution environment. Each domain
 declares what it cannot serve without in `Domain.requires_secrets`, and
@@ -87,7 +91,7 @@ One on-demand table per entity: `users`, `categories`, `posts`, `projects`,
 - Timestamps are fixed-width UTC ISO-8601 strings, dates are `YYYY-MM-DD`, and
   absent values are omitted rather than stored as NULL.
 
-`app/db/tables.py` is the single source of truth for table and index names.
+`app/common/db/tables.py` is the single source of truth for table and index names.
 
 ## Local development
 
@@ -110,20 +114,20 @@ export SECRET_KEY=dev-secret ADMIN_USERNAME=admin ADMIN_PASSWORD=admin ADMIN_EMA
 uv run python scripts/create_local_tables.py
 ```
 
-**All 44 routes in one process.** `app.composition.app` is root A, built from
+**All 44 routes in one process.** `app.common.composition.app` is root A, built from
 the same `wiring.DOMAINS` list the four entrypoints read. Nothing deploys it.
 
 ```bash
-uv run uvicorn app.composition.app:app --reload   # http://localhost:8000
+uv run uvicorn app.common.composition.app:app --reload   # http://localhost:8000
 ```
 
-**One domain, the way Lambda runs it.** `app.entrypoints.<domain>` is root B and
+**One domain, the way Lambda runs it.** `app.domains.<domain>.entrypoint` is root B and
 is exactly what the image runs. `run_uvicorn` binds `AWS_LWA_PORT`, then `PORT`,
 then 8080.
 
 ```bash
-PORT=8010 uv run python -m app.entrypoints.content
-PORT=8013 uv run python -m app.entrypoints.public
+PORT=8010 uv run python -m app.domains.content.entrypoint
+PORT=8013 uv run python -m app.domains.public.entrypoint
 ```
 
 This is the faithful one: a domain here answers only its own routes, so a
@@ -148,7 +152,7 @@ Tests run against moto; no AWS credentials or local DynamoDB are needed. See
 CI runs the same commands through `.github/workflows/ci.yml`, which delegates to
 the org reusable `python-ci.yml@v3` and additionally runs `pyright`, `bandit -r
 app -ll` and `pip-audit` over `uv export`. Test domains are the immediate
-subdirectories of `tests/domains`, each matching an `app/entrypoints/<name>.py`
+subdirectories of `tests/domains`, each matching an `app/domains/<name>/entrypoint.py`
 module; CI runs one job per domain and a shared job over the rest of `tests`.
 
 `tests/entrypoints/test_gateway_routes.py` is load-bearing: it keeps the
@@ -160,7 +164,7 @@ asserts the set of routes requiring an administrator equals the flagged keys in
 
 One JSON object per line on stdout, from `webbpulse.logging`. Each entrypoint's
 `main()` calls `configure_logging(...)` before building the application, and
-`app/core/logging.py` exports the `logger` every module imports.
+`app/common/core/logging.py` exports the `logger` every module imports.
 
 `request_id` and `user_id` come from `webbpulse.log_context` ContextVars that
 the formatter merges into every record. `request_id` is bound by
@@ -186,7 +190,7 @@ needs an explicit `namespace`.
 
 One `Dockerfile` builds all four images. `DOMAIN` selects the entrypoint and
 `READINESS_PROTOCOL` the adapter check; the `CMD` is
-`python -m app.entrypoints.${DOMAIN}`. There is no Lambda handler and no Mangum:
+`python -m app.domains.${DOMAIN}.entrypoint`. There is no Lambda handler and no Mangum:
 the Lambda Web Adapter starts before the application and turns each invoke into
 an HTTP request against `127.0.0.1:8080`, so the same image runs on Lambda and
 under `docker run`.

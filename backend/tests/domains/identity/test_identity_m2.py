@@ -10,12 +10,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from webbpulse.testing import FakeKms
 
-from app.composition.identity_hooks import (
+from app.common.db import entities
+from app.domains.identity.identity_hooks import (
     ADMIN_ROLE,
     REFUSAL_CODE,
     PortfolioIdentityHooks,
 )
-from app.db import entities
 
 from ...routes import all_paths, paths_for_method
 from .test_identity_m1 import AUDIENCE, ISSUER, KEY_ARN
@@ -296,7 +296,7 @@ def test_the_table_names_are_the_packages_own_constants() -> None:
         REFRESH_TOKENS_TABLE,
     )
 
-    from app.db import tables
+    from app.common.db import tables
 
     assert tables.CREDENTIALS == CREDENTIALS_TABLE
     assert tables.REFRESH_TOKENS == REFRESH_TOKENS_TABLE
@@ -305,7 +305,7 @@ def test_the_table_names_are_the_packages_own_constants() -> None:
 
 def test_credentials_is_keyed_the_way_the_store_reads_it() -> None:
     """Hash `user_id`, range `credential_type`, both strings."""
-    from app.db.tables import TABLES
+    from app.common.db.tables import TABLES
 
     spec = TABLES["credentials"]
 
@@ -321,7 +321,7 @@ def test_refresh_tokens_carries_the_family_index_under_the_packages_name() -> No
     """DynamoDB resolves an index by name, so the two cannot differ."""
     from webbpulse.identity import REFRESH_FAMILY_INDEX
 
-    from app.db.tables import TABLES
+    from app.common.db.tables import TABLES
 
     spec = TABLES["refresh-tokens"]
 
@@ -336,7 +336,7 @@ def test_refresh_tokens_carries_the_family_index_under_the_packages_name() -> No
 
 def test_login_attempts_ranges_on_the_timestamp_so_an_attempt_is_an_append() -> None:
     """Hash `identity_key`, range `attempted_at`."""
-    from app.db.tables import TABLES
+    from app.common.db.tables import TABLES
 
     assert TABLES["login-attempts"]["KeySchema"] == [
         {"AttributeName": "identity_key", "KeyType": "HASH"},
@@ -346,7 +346,7 @@ def test_login_attempts_ranges_on_the_timestamp_so_an_attempt_is_an_append() -> 
 
 def test_credentials_has_no_ttl_and_the_other_two_expire_on_expires_at() -> None:
     """A credential that expired on a reclaim schedule signs somebody out."""
-    from app.db.tables import ALL_TABLES
+    from app.common.db.tables import ALL_TABLES
 
     ttl = dict(ALL_TABLES)
 
@@ -359,8 +359,8 @@ def test_every_registered_table_is_actually_created_by_the_suite() -> None:
     """`ALL_TABLES` is what `conftest.create_all_tables` walks."""
     import boto3
 
-    from app.config import settings
-    from app.db.tables import ALL_TABLES, TABLES
+    from app.common.config import settings
+    from app.common.db.tables import ALL_TABLES, TABLES
 
     assert {name for name, _ in ALL_TABLES} == set(TABLES)
 
@@ -374,8 +374,8 @@ def identity_app(rsa_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     """The identity router built and mounted exactly as the composition root does."""
     import boto3
 
-    from app.composition.identity import build_router
-    from app.composition.settings import Settings
+    from app.common.composition.settings import Settings
+    from app.domains.identity.package_glue import build_router
 
     monkeypatch.setenv("IDENTITY_ENVIRONMENT", "staging")
     monkeypatch.setenv("IDENTITY_ISSUER", ISSUER)
@@ -459,7 +459,7 @@ def test_the_flows_do_not_mount_without_hooks_and_a_credential_store(
     import boto3
     from webbpulse.identity import IdentitySettings, build_identity_router
 
-    from app.version import VERSION
+    from app.common.version import VERSION
 
     del identity_app
 

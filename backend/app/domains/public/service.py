@@ -4,7 +4,8 @@ Read only: the site-content singleton is the cheapest single-item read that
 proves the DynamoDB path works end to end.
 """
 
-from ...core.logging import logger
+from app.common.core.logging import logger
+
 from .repository import SITE_CONTENT_ID, site_content
 
 

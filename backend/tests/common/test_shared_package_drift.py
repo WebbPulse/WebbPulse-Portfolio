@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-APP = Path(__file__).resolve().parents[1] / "app"
+APP = Path(__file__).resolve().parents[2] / "app"
 
 DELETED_MODULES = (
     "identity_claims",
@@ -50,7 +50,7 @@ def test_nothing_imports_a_removed_shared_module(module):
 @pytest.mark.unit
 def test_the_repository_marshals_through_the_shared_package():
     """`marshal` and its `TypeSerializer` went with the shared action builders."""
-    source = (APP / "db" / "repository.py").read_text()
+    source = (APP / "common" / "db" / "repository.py").read_text()
     assert "TypeSerializer" not in source
     assert "def marshal(" not in source
 
@@ -58,6 +58,6 @@ def test_the_repository_marshals_through_the_shared_package():
 @pytest.mark.unit
 def test_the_repository_pages_through_the_shared_helpers():
     """Hand-rolled `LastEvaluatedKey` loops are what the shared helpers replaced."""
-    source = (APP / "db" / "repository.py").read_text()
+    source = (APP / "common" / "db" / "repository.py").read_text()
     assert "LastEvaluatedKey" not in source
     assert "UnprocessedKeys" not in source

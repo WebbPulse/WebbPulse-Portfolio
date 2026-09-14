@@ -8,18 +8,18 @@ tests/
 ├── conftest.py                 moto tables, TestClient, fixture data
 ├── fixtures/                   route_contract.json: the 44 routes and 42
 │                               documented operations the API publishes
-├── entrypoints/                per-entrypoint route split and wiring
-├── domains/                    one directory per deployed domain, each named
-│   │                           for its app/entrypoints/<name>.py module
-│   ├── content/                posts, site content
-│   ├── identity/               auth, tokens, hashing, seeding, migrations
-│   ├── public/                 sitemap and robots
-│   └── resume/                 projects, experience, skills, education,
-│                               certifications
-├── test_app.py                 root, health, trailing slashes, CORS
-├── test_migration.py           Postgres -> DynamoDB migration script
-├── test_repository.py          serializer, repository, ordering
-└── test_settings.py            env and Secrets Manager configuration
+├── common/                     root and health, the migration script, the
+│                               serializer and repository, settings, and the
+│                               domain boundary and reachability rules
+├── entrypoints/                per-entrypoint route split, wiring and the
+│                               per-entrypoint import isolation probes
+└── domains/                    one directory per deployed domain, each named
+    │                           for its app/domains/<name>/entrypoint.py module
+    ├── content/                posts, site content
+    ├── identity/               auth, tokens, hashing, seeding, migrations
+    ├── public/                 sitemap and robots
+    └── resume/                 projects, experience, skills, education,
+                                certifications
 ```
 
 CI derives its per-domain jobs from the `tests/domains` subdirectory names, so
@@ -30,12 +30,12 @@ adding a domain means adding a directory, not editing a list.
 `conftest.py` sets the environment before the app is imported (fake AWS
 credentials, `DYNAMODB_TABLE_PREFIX=webbpulse-test`, the CI admin credentials)
 and wraps every test in `mock_aws`, creating all tables from
-`app.db.tables.table_definition`. Each test therefore starts with empty tables
+`app.common.db.tables.table_definition`. Each test therefore starts with empty tables
 and a fresh admin-seed state.
 
-The `client` fixture builds root A, `app.composition.app`, which is every
+The `client` fixture builds root A, `app.common.composition.app`, which is every
 domain's routers on one application. It used to build `app.main`, the monolith,
-which is deleted. Both roots come from the one list in `app.composition.wiring`
+which is deleted. Both roots come from the one list in `app.common.composition.wiring`
 that the four deployed entrypoints also read, so a route this client reaches is
 a route some domain function serves.
 

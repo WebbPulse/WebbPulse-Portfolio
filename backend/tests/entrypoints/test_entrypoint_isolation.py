@@ -7,13 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from app.composition.wiring import DOMAIN_NAMES
+from app.common.composition.wiring import DOMAIN_NAMES
 
 BACKEND = Path(__file__).resolve().parents[2]
+ENTRYPOINT = "entrypoint.py"
 
 PROBE = """
 import json, sys
-from app.entrypoints import {domain} as entrypoint
+from app.domains.{domain} import entrypoint
 
 app = entrypoint.build_app()
 domains = sorted(
@@ -76,7 +77,7 @@ def test_an_entrypoint_reports_its_own_service_name(domain, probes):
 @pytest.mark.parametrize("domain", sorted(DOMAIN_NAMES))
 def test_an_entrypoint_exposes_the_runtime_wiring(domain):
     """`main` is what the image runs, and it wires the three shared helpers."""
-    module = __import__(f"app.entrypoints.{domain}", fromlist=["main"])
+    module = __import__(f"app.domains.{domain}.entrypoint", fromlist=["main"])
     source = Path(module.__file__).read_text()
     for helper in ("configure_logging", "configure_tracing", "run_uvicorn"):
         assert helper in source, f"{domain} entrypoint does not call {helper}"
@@ -87,13 +88,13 @@ def test_an_entrypoint_exposes_the_runtime_wiring(domain):
 @pytest.mark.parametrize("domain", sorted(DOMAIN_NAMES))
 def test_an_entrypoint_leaves_instrumentation_to_create_app(domain):
     """`create_app` instruments every app it builds, so a second call only warns."""
-    source = (BACKEND / "app" / "entrypoints" / f"{domain}.py").read_text()
+    source = (BACKEND / "app" / "domains" / domain / ENTRYPOINT).read_text()
     assert "instrument_fastapi" not in source, f"{domain} entrypoint instruments an already instrumented app"
 
 
 def test_no_entrypoint_imports_a_whole_surface_root():
     """A deployed entrypoint builds one domain, never all four."""
     for domain in DOMAIN_NAMES:
-        source = (BACKEND / "app" / "entrypoints" / f"{domain}.py").read_text()
+        source = (BACKEND / "app" / "domains" / domain / ENTRYPOINT).read_text()
         for forbidden in ("app.main", "from ..main", "composition.app", "from .app"):
             assert forbidden not in source, f"{domain} imports {forbidden}"

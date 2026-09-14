@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from app.composition.wiring import build_domain_app
+from app.common.composition.wiring import build_domain_app
 
 from ..routes import DOCUMENTATION_PATHS, served_routes
 
@@ -646,7 +646,7 @@ IDENTITY_FULL_ENV = {
 
 def identity_package_routes(monkeypatch) -> set[tuple[str, str]]:
     """Every `(method, path)` the identity application mounts under `/api/auth`."""
-    from app.composition.settings import Settings, reset_settings_cache
+    from app.common.composition.settings import Settings, reset_settings_cache
 
     for name, value in IDENTITY_FULL_ENV.items():
         monkeypatch.setenv(name, value)

@@ -5,7 +5,7 @@ import logging
 import pytest
 from webbpulse.otel import SAMPLE_RATIO_ENV, instrument_fastapi, resolve_sample_ratio
 
-from app.composition.wiring import DOMAIN_NAMES, build_domain_app
+from app.common.composition.wiring import DOMAIN_NAMES, build_domain_app
 
 FLUSH_WRAPPED_ATTR = "_webbpulse_flush_wrapped"
 OTEL_INSTRUMENTED_ATTR = "_is_instrumented_by_opentelemetry"

@@ -7,7 +7,7 @@ from starlette.responses import PlainTextResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from app.core.middleware import (
+from app.common.core.middleware import (
     DOMAIN_HEADER,
     MONOLITH_DOMAIN,
     DomainHeaderMiddleware,
@@ -97,7 +97,7 @@ def test_a_non_http_scope_passes_straight_through():
 @pytest.mark.parametrize("domain", ["content", "resume", "identity", "public"])
 def test_each_domain_application_reports_its_own_name(domain):
     """Root B stamps the domain name, which is the whole point of the header."""
-    from app.composition.wiring import build_domain_app
+    from app.common.composition.wiring import build_domain_app
 
     app = build_domain_app(domain)
     with TestClient(app) as client:
@@ -107,7 +107,7 @@ def test_each_domain_application_reports_its_own_name(domain):
 
 def test_the_whole_surface_root_reports_monolith():
     """Root A reports a value that is not any one domain's name."""
-    from app.composition.app import build_app
+    from app.common.composition.app import build_app
 
     with TestClient(build_app()) as client:
         response = client.get("/openapi.json")
@@ -116,6 +116,6 @@ def test_the_whole_surface_root_reports_monolith():
 
 def test_the_monolith_value_is_not_a_domain_name():
     """`monolith` must never collide with a domain, or the signal inverts."""
-    from app.composition.wiring import DOMAIN_NAMES
+    from app.common.composition.wiring import DOMAIN_NAMES
 
     assert MONOLITH_DOMAIN not in DOMAIN_NAMES

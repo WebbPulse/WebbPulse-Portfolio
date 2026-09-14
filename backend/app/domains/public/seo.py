@@ -5,8 +5,9 @@ from xml.sax.saxutils import escape
 from fastapi import APIRouter
 from fastapi.responses import Response
 
-from ...config import settings
-from ...db.serializer import parse_datetime
+from app.common.config import settings
+from app.common.db.serializer import parse_datetime
+
 from .repository import posts
 
 router = APIRouter()

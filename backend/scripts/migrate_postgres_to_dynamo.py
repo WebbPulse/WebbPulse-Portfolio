@@ -16,8 +16,8 @@ for name, placeholder in (
 ):
     os.environ.setdefault(name, placeholder)
 
-from app.db.entities import BY_ENTITY  # noqa: E402
-from app.db.serializer import from_item, to_item  # noqa: E402
+from app.common.db.entities import BY_ENTITY  # noqa: E402
+from app.common.db.serializer import from_item, to_item  # noqa: E402
 
 POSTGRES_TABLES = {
     "users": "users",

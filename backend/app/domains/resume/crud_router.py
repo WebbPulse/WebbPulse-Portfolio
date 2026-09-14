@@ -10,8 +10,8 @@ from typing import Callable, List, Type
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from ...core.security import CurrentUser, require_admin
-from ...db.repository import Repository
+from app.common.core.security import CurrentUser, require_admin
+from app.common.db.repository import Repository
 
 
 @dataclass(frozen=True)

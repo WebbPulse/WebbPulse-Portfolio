@@ -9,7 +9,7 @@ import pytest
 from fastapi import FastAPI
 from webbpulse.testing import FakeKms
 
-from app.composition.identity_hooks import PortfolioIdentityHooks
+from app.domains.identity.identity_hooks import PortfolioIdentityHooks
 
 from ...routes import paths_for_method, served_routes
 from .test_identity_m1 import AUDIENCE, ISSUER, KEY_ARN
@@ -30,7 +30,7 @@ def test_the_mfa_table_names_are_the_packages_own_constants() -> None:
     """Copied names, checked against the source they were copied from."""
     from webbpulse.identity import RECOVERY_CODES_TABLE, TOTP_FACTORS_TABLE
 
-    from app.db import tables
+    from app.common.db import tables
 
     assert tables.TOTP_FACTORS == TOTP_FACTORS_TABLE
     assert tables.RECOVERY_CODES == RECOVERY_CODES_TABLE
@@ -38,7 +38,7 @@ def test_the_mfa_table_names_are_the_packages_own_constants() -> None:
 
 def test_the_factor_table_is_keyed_on_the_user_and_nothing_else() -> None:
     """Hash `user_id`, a string, no range key."""
-    from app.db.tables import TABLES
+    from app.common.db.tables import TABLES
 
     spec = TABLES["totp-factors"]
 
@@ -48,7 +48,7 @@ def test_the_factor_table_is_keyed_on_the_user_and_nothing_else() -> None:
 
 def test_the_recovery_table_is_keyed_on_the_user_and_the_code_hash() -> None:
     """Hash `user_id`, range `code_hash`, both strings, in that order."""
-    from app.db.tables import TABLES
+    from app.common.db.tables import TABLES
 
     spec = TABLES["recovery-codes"]
 
@@ -64,7 +64,7 @@ def test_the_recovery_table_is_keyed_on_the_user_and_the_code_hash() -> None:
 
 def test_neither_mfa_table_has_a_secondary_index() -> None:
     """Nothing queries either one by anything but its own key."""
-    from app.db.tables import TABLES
+    from app.common.db.tables import TABLES
 
     assert "GlobalSecondaryIndexes" not in TABLES["totp-factors"]
     assert "GlobalSecondaryIndexes" not in TABLES["recovery-codes"]
@@ -72,7 +72,7 @@ def test_neither_mfa_table_has_a_secondary_index() -> None:
 
 def test_neither_mfa_table_expires_anything() -> None:
     """A decision, pinned as one, because the failure is a lockout."""
-    from app.db.tables import ALL_TABLES
+    from app.common.db.tables import ALL_TABLES
 
     ttls = dict(ALL_TABLES)
 
@@ -84,8 +84,8 @@ def test_both_mfa_tables_are_created_by_the_suite() -> None:
     """Registered in `ALL_TABLES`, which is what `conftest` walks."""
     import boto3
 
-    from app.config import settings
-    from app.db.tables import ALL_TABLES
+    from app.common.config import settings
+    from app.common.db.tables import ALL_TABLES
 
     names = dict(ALL_TABLES)
     assert "totp-factors" in names
@@ -107,7 +107,7 @@ def test_the_identity_tables_are_the_six_the_module_is_passed() -> None:
         TOTP_FACTORS_TABLE,
     )
 
-    from app.db.tables import TABLES
+    from app.common.db.tables import TABLES
 
     identity_owned = {
         CREDENTIALS_TABLE,
@@ -167,8 +167,8 @@ def test_the_composition_root_supplies_both_mfa_stores(
         DynamoTotpFactorStore,
     )
 
-    from app.composition.identity import build_router
-    from app.composition.settings import Settings
+    from app.common.composition.settings import Settings
+    from app.domains.identity.package_glue import build_router
 
     _identity_environment(monkeypatch)
     monkeypatch.setenv("IDENTITY_DATA_KEY_ARN", DATA_KEY_ARN)
@@ -197,8 +197,8 @@ def test_the_mfa_stores_are_bound_to_the_right_tables(
     import boto3
     import webbpulse.identity as package
 
-    from app.composition.identity import build_router
-    from app.composition.settings import Settings
+    from app.common.composition.settings import Settings
+    from app.domains.identity.package_glue import build_router
 
     _identity_environment(monkeypatch)
 
@@ -253,8 +253,8 @@ def identity_app(rsa_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     """
     import boto3
 
-    from app.composition.identity import build_router
-    from app.composition.settings import Settings
+    from app.common.composition.settings import Settings
+    from app.domains.identity.package_glue import build_router
 
     _identity_environment(monkeypatch)
     monkeypatch.setenv("IDENTITY_DATA_KEY_ARN", DATA_KEY_ARN)
@@ -342,8 +342,8 @@ def test_the_routes_do_not_mount_without_the_factor_store(rsa_key: Any, monkeypa
     import boto3
     import webbpulse.identity as package
 
-    from app.composition.identity import build_router
-    from app.composition.settings import Settings
+    from app.common.composition.settings import Settings
+    from app.domains.identity.package_glue import build_router
 
     _identity_environment(monkeypatch)
     monkeypatch.setenv("IDENTITY_DATA_KEY_ARN", DATA_KEY_ARN)
@@ -427,7 +427,7 @@ def _enrolled_app(
         build_identity_router,
     )
 
-    from app.version import VERSION
+    from app.common.version import VERSION
 
     _identity_environment(monkeypatch)
     monkeypatch.setenv("IDENTITY_DATA_KEY_ARN", DATA_KEY_ARN)
@@ -469,7 +469,7 @@ def _enrolled_app(
 
     from webbpulse.http import create_app
 
-    from app.composition.wiring import ERROR_ENVELOPE
+    from app.common.composition.wiring import ERROR_ENVELOPE
 
     app = create_app(
         title="identity-under-test",

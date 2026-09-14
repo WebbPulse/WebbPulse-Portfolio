@@ -12,7 +12,7 @@ from typing import Any
 from webbpulse.identity import AuthenticationRefused
 from webbpulse.identity.flows import EPHEMERAL_VIA
 
-from ..db.entities import users
+from app.common.db.entities import users
 
 REFUSAL_MESSAGE = "This account may not sign in."
 """What `may_authenticate` says when it refuses. One message for every failing

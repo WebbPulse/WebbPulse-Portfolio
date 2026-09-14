@@ -31,11 +31,11 @@ import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from moto import mock_aws  # noqa: E402
 
-from app.config import settings  # noqa: E402
-from app.core.security import create_access_token, get_password_hash  # noqa: E402
-from app.db import client as db_client  # noqa: E402
-from app.db import entities  # noqa: E402
-from app.db.tables import ALL_TABLES, table_definition  # noqa: E402
+from app.common.config import settings  # noqa: E402
+from app.common.core.security import create_access_token, get_password_hash  # noqa: E402
+from app.common.db import client as db_client  # noqa: E402
+from app.common.db import entities  # noqa: E402
+from app.common.db.tables import ALL_TABLES, table_definition  # noqa: E402
 from app.domains.content import service as site_content  # noqa: E402
 from app.domains.identity import service as admin  # noqa: E402
 
@@ -78,7 +78,7 @@ def aws_tables():
 @pytest.fixture
 def client():
     """The whole surface in one process, built from the domain routers."""
-    from app.composition.app import build_app
+    from app.common.composition.app import build_app
 
     with TestClient(build_app()) as test_client:
         yield test_client

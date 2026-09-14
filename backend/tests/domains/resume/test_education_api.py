@@ -38,7 +38,7 @@ class TestEducationAPI:
     @pytest.mark.api
     def test_inactive_education_hidden(self, client: TestClient):
         """An inactive education entry is 404 on the public endpoint."""
-        from app.db.entities import education
+        from app.common.db.entities import education
 
         inactive = education.create(
             {

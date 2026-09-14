@@ -1,17 +1,16 @@
-"""The public domain's entrypoint.
+"""The resume domain's entrypoint.
 
-The unauthenticated surface: `GET /`, `/health`, `/sitemap.xml` and
-`/robots.txt`. It reads no secret at all.
+Projects, experience, skills, education and certifications, under `/api/v1`.
 """
 
 from webbpulse.lambda_entry import run_uvicorn
 from webbpulse.logging import configure_logging
 from webbpulse.otel import configure_tracing, resolve_sample_ratio
 
-from ..composition.settings import get_settings
-from ..composition.wiring import DOMAINS, build_domain_app, check_required_secrets
+from app.common.composition.settings import get_settings
+from app.common.composition.wiring import DOMAINS, build_domain_app, check_required_secrets
 
-DOMAIN = DOMAINS["public"]
+DOMAIN = DOMAINS["resume"]
 
 
 def build_app():
