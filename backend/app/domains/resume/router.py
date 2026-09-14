@@ -1,6 +1,7 @@
 """The resume domain's router: projects, experience, skills and credentials.
 
-Applies the prefix and tag for each collection under a single mount point."""
+Applies the prefix and tag for each collection under a single mount point, so
+the domain has one place that records how its collections are mounted."""
 
 from fastapi import APIRouter
 
