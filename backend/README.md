@@ -47,6 +47,10 @@ only the legacy bearer login.
 | `LOG_LEVEL` | Root log level | `INFO` |
 | `LOGIN_MAX_FAILURES` / `LOGIN_FAILURE_WINDOW_SECONDS` | Login limiter | `10` / `900` |
 
+Staging is never rate limited: the login limiter follows
+`settings.rate_limiting_enabled`, the shared `webbpulse` convention that is
+False on `staging` and True in every other environment.
+
 The identity function additionally receives `IDENTITY_*` variables from
 `module.identity` and `lambda_domains.tf`. See `docs/identity-cutover.md`.
 

@@ -134,7 +134,9 @@ ruff format --check app tests
   and `production` and warns elsewhere. `identity` needs all four, `content` and
   `resume` need `SECRET_KEY`, `public` needs none
 - **Rate limiting**: API Gateway stage throttling (burst 200, rate 100), plus
-  the login limiter. There is no general in-process limiter
+  the login limiter. There is no general in-process limiter. Staging is never
+  rate limited: every limiter follows `settings.rate_limiting_enabled`, the
+  shared `webbpulse` convention that is False on `staging` and True elsewhere
 - **Observability**: OpenTelemetry through `webbpulse.otel`, X-Ray active
   tracing, and 7-day CloudWatch log groups. Logging is `webbpulse.logging`'s
   JSON formatter with `request_id` and `user_id` merged onto every line from
