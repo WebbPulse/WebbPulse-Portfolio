@@ -4,8 +4,8 @@ Ids come from a counter item in the `meta` table and uniqueness from pointer
 items beside it, both written in the same transaction as the row itself."""
 
 from boto3.dynamodb.conditions import Attr, Key
-from boto3.dynamodb.types import TypeSerializer
-from botocore.exceptions import ClientError
+from webbpulse.dynamodb import Repository as SharedRepository
+from webbpulse.dynamodb import TransactionCanceled, transact_write
 
 from ..config import settings
 from . import client
@@ -19,12 +19,18 @@ from .tables import (
     table_name,
 )
 
-_serializer = TypeSerializer()
 
+def shared_repository(entity):
+    """A `webbpulse.dynamodb.Repository` over one entity, for its shared helpers.
 
-def marshal(data):
-    """Encode a plain dict into the low level client's attribute value form."""
-    return {k: _serializer.serialize(v) for k, v in data.items()}
+    Built per call rather than held, so a test that moves the table prefix or the
+    DynamoDB endpoint underneath the settings is read rather than a stale one.
+    """
+    return SharedRepository(
+        logical_name=entity,
+        prefix=settings.DYNAMODB_TABLE_PREFIX,
+        endpoint_url=settings.DYNAMODB_ENDPOINT_URL,
+    )
 
 
 class UniqueViolation(Exception):
@@ -54,6 +60,16 @@ class Repository:
     def table(self):
         """The boto3 Table for this entity."""
         return client.table(self.entity)
+
+    @property
+    def shared(self):
+        """The shared repository over this entity's table."""
+        return shared_repository(self.entity)
+
+    @property
+    def shared_meta(self):
+        """The shared repository over the `meta` table."""
+        return shared_repository(META)
 
     @property
     def meta(self):
@@ -104,37 +120,29 @@ class Repository:
 
     def _unique_put(self, field, value, ref_id):
         """A transaction action claiming a unique value, failing if already held."""
-        return {
-            "Put": {
-                "TableName": self.meta_table_name,
-                "Item": marshal({"pk": self.unique_key(field, value), "ref_id": ref_id}),
-                "ConditionExpression": "attribute_not_exists(pk)",
-            }
-        }
+        return self.shared_meta.put_action(
+            {"pk": self.unique_key(field, value), "ref_id": ref_id},
+            condition=Attr("pk").not_exists(),
+        )
 
     def _unique_delete(self, field, value):
         """A transaction action releasing a unique value."""
-        return {
-            "Delete": {
-                "TableName": self.meta_table_name,
-                "Key": marshal({"pk": self.unique_key(field, value)}),
-            }
-        }
+        return self.shared_meta.delete_action({"pk": self.unique_key(field, value)})
 
     def _transact(self, actions, unique_claims):
         """Run a write transaction, translating a cancellation into a violation."""
         try:
-            client.dynamodb_client().transact_write_items(TransactItems=actions)
-        except ClientError as error:
-            if error.response["Error"]["Code"] != "TransactionCanceledException":
-                raise
+            transact_write(
+                actions,
+                endpoint_url=settings.DYNAMODB_ENDPOINT_URL,
+            )
+        except TransactionCanceled as error:
             self._raise_unique_violation(error, actions, unique_claims)
             raise
 
     def _raise_unique_violation(self, error, actions, unique_claims):
         """Raise `UniqueViolation` for whichever claim the transaction refused."""
-        reasons = error.response.get("CancellationReasons") or []
-        for index, reason in enumerate(reasons):
+        for index, reason in enumerate(error.reasons):
             if reason.get("Code") == "ConditionalCheckFailed" and index in unique_claims:
                 field, value = unique_claims[index]
                 raise UniqueViolation(field, value)
@@ -177,15 +185,7 @@ class Repository:
         item["id"] = int(item_id) if item_id is not None else self.next_id()
         item.setdefault("created_at", encode_datetime(utcnow()))
         item.update(to_item(self.derive(item)))
-        actions = [
-            {
-                "Put": {
-                    "TableName": self.table_name,
-                    "Item": marshal(item),
-                    "ConditionExpression": "attribute_not_exists(id)",
-                }
-            }
-        ]
+        actions = [self.shared.put_action(item, condition=Attr("id").not_exists())]
         claims = self._unique_claims(actions, item, item["id"])
         self._transact(actions, claims)
         return from_item(item)
@@ -209,19 +209,13 @@ class Repository:
                 batch.delete_item(Key={"id": item["id"]})
                 removed += 1
         prefix = f"{UNIQUE_PREFIX}{self.entity}#"
-        kwargs = {
-            "FilterExpression": Attr("pk").begins_with(prefix),
-            "ProjectionExpression": "pk",
-        }
+        pointers = self.shared_meta.iter_scan(
+            filter_expression=Attr("pk").begins_with(prefix),
+            projection="pk",
+        )
         with self.meta.batch_writer() as batch:
-            while True:
-                response = self.meta.scan(**kwargs)
-                for pointer in response.get("Items", []):
-                    batch.delete_item(Key={"pk": pointer["pk"]})
-                last_key = response.get("LastEvaluatedKey")
-                if not last_key:
-                    break
-                kwargs["ExclusiveStartKey"] = last_key
+            for pointer in pointers:
+                batch.delete_item(Key={"pk": pointer["pk"]})
         self.meta.delete_item(Key={"pk": self.counter_key()})
         return removed
 
@@ -242,31 +236,20 @@ class Repository:
         """Several rows by id as a dict, batching and retrying unprocessed keys."""
         wanted = sorted({int(i) for i in ids if i is not None})
         found = {}
-        for start in range(0, len(wanted), 100):
-            request = {self.table_name: {"Keys": [{"id": i} for i in wanted[start : start + 100]]}}
-            while request:
-                response = client.dynamodb_resource().batch_get_item(RequestItems=request)
-                for raw in response.get("Responses", {}).get(self.table_name, []):
-                    item = self._visible(from_item(raw), include_inactive)
-                    if item is not None:
-                        found[item["id"]] = item
-                request = response.get("UnprocessedKeys") or None
+        for raw in self.shared.batch_get([{"id": i} for i in wanted]):
+            item = self._visible(from_item(raw), include_inactive)
+            if item is not None:
+                found[item["id"]] = item
         return found
 
     def list_all(self, include_inactive=False):
         """Every row, paging through the scan."""
         items = []
-        kwargs = {}
-        while True:
-            response = self.table.scan(**kwargs)
-            for raw in response.get("Items", []):
-                item = self._visible(from_item(raw), include_inactive)
-                if item is not None:
-                    items.append(item)
-            last_key = response.get("LastEvaluatedKey")
-            if not last_key:
-                return items
-            kwargs["ExclusiveStartKey"] = last_key
+        for raw in self.shared.iter_scan():
+            item = self._visible(from_item(raw), include_inactive)
+            if item is not None:
+                items.append(item)
+        return items
 
     def count(self, include_inactive=False):
         """How many rows are visible."""
@@ -330,16 +313,16 @@ class Repository:
                 ReturnValues="ALL_NEW",
             )
             return from_item(response["Attributes"])
-        update = {
-            "TableName": self.table_name,
-            "Key": marshal({"id": int(item_id)}),
-            "UpdateExpression": expression,
-            "ExpressionAttributeNames": names,
-            "ConditionExpression": "attribute_exists(id)",
-        }
-        if values:
-            update["ExpressionAttributeValues"] = marshal(values)
-        actions.insert(0, {"Update": update})
+        actions.insert(
+            0,
+            self.shared.update_action(
+                {"id": int(item_id)},
+                update_expression=expression,
+                expression_names=names,
+                expression_values=values or None,
+                condition=Attr("id").exists(),
+            ),
+        )
         claims = {index + 1: claim for index, claim in claims.items()}
         self._transact(actions, claims)
         return self.get(item_id, include_inactive=True)
@@ -353,14 +336,7 @@ class Repository:
         current = self.get(item_id, include_inactive=True)
         if current is None:
             return False
-        actions = [
-            {
-                "Delete": {
-                    "TableName": self.table_name,
-                    "Key": marshal({"id": int(item_id)}),
-                }
-            }
-        ]
+        actions = [self.shared.delete_action({"id": int(item_id)})]
         for field in self.unique_fields:
             value = current.get(field)
             if value is not None:
@@ -381,19 +357,14 @@ class PostRepository(Repository):
 
     def list_published(self, category_id=None):
         """Published posts newest first, optionally filtered to one category."""
-        items = []
-        kwargs = {
-            "IndexName": POSTS_PUBLISHED_INDEX,
-            "KeyConditionExpression": Key("published_flag").eq("1"),
-            "ScanIndexForward": False,
-        }
-        while True:
-            response = self.table.query(**kwargs)
-            items.extend(from_item(raw) for raw in response.get("Items", []))
-            last_key = response.get("LastEvaluatedKey")
-            if not last_key:
-                break
-            kwargs["ExclusiveStartKey"] = last_key
+        items = [
+            from_item(raw)
+            for raw in self.shared.iter_query(
+                Key("published_flag").eq("1"),
+                index_name=POSTS_PUBLISHED_INDEX,
+                ascending=False,
+            )
+        ]
         if category_id is not None:
             items = [item for item in items if item.get("category_id") == category_id]
         return items

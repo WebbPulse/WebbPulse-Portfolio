@@ -9,8 +9,10 @@ from pathlib import Path
 
 import boto3
 import pytest
+import webbpulse.security
+from webbpulse.security import app_secrets as read_app_secrets
+from webbpulse.security import reset_secret_cache
 
-from app import secrets as app_secrets
 from app.composition.settings import Settings
 from app.composition.wiring import DOMAINS, check_required_secrets
 
@@ -22,9 +24,9 @@ MISSING_SECRET_ARN = "arn:aws:secretsmanager:us-west-2:123456789012:secret:webbp
 @pytest.fixture(autouse=True)
 def clear_secrets_cache():
     """The reader caches per execution environment; each test starts empty."""
-    app_secrets.reset_cache()
+    reset_secret_cache()
     yield
-    app_secrets.reset_cache()
+    reset_secret_cache()
 
 
 @pytest.fixture
@@ -109,14 +111,14 @@ def test_reading_a_secret_is_what_triggers_the_fetch(clear_secret_env, monkeypat
     arn = create_app_secret("webbpulse-lazy/app", {"SECRET_KEY": "sm-secret"})
     monkeypatch.setenv("APP_SECRETS_ARN", arn)
 
-    real_load = app_secrets.load_app_secrets
+    real_load = read_app_secrets
 
-    def counting_load(secret_arn, client=None):
-        """Wrap the real loader and record each ARN it is called with."""
+    def counting_load(secret_arn=None, **kwargs):
+        """Wrap the real reader and record each ARN it is called with."""
         calls.append(secret_arn)
-        return real_load(secret_arn, client)
+        return real_load(secret_arn, **kwargs)
 
-    monkeypatch.setattr(app_secrets, "load_app_secrets", counting_load)
+    monkeypatch.setattr(webbpulse.security, "app_secrets", counting_load)
 
     settings = Settings(_env_file=None)
     assert calls == []
@@ -140,11 +142,11 @@ def test_four_unset_fields_cost_one_fetch(clear_secret_env, monkeypatch):
     )
     monkeypatch.setenv("APP_SECRETS_ARN", arn)
 
-    real_load = app_secrets.load_app_secrets
+    real_load = read_app_secrets
     monkeypatch.setattr(
-        app_secrets,
-        "load_app_secrets",
-        lambda a, client=None: (calls.append(a), real_load(a, client))[1],
+        webbpulse.security,
+        "app_secrets",
+        lambda a=None, **kwargs: (calls.append(a), real_load(a, **kwargs))[1],
     )
 
     settings = Settings(_env_file=None)
@@ -183,15 +185,15 @@ def test_require_secrets_names_every_missing_field(clear_secret_env, monkeypatch
 def test_cache_reset_makes_a_rotated_secret_visible():
     """A rotated secret is only picked up after the cache is reset."""
     arn = create_app_secret("webbpulse-rotate/app", {"SECRET_KEY": "first"})
-    assert app_secrets.load_app_secrets(arn)["SECRET_KEY"] == "first"
+    assert read_app_secrets(arn)["SECRET_KEY"] == "first"
 
     boto3.client("secretsmanager", region_name="us-west-2").put_secret_value(
         SecretId=arn, SecretString=json.dumps({"SECRET_KEY": "second"})
     )
-    assert app_secrets.load_app_secrets(arn)["SECRET_KEY"] == "first"
+    assert read_app_secrets(arn)["SECRET_KEY"] == "first"
 
-    app_secrets.reset_cache()
-    assert app_secrets.load_app_secrets(arn)["SECRET_KEY"] == "second"
+    reset_secret_cache()
+    assert read_app_secrets(arn)["SECRET_KEY"] == "second"
 
 
 @pytest.mark.unit

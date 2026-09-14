@@ -111,9 +111,9 @@ export const SkillForm: React.FC<SkillFormProps> = ({
               className={inputClass}
               required
             >
-              <option value="core">Core — use daily, deep</option>
-              <option value="working">Working — ship in it comfortably</option>
-              <option value="familiar">Familiar — can read/contribute</option>
+              <option value="core">Core: use daily, deep</option>
+              <option value="working">Working: ship in it comfortably</option>
+              <option value="familiar">Familiar: can read/contribute</option>
             </select>
           </div>
         </div>

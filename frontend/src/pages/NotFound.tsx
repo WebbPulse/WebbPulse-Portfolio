@@ -18,7 +18,10 @@ const NAV: NavigationItem[] = [
 export const NotFound: React.FC = () => (
   <div className="min-h-screen">
     <Header navigationItems={NAV} />
-    <main className="relative py-20 sm:py-28 overflow-hidden">
+    <main
+      className="relative py-20 sm:py-28 overflow-hidden"
+      data-testid="page-not-found"
+    >
       <div className="absolute inset-0 bg-mesh-1 opacity-40 pointer-events-none" />
 
       <div className="relative z-10 max-w-3xl mx-auto px-6 sm:px-8 text-center">

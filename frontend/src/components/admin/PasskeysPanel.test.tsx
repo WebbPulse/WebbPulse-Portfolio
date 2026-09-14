@@ -10,6 +10,12 @@ import {
 import { PasskeysPanel, type PasskeysClient } from './PasskeysPanel';
 import { defaultPasskeyName } from '../../services/passkeyNames';
 
+/**
+ * The passkey legs of `AuthClient`, as much of it as the panel ever calls.
+ *
+ * The prop is the whole client now that the panel hook owns the calls, so the
+ * stub is cast rather than spelling out every unrelated member.
+ */
 function stubClient(overrides: Partial<PasskeysClient> = {}): PasskeysClient {
   return {
     listPasskeys: vi.fn().mockResolvedValue({ ok: true, passkeys: [] }),
@@ -17,7 +23,7 @@ function stubClient(overrides: Partial<PasskeysClient> = {}): PasskeysClient {
     renamePasskey: vi.fn(),
     deletePasskey: vi.fn(),
     ...overrides,
-  };
+  } as unknown as PasskeysClient;
 }
 
 /** A passkey in the shape `parsePasskey` produces. */
@@ -156,7 +162,7 @@ describe('PasskeysPanel', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('renames a passkey and patches the row from the response', async () => {
+  it('renames a passkey and reloads the row from the list', async () => {
     const renamePasskey = vi.fn().mockResolvedValue({
       ok: true,
       passkey: passkey('cred-1', { name: 'Work laptop' }),
@@ -164,7 +170,11 @@ describe('PasskeysPanel', () => {
     const client = stubClient({
       listPasskeys: vi
         .fn()
-        .mockResolvedValue({ ok: true, passkeys: [passkey('cred-1')] }),
+        .mockResolvedValueOnce({ ok: true, passkeys: [passkey('cred-1')] })
+        .mockResolvedValue({
+          ok: true,
+          passkeys: [passkey('cred-1', { name: 'Work laptop' })],
+        }),
       renamePasskey,
     });
 
@@ -253,6 +263,52 @@ describe('PasskeysPanel', () => {
     expect(
       await screen.findByTestId('passkey-blocked-cred-1')
     ).toHaveTextContent(/set a password first/i);
+  });
+
+  it('renders the loading state the panel hook owns until the list settles', async () => {
+    let settle: (outcome: unknown) => void = () => {};
+    const client = stubClient({
+      listPasskeys: vi.fn().mockReturnValue(
+        new Promise((resolve) => {
+          settle = resolve;
+        })
+      ),
+    });
+
+    render(<PasskeysPanel client={client} />);
+
+    expect(screen.getByText('Loading...')).toBeInTheDocument();
+
+    settle({ ok: true, passkeys: [passkey('cred-1')] });
+
+    expect(await screen.findByTestId('passkey-cred-1')).toBeInTheDocument();
+    expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
+  });
+
+  it('disables the row controls from the panel busy flag while a call is out', async () => {
+    let settle: (outcome: unknown) => void = () => {};
+    const client = stubClient({
+      listPasskeys: vi
+        .fn()
+        .mockResolvedValue({ ok: true, passkeys: [passkey('cred-1')] }),
+      deletePasskey: vi.fn().mockReturnValue(
+        new Promise((resolve) => {
+          settle = resolve;
+        })
+      ),
+    });
+
+    render(<PasskeysPanel client={client} />);
+
+    await screen.findByTestId('passkey-cred-1');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    fireEvent.click(screen.getByRole('button', { name: /confirm removal/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /rename/i })).toBeDisabled();
+    });
+
+    settle({ ok: true });
   });
 
   it('reloads the list when a rename hits a stale row', async () => {

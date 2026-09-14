@@ -1,3 +1,52 @@
+[project]
+name = "webbpulse-portfolio-backend"
+version = "0"
+requires-python = ">=3.13"
+dependencies = [
+  "webbpulse[fastapi,dynamodb,otel,aws-otel,security,identity,oauth,passkeys]>=0.32.1,<1",
+  "fastapi>=0.141.1",
+  "boto3>=1.43.90",
+  "pydantic>=2.13.5",
+  "pydantic-settings>=2.15.0",
+  "python-slugify>=9.0.0",
+  "email-validator>=2.3.0",
+  "uvicorn[standard]>=0.52.4",
+]
+
+[dependency-groups]
+e2e = [
+  "webbpulse[e2e,fastapi,dynamodb,identity,oauth,passkeys,security]>=0.32.1,<1",
+  "fastapi>=0.141.1",
+  "pydantic>=2.13.5",
+  "pydantic-settings>=2.15.0",
+  "python-slugify>=9.0.0",
+  "email-validator>=2.3.0",
+]
+dev = [
+  "webbpulse[testing]>=0.32.1,<1",
+  "moto[dynamodb]>=5.2.3",
+  "pytest>=9.1.1",
+  "pytest-cov>=7.1.0",
+  "pytest-xdist>=3.8.0",
+  "httpx>=0.28.1",
+  "psycopg2-binary>=2.9.12",
+  "ruff>=0.16.6",
+  "pyright>=1.1.408",
+  "bandit>=1.9.2",
+  "pip-audit>=2.9.0",
+]
+
+[tool.uv]
+package = false
+
+[[tool.uv.index]]
+name = "codeartifact"
+url = "https://webbpulse-432410731887.d.codeartifact.us-west-2.amazonaws.com/pypi/python/simple/"
+explicit = true
+
+[tool.uv.sources]
+webbpulse = { index = "codeartifact" }
+
 
 [tool.ruff]
 line-length = 120
@@ -26,35 +75,5 @@ exclude_dirs = [
 
 [tool.webbpulse.ci]
 test-root = "tests"
-
-[tool.webbpulse.ci.domains]
-content = [
-  "tests/test_posts_api.py",
-  "tests/test_site_content_api.py",
-]
-identity = [
-  "tests/test_auth_api.py",
-  "tests/test_auth_hardening.py",
-  "tests/test_core_security.py",
-  "tests/test_identity_admin_claims.py",
-  "tests/test_identity_m1.py",
-  "tests/test_identity_m2.py",
-  "tests/test_identity_m3.py",
-  "tests/test_identity_m4.py",
-  "tests/test_identity_m5.py",
-  "tests/test_identity_m6.py",
-  "tests/test_credential_migration.py",
-  "tests/test_clear_legacy_credentials.py",
-  "tests/test_security_compat.py",
-  "tests/test_seed_identity_aware.py",
-]
-public = [
-  "tests/test_seo.py",
-]
-resume = [
-  "tests/test_certifications_api.py",
-  "tests/test_education_api.py",
-  "tests/test_experience_api.py",
-  "tests/test_projects_api.py",
-  "tests/test_skills_api.py",
-]
+domains-root = "tests/domains"
+entrypoints = "app/entrypoints"

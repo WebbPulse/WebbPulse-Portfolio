@@ -37,9 +37,7 @@ export const ResetPassword: React.FC = () => {
   const identity = apiService.getIdentityClient();
 
   const [token] = useState<string | null>(() =>
-    identity === null
-      ? null
-      : readLinkToken({ expectedPath: RESET_PASSWORD_PATH })
+    readLinkToken({ expectedPath: RESET_PASSWORD_PATH })
   );
 
   const [password, setPassword] = useState('');
@@ -50,7 +48,7 @@ export const ResetPassword: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (identity === null || token === null) return;
+    if (token === null) return;
 
     if (password !== confirmation) {
       setError('The two passwords do not match.');
@@ -80,7 +78,10 @@ export const ResetPassword: React.FC = () => {
   };
 
   const shell = (children: React.ReactNode) => (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-12">
+    <div
+      className="min-h-screen bg-gray-50 dark:bg-gray-900 py-12"
+      data-testid="page-reset-password"
+    >
       <div className="max-w-md mx-auto">
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6 text-center">
@@ -91,19 +92,6 @@ export const ResetPassword: React.FC = () => {
       </div>
     </div>
   );
-
-  if (identity === null) {
-    return shell(
-      <div role="alert" className="text-center">
-        <p className="text-gray-600 dark:text-gray-400 mb-6">
-          Password reset is not enabled for this site.
-        </p>
-        <Link to="/">
-          <Button variant="outline">Back to home</Button>
-        </Link>
-      </div>
-    );
-  }
 
   if (token === null) {
     return shell(

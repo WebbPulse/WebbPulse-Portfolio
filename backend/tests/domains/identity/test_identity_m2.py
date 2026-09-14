@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from webbpulse.testing import FakeKms
 
 from app.composition.identity_hooks import (
     ADMIN_ROLE,
@@ -16,8 +17,8 @@ from app.composition.identity_hooks import (
 )
 from app.db import entities
 
-from .routes import all_paths, paths_for_method
-from .test_identity_m1 import AUDIENCE, ISSUER, KEY_ARN, FakeKms
+from ...routes import all_paths, paths_for_method
+from .test_identity_m1 import AUDIENCE, ISSUER, KEY_ARN
 
 FLOW_PATHS = (
     "/api/auth/register",
@@ -299,17 +300,8 @@ def test_every_registered_table_is_actually_created_by_the_suite() -> None:
         assert f"{settings.DYNAMODB_TABLE_PREFIX}-{name}" in live
 
 
-@pytest.fixture(scope="module")
-def private_key() -> Any:
-    """One 2048-bit key for the module. A fixture rather than an import, because
-    M1's is module scoped and a module scoped fixture does not cross files."""
-    from cryptography.hazmat.primitives.asymmetric import rsa
-
-    return rsa.generate_private_key(public_exponent=65537, key_size=2048)
-
-
 @pytest.fixture
-def identity_app(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
+def identity_app(rsa_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     """The identity router built and mounted exactly as the composition root does."""
     import boto3
 
@@ -323,7 +315,7 @@ def identity_app(private_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     monkeypatch.setenv("IDENTITY_COOKIE_DOMAIN", "staging.webbpulse.com")
     monkeypatch.setenv("IDENTITY_RP_ID", "staging.webbpulse.com")
 
-    fake = FakeKms(private_key)
+    fake = FakeKms(rsa_key)
     monkeypatch.setattr(boto3, "client", lambda service, *a, **kw: fake)
 
     app = FastAPI()
@@ -360,15 +352,22 @@ def test_nothing_is_served_at_the_origin(identity_app: FastAPI) -> None:
 def test_every_identity_route_sits_under_the_issuer_path(
     identity_app: FastAPI,
 ) -> None:
-    """Stated positively, so a route added by a later milestone is covered too."""
+    """Stated positively, so a route added by a later milestone is covered too.
+
+    The purge route is the one exception: the Lambda Web Adapter posts a stream
+    invocation to its own pass-through path, which is absolute and outside the
+    issuer prefix, so that route has to sit at the root to be reachable at all.
+    """
     from webbpulse.identity import IdentitySettings, identity_prefix
+    from webbpulse.identity.events import events_path
 
     prefix = identity_prefix(IdentitySettings())  # pyright: ignore[reportCallIssue]
     assert prefix == "/api/auth"
 
     framework = {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}
+    allowed_outside_prefix = framework | {events_path()}
     for path in all_paths(identity_app):
-        if path in framework:
+        if path in allowed_outside_prefix:
             continue
         assert path.startswith(prefix), path
 

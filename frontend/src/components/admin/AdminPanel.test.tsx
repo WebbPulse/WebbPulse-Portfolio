@@ -20,7 +20,7 @@ function requestUrl(input: RequestInfo | URL): string {
 }
 
 /** Renders the panel with `getAuthClient` answering `client`. */
-function renderPanel(client: ReturnType<typeof stubAuthClient> | null) {
+function renderPanel(client: ReturnType<typeof stubAuthClient>) {
   vi.spyOn(apiService, 'getAuthClient').mockReturnValue(client);
   vi.spyOn(apiService, 'getIdentityClient').mockReturnValue(client);
   return render(
@@ -134,18 +134,6 @@ describe('AdminPanel session, lifted onto AuthProvider', () => {
       expect(screen.getByText(/your session expired/i)).toBeInTheDocument();
     });
     expect(screen.getByLabelText(/username/i)).toBeInTheDocument();
-  });
-
-  it('renders the bearer panel with no provider when there is no client', async () => {
-    vi.spyOn(apiService, 'isAuthenticated').mockReturnValue(true);
-
-    renderPanel(null);
-
-    await waitFor(() => {
-      expect(
-        screen.getByRole('heading', { name: /admin panel/i })
-      ).toBeInTheDocument();
-    });
   });
 });
 

@@ -1,0 +1,33 @@
+name: E2E
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: [Deploy Backend, Deploy Frontend]
+    types: [completed]
+    branches: [main, staging]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.event.workflow_run.head_branch || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    name: Verify the deployed environment
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      checks: write
+    uses: WebbPulse/.github/.github/workflows/e2e.yml@v3
+    with:
+      deploy-workflows: "Deploy Backend, Deploy Frontend"
+      working-directory: backend
+      install-command: uv sync --locked --group e2e
+      pytest-args: -o addopts=
+      codeartifact-domain: webbpulse
+    secrets:
+      E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}

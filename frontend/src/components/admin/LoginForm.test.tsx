@@ -18,16 +18,6 @@ describe('LoginForm', () => {
     vi.restoreAllMocks();
   });
 
-  it('offers no forgot password affordance in bearer mode', () => {
-    vi.spyOn(apiService, 'getIdentityClient').mockReturnValue(null);
-
-    renderForm();
-
-    expect(
-      screen.queryByRole('button', { name: /forgot password/i })
-    ).not.toBeInTheDocument();
-  });
-
   it('offers forgot password in identity mode', () => {
     vi.spyOn(apiService, 'getIdentityClient').mockReturnValue({
       requestPasswordReset: vi.fn(),
@@ -40,8 +30,7 @@ describe('LoginForm', () => {
     ).toBeInTheDocument();
   });
 
-  it('signs in with whatever the two fields hold, in either mode', () => {
-    vi.spyOn(apiService, 'getIdentityClient').mockReturnValue(null);
+  it('signs in with whatever the two fields hold', () => {
     const onLogin = renderForm();
 
     fireEvent.change(screen.getByLabelText(/username/i), {

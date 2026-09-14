@@ -3,7 +3,8 @@
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 
-from ...core.login_limiter import client_ip, login_limiter
+from ...core import login_limiter
+from ...core.login_limiter import client_ip
 from ...core.security import (
     create_access_token,
     get_password_hash,
@@ -54,10 +55,9 @@ async def login(user_credentials: UserLogin, request: Request):
     user = users.find_by_unique("username", user_credentials.username)
     hashed = (user.get("hashed_password") if user else None) or _DUMMY_HASH
     if not user or not verify_password(user_credentials.password, hashed):
-        failures = login_limiter.record_failure(ip)
-        if failures >= login_limiter.max_failures:
-            retry_after = login_limiter.retry_after(ip)
-            return _too_many_requests(retry_after if retry_after else login_limiter.window_seconds)
+        locked_for = login_limiter.record_failure(ip)
+        if locked_for is not None:
+            return _too_many_requests(locked_for)
         raise _unauthorized("Incorrect username or password")
     if not user.get("is_active", True):
         raise _unauthorized("User account is inactive")

@@ -116,7 +116,7 @@ export const SiteContentForm: React.FC<SiteContentFormProps> = ({
 
       <section className="bg-gray-50 dark:bg-gray-700 rounded-lg p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          About — Paragraphs
+          About: Paragraphs
         </h3>
         <div className="space-y-3">
           {form.about_paragraphs.map((p, i) => (
@@ -148,7 +148,7 @@ export const SiteContentForm: React.FC<SiteContentFormProps> = ({
         </div>
 
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mt-6 mb-4">
-          About — Values
+          About: Values
         </h3>
         <div className="space-y-4">
           {form.about_values.map((v, i) => (
@@ -291,7 +291,7 @@ export const SiteContentForm: React.FC<SiteContentFormProps> = ({
             <option value="manual">Manual (use each project's order)</option>
             <option value="newest">Newest first</option>
             <option value="oldest">Oldest first</option>
-            <option value="title_asc">Title (A–Z)</option>
+            <option value="title_asc">Title (A to Z)</option>
           </select>
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
             Controls how the projects section is ordered on the site. Featured

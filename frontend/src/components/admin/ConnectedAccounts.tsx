@@ -1,10 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import type {
-  OAuthLink,
-  OAuthLinkOutcome,
-  OAuthLinksOutcome,
-  OAuthUnlinkOutcome,
-} from '@webbpulse/auth';
+import React, { useMemo } from 'react';
+import type { AuthClient, OAuthLink } from '@webbpulse/auth';
+import { useConnectedAccountsPanel } from '@webbpulse/auth/panels';
 
 import { providerLabel, type OAuthProviderInfo } from '@webbpulse/discovery';
 
@@ -13,49 +9,16 @@ import { Button } from '../common';
 /**
  * The provider links on this account, with the link and unlink actions.
  *
- * The linked list is fetched; which providers could be attached is passed in, so
- * a linked but unconfigured provider can still be unlinked. `last-sign-in-method`
- * gets its own sentence because its remedy is an instruction.
+ * State comes from `useConnectedAccountsPanel`, which owns the list, the busy
+ * flag, the banners and which providers are still attachable. Which providers
+ * exist at all is passed in, so a linked but unconfigured provider can still be
+ * unlinked.
  */
 
 /** The subset of `AuthClient` this component calls. */
-export interface OAuthLinksClient {
-  listOAuthLinks: () => Promise<OAuthLinksOutcome>;
-  linkOAuthProvider: (
-    provider: string,
-    options?: { returnTo?: string }
-  ) => Promise<OAuthLinkOutcome>;
-  unlinkOAuthProvider: (provider: string) => Promise<OAuthUnlinkOutcome>;
-}
+export type OAuthLinksClient = AuthClient<unknown>;
 
-interface ConnectedAccountsProps {
-  client: OAuthLinksClient;
-  /**
-   * The providers this deployment has configured, in backend order.
-   *
-   * Gates the attach buttons only, and carries a `displayName` to label them.
-   * Linked rows go through `providerLabel`, since the links route sends only ids.
-   */
-  availableProviders: readonly OAuthProviderInfo[];
-  /** Where the link callback should land. Defaults to the current path. */
-  returnTo?: string;
-  /**
-   * Sends the browser to the provider's authorization page.
-   *
-   * Injected so a test can observe the navigation rather than having jsdom
-   * refuse it. The default is the real thing.
-   */
-  navigate?: (url: string) => void;
-  className?: string;
-}
-
-/**
- * A sentence per refusal reason, used when the server sends an empty message.
- *
- * The server's own sentence is preferred everywhere, for the reason
- * `SecuritySection` gives: one written here would drift from the one the API
- * documents. These differ per reason because the remedy differs.
- */
+/** The sentence for each refusal the identity service answers link calls with. */
 const REASON_FALLBACKS: Record<string, string> = {
   'last-sign-in-method':
     'This is the only way to sign in to this account. Set a password first, then disconnect it.',
@@ -82,6 +45,60 @@ function refusalMessage(refusal: {
     return `${base} Try again in ${refusal.retryAfter} seconds.`;
   }
   return base;
+}
+
+/**
+ * One link call, with its refusal given this product's sentence.
+ *
+ * The hook renders `message` verbatim, and the identity service leaves it empty
+ * for the reasons it considers self explanatory, so the fallback table is
+ * applied before the hook ever sees the outcome. A thrown error becomes a
+ * refusal carrying `failed`, which the hook renders in the same banner.
+ */
+async function described<T extends { ok: boolean }>(
+  call: () => Promise<T>,
+  onThrow: string
+): Promise<T> {
+  try {
+    const outcome = await call();
+    if (outcome.ok) {
+      return outcome;
+    }
+    const refusal = outcome as unknown as {
+      reason: string;
+      message: string;
+      retryAfter?: number | undefined;
+    };
+    return { ...outcome, message: refusalMessage(refusal) };
+  } catch {
+    return {
+      ok: false,
+      reason: 'failed',
+      message: onThrow,
+      code: undefined,
+    } as unknown as T;
+  }
+}
+
+interface ConnectedAccountsProps {
+  client: OAuthLinksClient;
+  /**
+   * The providers this deployment has configured, in backend order.
+   *
+   * Gates the attach buttons only, and carries a `displayName` to label them.
+   * Linked rows go through `providerLabel`, since the links route sends only ids.
+   */
+  availableProviders: readonly OAuthProviderInfo[];
+  /** Where the link callback should land. Defaults to the current path. */
+  returnTo?: string;
+  /**
+   * Sends the browser to the provider's authorization page.
+   *
+   * Injected so a test can observe the navigation rather than having jsdom
+   * refuse it. The default is the real thing.
+   */
+  navigate?: (url: string) => void;
+  className?: string;
 }
 
 /** An ISO instant as a readable date, or nothing when the server sent none. */
@@ -137,92 +154,47 @@ export const ConnectedAccounts: React.FC<ConnectedAccountsProps> = ({
   navigate,
   className = '',
 }) => {
-  const [links, setLinks] = useState<OAuthLink[] | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-
-  /**
-   * Reloads the list.
-   *
-   * Also the callback the OAuth `?oauth_linked=1` landing runs, which is why
-   * it is exposed through the window hook below rather than only called on
-   * mount.
-   */
-  const reload = useCallback(async () => {
-    try {
-      const outcome = await client.listOAuthLinks();
-      if (outcome.ok) {
-        setLinks(outcome.links);
-        return;
-      }
-      setLinks([]);
-      setError(refusalMessage(outcome));
-    } catch {
-      setLinks([]);
-      setError('Connected accounts could not be loaded. Try again.');
-    }
+  /** The client, with every link refusal carrying this product's sentence. */
+  const describedClient = useMemo<OAuthLinksClient>(() => {
+    const listOAuthLinks: OAuthLinksClient['listOAuthLinks'] = () =>
+      described(
+        () => client.listOAuthLinks(),
+        'Connected accounts could not be loaded. Try again.'
+      );
+    const linkOAuthProvider: OAuthLinksClient['linkOAuthProvider'] = (
+      provider,
+      input
+    ) =>
+      described(
+        () => client.linkOAuthProvider(provider, input),
+        'That request could not be completed. Try again.'
+      );
+    const unlinkOAuthProvider: OAuthLinksClient['unlinkOAuthProvider'] = (
+      provider
+    ) =>
+      described(
+        () => client.unlinkOAuthProvider(provider),
+        'That request could not be completed. Try again.'
+      );
+    return Object.assign(Object.create(client) as OAuthLinksClient, {
+      listOAuthLinks,
+      linkOAuthProvider,
+      unlinkOAuthProvider,
+    });
   }, [client]);
 
-  useEffect(() => {
-    void reload();
-  }, [reload]);
-
-  const handleLink = useCallback(
-    async (provider: string) => {
-      setBusy(true);
-      setError(null);
-      setNotice(null);
-      try {
-        const outcome = await client.linkOAuthProvider(provider, {
-          returnTo: returnTo ?? window.location.pathname,
-        });
-        if (outcome.ok) {
-          (navigate ?? ((url: string) => window.location.assign(url)))(
-            outcome.authorizationUrl
-          );
-          return;
-        }
-        setError(refusalMessage(outcome));
-      } catch {
-        setError('That provider could not be connected. Try again.');
-      } finally {
-        setBusy(false);
-      }
+  const panel = useConnectedAccountsPanel({
+    client: describedClient,
+    providers: availableProviders,
+    returnTo: returnTo ?? window.location.pathname,
+    ...(navigate === undefined ? {} : { navigate }),
+    messages: {
+      removed: (provider) =>
+        `${providerLabel(provider)} is no longer connected.`,
     },
-    [client, navigate, returnTo]
-  );
+  });
 
-  const handleUnlink = useCallback(
-    async (provider: string) => {
-      setBusy(true);
-      setError(null);
-      setNotice(null);
-      try {
-        const outcome = await client.unlinkOAuthProvider(provider);
-        if (outcome.ok) {
-          setNotice(`${providerLabel(provider)} is no longer connected.`);
-          await reload();
-          return;
-        }
-        setError(refusalMessage(outcome));
-        if (outcome.reason === 'not-linked') {
-          await reload();
-        }
-      } catch {
-        setError('That provider could not be disconnected. Try again.');
-      } finally {
-        setBusy(false);
-      }
-    },
-    [client, reload]
-  );
-
-  const linked = links ?? [];
-  const linkedProviders = new Set(linked.map((link) => link.provider));
-  const connectable = availableProviders.filter(
-    (provider) => !linkedProviders.has(provider.id)
-  );
+  const linked = panel.items ?? [];
 
   return (
     <div className={className} data-testid="connected-accounts">
@@ -235,24 +207,24 @@ export const ConnectedAccounts: React.FC<ConnectedAccountsProps> = ({
         before removing the last one.
       </p>
 
-      {error !== null && (
+      {panel.error !== null && (
         <div
           role="alert"
           className="mb-4 p-3 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded"
         >
-          {error}
+          {panel.error}
         </div>
       )}
-      {notice !== null && (
+      {panel.notice !== null && (
         <div
           role="status"
           className="mb-4 p-3 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded"
         >
-          {notice}
+          {panel.notice}
         </div>
       )}
 
-      {links === null ? (
+      {panel.items === null ? (
         <p className="text-sm text-gray-600 dark:text-gray-400">Loading...</p>
       ) : linked.length === 0 ? (
         <p className="text-sm text-gray-600 dark:text-gray-400">
@@ -264,21 +236,21 @@ export const ConnectedAccounts: React.FC<ConnectedAccountsProps> = ({
             <LinkRow
               key={link.provider}
               link={link}
-              busy={busy}
-              onUnlink={() => void handleUnlink(link.provider)}
+              busy={panel.busy}
+              onUnlink={() => void panel.unlink(link.provider)}
             />
           ))}
         </ul>
       )}
 
-      {connectable.length > 0 && (
+      {panel.connectable.length > 0 && (
         <div className="flex flex-wrap gap-3 mt-4">
-          {connectable.map(({ id, displayName: label }) => (
+          {panel.connectable.map(({ id, displayName: label }) => (
             <Button
               key={id}
               variant="outline"
-              onClick={() => void handleLink(id)}
-              disabled={busy}
+              onClick={() => void panel.link(id)}
+              disabled={panel.busy}
             >
               Connect {label}
             </Button>
