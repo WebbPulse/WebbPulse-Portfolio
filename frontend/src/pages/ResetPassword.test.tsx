@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { ResetPassword } from './ResetPassword';
 import { apiService } from '../services/api';
 
@@ -58,6 +58,32 @@ describe('ResetPassword', () => {
       token: 'abc123',
       newPassword: 'correct horse battery',
     });
+  });
+
+  it('moves to sign in once the success notice has been shown', async () => {
+    stubIdentity(vi.fn().mockResolvedValue({ ok: true }));
+    window.history.replaceState({}, '', '/reset-password?token=abc123');
+
+    render(
+      <MemoryRouter initialEntries={['/reset-password']}>
+        <Routes>
+          <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/admin" element={<p>sign in page</p>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    submit('correct horse battery', 'correct horse battery');
+
+    await waitFor(() => {
+      expect(screen.getByText(/password is updated/i)).toBeInTheDocument();
+    });
+    await waitFor(
+      () => {
+        expect(screen.getByText('sign in page')).toBeInTheDocument();
+      },
+      { timeout: 4000 }
+    );
   });
 
   it('does not spend the token when the confirmation does not match', async () => {
