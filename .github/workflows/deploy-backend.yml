@@ -2,6 +2,12 @@ name: Deploy Backend
 
 on:
   workflow_dispatch:
+    inputs:
+      fresh-dependencies:
+        description: "Resolve the newest webbpulse now instead of reusing today's cached dependency layer."
+        type: boolean
+        required: false
+        default: false
   push:
     branches: [main, staging]
     paths:
@@ -47,9 +53,17 @@ jobs:
 
       - name: Resolve the dependency resolution stamp
         id: stamp
+        env:
+          FRESH_DEPENDENCIES: ${{ inputs.fresh-dependencies }}
+          RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
-          STAMP=$(date -u +%Y-%m-%d)
+          if [ "$FRESH_DEPENDENCIES" = "true" ]; then
+            STAMP="$RUN_ID"
+            echo "fresh-dependencies was requested, so the dependency layer rebuilds."
+          else
+            STAMP="$(date -u +%Y-%m-%d)"
+          fi
           echo "Dependency resolution stamp: ${STAMP}"
           echo "dependency-stamp=${STAMP}" >> "$GITHUB_OUTPUT"
 
