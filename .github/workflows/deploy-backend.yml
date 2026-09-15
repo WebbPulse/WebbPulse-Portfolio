@@ -223,7 +223,11 @@ jobs:
   build-images:
     name: Build and push domain images
     needs: [resolve-env, affected, warm-base-image]
-    if: needs.affected.outputs.any == 'true'
+    if: >-
+      always()
+      && needs.affected.outputs.any == 'true'
+      && needs.resolve-env.result == 'success'
+      && needs.affected.result == 'success'
     strategy:
       fail-fast: false
       matrix:

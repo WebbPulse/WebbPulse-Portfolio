@@ -144,6 +144,71 @@ jobs:
       role-to-assume: ${{ vars.CI_AWS_ROLE_ARN }}
       codeartifact-domain-owner: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
 
+  e2e-local:
+    name: E2E on a local stack
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
+    permissions:
+      contents: read
+      id-token: write
+      checks: write
+    uses: WebbPulse/.github/.github/workflows/e2e-local.yml@v3
+    with:
+      working-directory: backend
+      install-command: >-
+        uv sync --locked --group e2e &&
+        uv run --no-sync python -c "import importlib.metadata as m; print('webbpulse', m.version('webbpulse'))"
+      pytest-args: "-o addopts="
+      codeartifact-domain: webbpulse
+      codeartifact-repository: npm
+      codeartifact-namespace: "@webbpulse"
+      aws-region: us-west-2
+      frontend-directory: frontend
+      frontend-build-env-json: >-
+        {"VITE_API_BASE_URL": "http://127.0.0.1:8000/api/v1"}
+      preview-command: npx vite preview --host 127.0.0.1 --port 5173
+      web-base-url: http://127.0.0.1:5173
+      backend-env-json: >-
+        {
+          "ENVIRONMENT": "local",
+          "LOG_LEVEL": "INFO",
+          "AWS_ACCESS_KEY_ID": "local",
+          "AWS_SECRET_ACCESS_KEY": "local",
+          "AWS_DEFAULT_REGION": "us-west-2",
+          "DYNAMODB_ENDPOINT_URL": "http://127.0.0.1:8001",
+          "DYNAMODB_TABLE_PREFIX": "webbpulse-e2e-local",
+          "SECRET_KEY": "e2e-local-stack-secret-key",
+          "ADMIN_USERNAME": "e2e-local-admin",
+          "ADMIN_PASSWORD": "e2e-local-admin-password",
+          "ADMIN_EMAIL": "e2e-local-admin@webbpulse.com",
+          "SITE_URL": "http://127.0.0.1:5173",
+          "IDENTITY_ENVIRONMENT": "local",
+          "IDENTITY_ISSUER": "http://127.0.0.1:8000/api/auth",
+          "IDENTITY_AUDIENCE": "webbpulse-portfolio-local",
+          "IDENTITY_SIGNER": "local",
+          "IDENTITY_SIGNING_KEY_ARNS": "[\"local\"]",
+          "IDENTITY_COOKIE_SECURE": "false",
+          "IDENTITY_COOKIE_SAMESITE": "lax",
+          "IDENTITY_REGISTRATION_ENABLED": "false",
+          "IDENTITY_EPHEMERAL_USERS_ENABLED": "true",
+          "IDENTITY_EMAIL_FROM": "",
+          "IDENTITY_RP_ID": "127.0.0.1",
+          "IDENTITY_RP_NAME": "WebbPulse Portfolio local",
+          "IDENTITY_WEBAUTHN_ORIGINS": "[\"http://127.0.0.1:5173\"]",
+          "E2E_USER_EMAIL": "e2e-local-admin@webbpulse.com",
+          "E2E_USER_PASSWORD": "e2e-local-admin-password"
+        }
+      backend-start-command: >-
+        uv run --no-sync uvicorn app.common.composition.app:app --host 127.0.0.1 --port 8000
+      api-base-url: http://127.0.0.1:8000
+      health-path: /health
+      table-bootstrap-command: uv run --no-sync python scripts/create_local_tables.py
+      dynamodb-port: 8001
+      check-name: "e2e (local)"
+    secrets:
+      role-to-assume: ${{ vars.CI_AWS_ROLE_ARN }}
+      codeartifact-domain-owner: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
+
   all-checks-passed:
     name: all-checks-passed
     runs-on: ubuntu-latest

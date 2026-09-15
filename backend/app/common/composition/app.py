@@ -2,6 +2,15 @@
 
 What the test suite and a local `uvicorn app.common.composition.app:app` run against.
 Nothing deploys it; the four domain functions serve every route in production.
+
+Both router kinds are mounted, exactly as `build_domain_app` mounts them for one
+domain: the prefixed routers under the domain's prefix and the routers that declare
+their own full paths at the root. The identity package's routes are the second kind,
+so a root that mounted only the first would serve no login at all.
+
+In the local environment the gateway's JWT authorizer is stood in for by the shared
+package's `LocalAuthorizerMiddleware`, since without it a valid token reaches every
+admin route carrying no verified claims and each one answers 401.
 """
 
 from __future__ import annotations
@@ -9,6 +18,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from webbpulse.http import create_app
+from webbpulse.identity import LOCAL_ENVIRONMENT, IdentitySettings, LocalAuthorizerMiddleware
 
 from ..core.middleware import (
     MONOLITH_DOMAIN,
@@ -52,8 +62,18 @@ def build_app(settings: Settings | None = None) -> "FastAPI":
                 prefix=domain.router_prefix,
                 tags=list(domain.router_tags),
             )
+        if domain.load_unprefixed_routers is None:
+            continue
+        for router in domain.load_unprefixed_routers(resolved):
+            app.include_router(router)
 
     app.add_middleware(SeedMiddleware)
+    if resolved.ENVIRONMENT.strip().lower() == LOCAL_ENVIRONMENT and resolved.IDENTITY_ISSUER:
+        app.add_middleware(
+            LocalAuthorizerMiddleware,
+            settings=IdentitySettings(),  # pyright: ignore[reportCallIssue]
+            environment=resolved.ENVIRONMENT,
+        )
     app.add_middleware(TrailingSlashMiddleware, router=app.router)
     app.add_middleware(DomainHeaderMiddleware, domain=MONOLITH_DOMAIN)
     return app

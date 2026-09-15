@@ -10,13 +10,14 @@ resource "random_password" "secret_key" {
 
 module "app_secrets" {
   source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/app-secrets"
-  version = "~> 1.6"
+  version = "~> 2.21"
 
   name_prefix = local.prefix
 
   secrets = {
     "app" = {
       description = "JSON map of runtime secrets read by the Lambda API at cold start"
+      version     = 1
       json = {
         SECRET_KEY     = random_password.secret_key.result
         ADMIN_USERNAME = var.admin_username

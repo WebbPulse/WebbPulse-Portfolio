@@ -51,6 +51,33 @@ npm run lint
 npm run test:run
 ```
 
+### End to end tests
+
+The suite in `backend/e2e/` runs against a whole stack rather than a process, so
+it needs a backend, a built frontend and a DynamoDB endpoint all answering. Two
+workflows run it: `e2e (staging)` after a deploy, against the deployed
+environment, and `e2e (local)` on a pull request, against a stack the runner
+builds from the commit under test. The local check is advisory, so it reports a
+result without gating the merge.
+
+The local stack signs its own tokens. `IDENTITY_SIGNER=local` derives an RSA key
+from a seed instead of calling KMS, `IDENTITY_ISSUER` carries the `/api/auth`
+path the identity routes mount under, and `LocalAuthorizerMiddleware` verifies
+the bearer token in process and attaches the claims the API Gateway authorizer
+would have attached, which nothing else on a gateway-free stack would supply.
+The middleware refuses to run in any environment but `local`.
+
+To run it locally, start DynamoDB Local and the backend as above, build and
+serve the frontend, then point the suite at both:
+
+```bash
+cd backend
+export E2E_ENVIRONMENT=local E2E_READ_ONLY=false E2E_AWS_REGION=us-west-2
+export E2E_API_BASE_URL=http://127.0.0.1:8000 E2E_WEB_BASE_URL=http://127.0.0.1:5173
+export E2E_RUN_ID=local E2E_BROWSER=chromium E2E_HEADLESS=true
+uv run python -m pytest e2e -o addopts=
+```
+
 ### Shared package versions
 
 The shared `webbpulse` Python distribution and the `@webbpulse/*` npm packages
