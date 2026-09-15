@@ -5,9 +5,9 @@ from decimal import Decimal
 
 import pytest
 
-from app.db import entities, ordering
-from app.db.repository import Repository, UniqueViolation
-from app.db.serializer import (
+from app.common.db import entities, ordering
+from app.common.db.repository import Repository, UniqueViolation
+from app.common.db.serializer import (
     encode_datetime,
     from_item,
     parse_date,

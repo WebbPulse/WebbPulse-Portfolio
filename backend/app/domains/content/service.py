@@ -2,7 +2,8 @@
 
 from webbpulse.dynamodb import TransactionCanceled
 
-from ...core.logging import logger
+from app.common.core.logging import logger
+
 from .defaults import SITE_CONTENT_DEFAULTS
 from .repository import SITE_CONTENT_ID, site_content
 

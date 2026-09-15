@@ -98,7 +98,7 @@ class TestIdentityClaimsAreRefused:
 
     def test_an_inactive_account_is_refused(self, client, test_admin_user):
         """A token minted before the account was disabled stops working now."""
-        from app.db import entities
+        from app.common.db import entities
 
         entities.users.update(test_admin_user["id"], {"is_active": False})
         response = client.get(
@@ -109,7 +109,7 @@ class TestIdentityClaimsAreRefused:
 
     def test_a_non_admin_account_is_refused(self, client, test_admin_user):
         """Being a user is not being an administrator."""
-        from app.db import entities
+        from app.common.db import entities
 
         entities.users.update(test_admin_user["id"], {"is_admin": False})
         response = client.get(

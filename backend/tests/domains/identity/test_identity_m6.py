@@ -9,7 +9,7 @@ import pytest
 from fastapi import FastAPI
 from webbpulse.testing import FakeKms
 
-from app.composition.identity_hooks import PortfolioIdentityHooks
+from app.domains.identity.identity_hooks import PortfolioIdentityHooks
 
 from ...routes import all_paths, paths_for_method
 from .test_identity_m1 import AUDIENCE, ISSUER, KEY_ARN
@@ -35,7 +35,7 @@ def test_the_oauth_table_names_are_the_packages_own_constants() -> None:
     """Copied names, checked against the source they were copied from."""
     from webbpulse.identity import OAUTH_LINKS_TABLE, OAUTH_STATES_TABLE
 
-    from app.db import tables
+    from app.common.db import tables
 
     assert tables.OAUTH_STATES == OAUTH_STATES_TABLE
     assert tables.OAUTH_LINKS == OAUTH_LINKS_TABLE
@@ -43,7 +43,7 @@ def test_the_oauth_table_names_are_the_packages_own_constants() -> None:
 
 def test_the_state_table_is_keyed_on_the_state_and_nothing_else() -> None:
     """Hash `state`, a string, no range key, no index."""
-    from app.db.tables import TABLES
+    from app.common.db.tables import TABLES
 
     spec = TABLES["oauth-states"]
 
@@ -54,7 +54,7 @@ def test_the_state_table_is_keyed_on_the_state_and_nothing_else() -> None:
 
 def test_the_link_table_is_keyed_on_the_provider_identity() -> None:
     """Hash `provider_subject`, a string, no range key."""
-    from app.db.tables import TABLES
+    from app.common.db.tables import TABLES
 
     spec = TABLES["oauth-links"]
 
@@ -69,7 +69,7 @@ def test_the_link_table_carries_the_user_index_the_package_names() -> None:
     """`user_id-index`, hash `user_id`, projecting ALL."""
     from webbpulse.identity import OAUTH_LINK_USER_INDEX
 
-    from app.db.tables import TABLES
+    from app.common.db.tables import TABLES
 
     indexes = TABLES["oauth-links"]["GlobalSecondaryIndexes"]
 
@@ -81,7 +81,7 @@ def test_the_link_table_carries_the_user_index_the_package_names() -> None:
 
 def test_the_two_oauth_tables_expire_opposite_things() -> None:
     """States expire, links never do, and both are decisions."""
-    from app.db.tables import ALL_TABLES
+    from app.common.db.tables import ALL_TABLES
 
     ttls = dict(ALL_TABLES)
 
@@ -93,8 +93,8 @@ def test_both_oauth_tables_are_created_by_the_suite() -> None:
     """Registered in `ALL_TABLES`, which is what `conftest` walks."""
     import boto3
 
-    from app.config import settings
-    from app.db.tables import ALL_TABLES
+    from app.common.config import settings
+    from app.common.db.tables import ALL_TABLES
 
     names = dict(ALL_TABLES)
     assert "oauth-states" in names
@@ -119,7 +119,7 @@ def test_every_identity_table_the_package_names_is_registered_here() -> None:
         TOTP_FACTORS_TABLE,
     )
 
-    from app.db.tables import TABLES
+    from app.common.db.tables import TABLES
 
     identity_owned = {
         CREDENTIALS_TABLE,
@@ -196,8 +196,8 @@ def test_the_composition_root_supplies_both_oauth_stores(
     import webbpulse.identity as package
     from webbpulse.identity import DynamoOAuthLinkStore, DynamoOAuthStateStore
 
-    from app.composition.identity import build_router
-    from app.composition.settings import Settings
+    from app.common.composition.settings import Settings
+    from app.domains.identity.package_glue import build_router
 
     _identity_environment(monkeypatch)
 
@@ -217,8 +217,8 @@ def test_the_oauth_stores_are_bound_to_the_right_tables(
     import boto3
     import webbpulse.identity as package
 
-    from app.composition.identity import build_router
-    from app.composition.settings import Settings
+    from app.common.composition.settings import Settings
+    from app.domains.identity.package_glue import build_router
 
     _identity_environment(monkeypatch)
 
@@ -239,8 +239,8 @@ def test_the_client_secrets_are_passed_as_an_argument_not_a_setting(
     import boto3
     import webbpulse.identity as package
 
-    from app.composition.identity import build_router
-    from app.composition.settings import Settings
+    from app.common.composition.settings import Settings
+    from app.domains.identity.package_glue import build_router
 
     _identity_environment(monkeypatch)
 
@@ -259,8 +259,8 @@ def test_no_secrets_arn_yields_an_empty_mapping() -> None:
     case insensitive, so the uppercase field is the same input and naming both
     would assign one field twice.
     """
-    from app.composition.identity import build_oauth_client_secrets
-    from app.composition.settings import Settings
+    from app.common.composition.settings import Settings
+    from app.domains.identity.package_glue import build_oauth_client_secrets
 
     settings = Settings(app_secrets_arn="")
 
@@ -272,8 +272,8 @@ def test_only_the_providers_whose_secret_is_present_are_returned(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """One provider registered is a valid state, not a half-configured one."""
-    import app.composition.identity as composition
-    from app.composition.settings import Settings
+    import app.domains.identity.package_glue as composition
+    from app.common.composition.settings import Settings
 
     monkeypatch.setattr(
         composition,
@@ -294,8 +294,8 @@ def test_a_secret_with_no_oauth_keys_yields_an_empty_mapping(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The deployed state today: a real secret that carries no OAuth key."""
-    import app.composition.identity as composition
-    from app.composition.settings import Settings
+    import app.domains.identity.package_glue as composition
+    from app.common.composition.settings import Settings
 
     _fake_app_secrets(monkeypatch, {"SECRET_KEY": "x", "ADMIN_USERNAME": "admin"})
 
@@ -306,7 +306,7 @@ def test_a_secret_with_no_oauth_keys_yields_an_empty_mapping(
 
 def test_the_oauth_secret_keys_are_upper_case_like_every_other_secret_key() -> None:
     """The secret's keys are one convention, and this is what holds them to it."""
-    from app.composition.identity import OAUTH_SECRET_KEYS
+    from app.domains.identity.package_glue import OAUTH_SECRET_KEYS
 
     assert OAUTH_SECRET_KEYS
     for provider, key in OAUTH_SECRET_KEYS.items():
@@ -497,8 +497,8 @@ def _build_identity_app(monkeypatch: pytest.MonkeyPatch, rsa_key: Any, *, google
     """The identity router as the composition root builds it, with these ids set."""
     import boto3
 
-    from app.composition.identity import build_router
-    from app.composition.settings import Settings
+    from app.common.composition.settings import Settings
+    from app.domains.identity.package_glue import build_router
 
     _identity_environment(monkeypatch)
     if google:

@@ -57,8 +57,8 @@ class TestAuthAPI:
     @pytest.mark.auth
     def test_login_inactive_user(self, client: TestClient):
         """Test login with inactive user"""
-        from app.core.security import get_password_hash
-        from app.db.entities import users
+        from app.common.core.security import get_password_hash
+        from app.common.db.entities import users
 
         users.create(
             {
@@ -137,7 +137,7 @@ class TestTokenValidation:
     @pytest.mark.auth
     def test_token_with_nonexistent_user(self, client: TestClient):
         """Test token with user that no longer exists"""
-        from app.core.security import create_access_token
+        from app.common.core.security import create_access_token
 
         token = create_access_token(data={"sub": "nonexistentuser"})
         headers = {"Authorization": f"Bearer {token}"}
@@ -153,7 +153,7 @@ class TestPasswordSecurity:
     @pytest.mark.unit
     def test_password_hashing(self, test_user):
         """Test that passwords are properly hashed"""
-        from app.core.security import verify_password
+        from app.common.core.security import verify_password
 
         assert test_user["hashed_password"] != "testpassword123"
         assert test_user["hashed_password"].startswith("$2b$")
@@ -164,7 +164,7 @@ class TestPasswordSecurity:
     @pytest.mark.unit
     def test_password_hash_uniqueness(self):
         """Test that password hashes are unique for same password"""
-        from app.core.security import get_password_hash
+        from app.common.core.security import get_password_hash
 
         assert get_password_hash("samepassword") != get_password_hash("samepassword")
 

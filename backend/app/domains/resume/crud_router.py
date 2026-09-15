@@ -10,8 +10,8 @@ from typing import Callable, List, Type
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from ...core.security import CurrentUser, require_admin
-from ...db.repository import Repository
+from app.common.core.security import CurrentUser, require_admin
+from app.common.db.repository import Repository
 
 
 @dataclass(frozen=True)
@@ -104,7 +104,12 @@ def build_crud_router(config: CrudConfig, include_list: bool = True) -> APIRoute
         item_id: int,
         current_user: dict = Depends(CurrentUser),
     ):
-        """Soft delete one item. Admin only."""
+        """Soft delete one item and return the configured message. Admin only.
+
+        The row stays in the table and is only marked deleted, so a later read of
+        the same id is a 404 rather than a missing row. An id that is already gone
+        is a 404 too.
+        """
         require_admin(current_user, forbidden("delete"))
         if not repository.soft_delete(item_id):
             raise HTTPException(status_code=404, detail=config.not_found)

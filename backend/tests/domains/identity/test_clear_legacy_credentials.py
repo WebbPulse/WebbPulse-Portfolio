@@ -8,8 +8,8 @@ import pytest
 from webbpulse.identity import PASSWORD_CREDENTIAL_TYPE, CredentialRecord
 from webbpulse.security import hash_password
 
-from app.config import settings
-from app.db import entities
+from app.common.config import settings
+from app.common.db import entities
 
 
 def load_script():

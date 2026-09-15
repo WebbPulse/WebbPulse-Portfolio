@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from app.composition.wiring import build_domain_app
+from app.common.composition.wiring import build_domain_app
 
 from ..routes import DOCUMENTATION_PATHS, served_routes
 
@@ -404,6 +404,11 @@ IDENTITY_M6_JWT_ROUTE_KEYS = {
     "DELETE /api/auth/oauth/{provider}/link",
 }
 
+IDENTITY_EPHEMERAL_ROUTE_KEYS = {
+    "POST /api/auth/e2e/users",
+    "DELETE /api/auth/e2e/users/{user_id}",
+}
+
 
 def identity_route_keys() -> set[str]:
     """Cut 4's keys, which are literal rather than generated."""
@@ -415,6 +420,7 @@ def identity_route_keys() -> set[str]:
         - IDENTITY_M4_ROUTE_KEYS
         - IDENTITY_M5_ROUTE_KEYS
         - IDENTITY_M6_ROUTE_KEYS
+        - IDENTITY_EPHEMERAL_ROUTE_KEYS
     )
     assert keys, "no identity route keys were parsed out of apigateway.tf"
     return keys
@@ -646,7 +652,7 @@ IDENTITY_FULL_ENV = {
 
 def identity_package_routes(monkeypatch) -> set[tuple[str, str]]:
     """Every `(method, path)` the identity application mounts under `/api/auth`."""
-    from app.composition.settings import Settings, reset_settings_cache
+    from app.common.composition.settings import Settings, reset_settings_cache
 
     for name, value in IDENTITY_FULL_ENV.items():
         monkeypatch.setenv(name, value)
@@ -748,6 +754,57 @@ def test_no_m5_or_m6_route_is_anonymous():
 
     overlap = (IDENTITY_M5_ROUTE_KEYS | IDENTITY_M6_ROUTE_KEYS) & anonymous
     assert overlap == set(), sorted(overlap)
+
+
+EPHEMERAL_GROUP_GUARD = re.compile(r"local\.ephemeral_users_enabled\s*\?\s*\{")
+
+
+def test_the_ephemeral_keys_are_present_and_match_the_paths_the_package_declares():
+    """The two e2e user keys exist, and their suffixes are the package's own."""
+    from webbpulse.identity.ephemeral_routes import (
+        EPHEMERAL_USER_ITEM_PATH,
+        EPHEMERAL_USERS_PATH,
+    )
+
+    expected = {
+        f"POST /api/auth{EPHEMERAL_USERS_PATH}",
+        f"DELETE /api/auth{EPHEMERAL_USER_ITEM_PATH}",
+    }
+
+    assert IDENTITY_EPHEMERAL_ROUTE_KEYS == expected
+    assert IDENTITY_EPHEMERAL_ROUTE_KEYS <= gateway_route_keys()["identity"]
+
+
+def test_both_ephemeral_keys_require_an_identity_token():
+    """Both create and delete a verified account, so both read a verified admin subject."""
+    flagged = identity_jwt_route_keys_in_terraform()
+
+    missing = sorted(IDENTITY_EPHEMERAL_ROUTE_KEYS - flagged)
+    assert missing == [], f"these ephemeral routes mint or delete a user but are not flagged: {missing}"
+
+
+def test_no_ephemeral_route_is_anonymous():
+    """The staging access gate still stays exactly two discovery documents wide."""
+    anonymous = set(ANONYMOUS_ROUTE_ENTRY.findall(_terraform_source()))
+
+    overlap = IDENTITY_EPHEMERAL_ROUTE_KEYS & anonymous
+    assert overlap == set(), sorted(overlap)
+
+
+def test_the_ephemeral_keys_route_to_the_identity_function():
+    """The package mounts them on the identity application, not on `content`."""
+    for key in IDENTITY_EPHEMERAL_ROUTE_KEYS:
+        assert key in gateway_route_keys()["identity"], key
+
+
+def test_the_ephemeral_group_is_gated_on_the_same_local_as_the_lambda_flag():
+    """The keys exist only where the routes are mounted, so production has neither."""
+    source = _strip_comments(_terraform_source())
+
+    assert EPHEMERAL_GROUP_GUARD.search(source), (
+        "the ephemeral route group must be guarded by `local.ephemeral_users_enabled ?` so "
+        "production declares no key for a route its identity function does not mount"
+    )
 
 
 def test_the_anonymous_login_legs_are_not_behind_the_identity_jwt_authorizer():

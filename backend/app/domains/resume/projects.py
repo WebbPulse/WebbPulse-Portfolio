@@ -4,7 +4,8 @@ from typing import List
 
 from fastapi import Query
 
-from ...db import ordering
+from app.common.db import ordering
+
 from .crud_router import CrudConfig, build_crud_router
 from .repository import SITE_CONTENT_ID, projects, site_content
 from .schemas import Project, ProjectCreate, ProjectList, ProjectUpdate

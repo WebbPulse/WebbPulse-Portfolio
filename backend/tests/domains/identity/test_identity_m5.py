@@ -42,7 +42,7 @@ def test_the_passkey_table_names_are_the_packages_own_constants() -> None:
     """Neither name is retyped here, in Terraform, or in the package."""
     import webbpulse.identity as package
 
-    from app.db import tables
+    from app.common.db import tables
 
     assert tables.PASSKEYS == package.PASSKEYS_TABLE
     assert tables.WEBAUTHN_CHALLENGES == package.WEBAUTHN_CHALLENGES_TABLE
@@ -50,7 +50,7 @@ def test_the_passkey_table_names_are_the_packages_own_constants() -> None:
 
 def test_the_passkey_table_is_keyed_for_a_consistent_listing() -> None:
     """Hash `user_id`, range `credential_id`, which is the direction that matters."""
-    from app.db.tables import TABLES
+    from app.common.db.tables import TABLES
 
     spec = TABLES["passkeys"]
     assert spec["KeySchema"] == [
@@ -63,7 +63,7 @@ def test_the_passkey_table_carries_the_credential_index_the_package_names() -> N
     """The login lookup's index, by the package's own literal, projecting ALL."""
     import webbpulse.identity as package
 
-    from app.db.tables import TABLES
+    from app.common.db.tables import TABLES
 
     indexes = TABLES["passkeys"]["GlobalSecondaryIndexes"]
     assert len(indexes) == 1
@@ -74,7 +74,7 @@ def test_the_passkey_table_carries_the_credential_index_the_package_names() -> N
 
 def test_the_challenge_table_is_keyed_on_the_challenge_and_nothing_else() -> None:
     """One row is one in-flight ceremony, read by primary key and no other way."""
-    from app.db.tables import TABLES
+    from app.common.db.tables import TABLES
 
     spec = TABLES["webauthn-challenges"]
     assert spec["KeySchema"] == [{"AttributeName": "challenge_id", "KeyType": "HASH"}]
@@ -83,7 +83,7 @@ def test_the_challenge_table_is_keyed_on_the_challenge_and_nothing_else() -> Non
 
 def test_the_two_passkey_tables_expire_opposite_things() -> None:
     """The challenge expires; the passkey must never."""
-    from app.db.tables import ALL_TABLES, IDENTITY_TTL_ATTRIBUTE
+    from app.common.db.tables import ALL_TABLES, IDENTITY_TTL_ATTRIBUTE
 
     ttls = dict(ALL_TABLES)
     assert ttls["webauthn-challenges"] == IDENTITY_TTL_ATTRIBUTE
@@ -96,7 +96,7 @@ def test_both_passkey_tables_are_created_by_the_suite(aws_tables: Any) -> None:
     """
     del aws_tables
 
-    from app.db.tables import ALL_TABLES
+    from app.common.db.tables import ALL_TABLES
 
     names = {name for name, _ in ALL_TABLES}
     assert {"passkeys", "webauthn-challenges"} <= names
@@ -217,8 +217,8 @@ def test_the_composition_root_supplies_both_passkey_stores(
     import boto3
     import webbpulse.identity as package
 
-    from app.composition.identity import build_router
-    from app.composition.settings import Settings
+    from app.common.composition.settings import Settings
+    from app.domains.identity.package_glue import build_router
 
     _identity_environment(monkeypatch)
 
@@ -239,8 +239,8 @@ def test_the_passkey_stores_are_bound_to_the_right_tables(
     import boto3
     import webbpulse.identity as package
 
-    from app.composition.identity import build_router
-    from app.composition.settings import Settings
+    from app.common.composition.settings import Settings
+    from app.domains.identity.package_glue import build_router
 
     _identity_environment(monkeypatch)
 
@@ -258,7 +258,7 @@ def test_the_hooks_still_satisfy_the_packages_protocol() -> None:
     """M5 adds no hook, so this has to keep passing untouched."""
     from webbpulse.identity import IdentityHooks
 
-    from app.composition.identity_hooks import PortfolioIdentityHooks
+    from app.domains.identity.identity_hooks import PortfolioIdentityHooks
 
     assert isinstance(PortfolioIdentityHooks(), IdentityHooks)
 
@@ -478,8 +478,8 @@ def _build_identity_app(monkeypatch: pytest.MonkeyPatch, rsa_key: Any, *, enable
     """The identity router as the composition root builds it, at this flag value."""
     import boto3
 
-    from app.composition.identity import build_router
-    from app.composition.settings import Settings
+    from app.common.composition.settings import Settings
+    from app.domains.identity.package_glue import build_router
 
     _identity_environment(monkeypatch)
     monkeypatch.setenv("IDENTITY_PASSKEYS_ENABLED", "true" if enabled else "false")

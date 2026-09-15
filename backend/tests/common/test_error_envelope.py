@@ -5,8 +5,8 @@ not change.
 import pytest
 from starlette.testclient import TestClient
 
-from app.composition.app import build_app
-from app.composition.wiring import DOMAINS, ERROR_ENVELOPE, build_domain_app
+from app.common.composition.app import build_app
+from app.common.composition.wiring import DOMAINS, ERROR_ENVELOPE, build_domain_app
 
 UNAUTHORIZED_MESSAGE = "Invalid authentication credentials"
 LOGIN_FAILED_MESSAGE = "Incorrect username or password"

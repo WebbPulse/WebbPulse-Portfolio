@@ -10,12 +10,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from webbpulse.testing import FakeKms
 
-from app.composition.identity_hooks import (
+from app.common.db import entities
+from app.domains.identity.identity_hooks import (
     ADMIN_ROLE,
     REFUSAL_CODE,
     PortfolioIdentityHooks,
 )
-from app.db import entities
 
 from ...routes import all_paths, paths_for_method
 from .test_identity_m1 import AUDIENCE, ISSUER, KEY_ARN
@@ -166,6 +166,75 @@ def test_create_user_writes_a_non_administrator_that_cannot_then_sign_in(
         hooks.may_authenticate(user)
 
 
+def test_on_user_created_promotes_an_ephemeral_e2e_user_to_administrator(
+    hooks: PortfolioIdentityHooks,
+) -> None:
+    """`may_authenticate` admits only administrators, so an e2e run needs the flag."""
+    from webbpulse.identity.flows import EPHEMERAL_VIA
+
+    user = hooks.create_user(email="e2e-run-gw0@e2e.invalid", attributes={"email_verified": True})
+    hooks.on_user_created(user, EPHEMERAL_VIA)
+
+    promoted = hooks.load_user_by_id(str(user["id"]))
+    assert promoted is not None
+    assert promoted["is_admin"] is True
+    assert hooks.may_authenticate(promoted) is None
+
+
+def test_on_user_created_leaves_every_other_via_a_non_administrator(
+    hooks: PortfolioIdentityHooks,
+) -> None:
+    """Registration must not become a way to mint an administrator."""
+    user = hooks.create_user(email="new@webbpulse.com", attributes={})
+    hooks.on_user_created(user, "register")
+
+    unchanged = hooks.load_user_by_id(str(user["id"]))
+    assert unchanged is not None
+    assert unchanged["is_admin"] is False
+
+
+def test_delete_user_removes_the_row_and_reports_that_it_was_there(
+    hooks: PortfolioIdentityHooks,
+) -> None:
+    """The whole of an ephemeral run's cleanup, with the stream purging the rest."""
+    user = hooks.create_user(email="e2e-run-gw0@e2e.invalid", attributes={})
+
+    assert hooks.delete_user(str(user["id"])) is True
+    assert hooks.load_user_by_id(str(user["id"])) is None
+
+
+def test_delete_user_answers_false_for_a_row_that_is_already_gone(
+    hooks: PortfolioIdentityHooks,
+) -> None:
+    """So a retried cleanup is not an error."""
+    user = hooks.create_user(email="e2e-run-gw0@e2e.invalid", attributes={})
+    hooks.delete_user(str(user["id"]))
+
+    assert hooks.delete_user(str(user["id"])) is False
+
+
+@pytest.mark.parametrize("user_id", ["", "not-an-id", "abc"])
+def test_delete_user_answers_false_rather_than_raising_on_a_foreign_id(
+    hooks: PortfolioIdentityHooks,
+    user_id: str,
+) -> None:
+    """A `sub` that is not one of this product's integer ids names no row."""
+    assert hooks.delete_user(user_id) is False
+
+
+def test_delete_user_releases_the_address_for_the_next_run(
+    hooks: PortfolioIdentityHooks,
+) -> None:
+    """`create_ephemeral_user` refuses a taken address, so the unique claim must go."""
+    first = hooks.create_user(email="e2e-run-gw0@e2e.invalid", attributes={})
+    hooks.delete_user(str(first["id"]))
+
+    second = hooks.create_user(email="e2e-run-gw0@e2e.invalid", attributes={})
+
+    assert second["id"] != first["id"]
+    assert hooks.load_user_by_email("e2e-run-gw0@e2e.invalid") is not None
+
+
 def test_create_user_stores_the_lowercased_address_it_was_given(
     hooks: PortfolioIdentityHooks,
 ) -> None:
@@ -227,7 +296,7 @@ def test_the_table_names_are_the_packages_own_constants() -> None:
         REFRESH_TOKENS_TABLE,
     )
 
-    from app.db import tables
+    from app.common.db import tables
 
     assert tables.CREDENTIALS == CREDENTIALS_TABLE
     assert tables.REFRESH_TOKENS == REFRESH_TOKENS_TABLE
@@ -236,7 +305,7 @@ def test_the_table_names_are_the_packages_own_constants() -> None:
 
 def test_credentials_is_keyed_the_way_the_store_reads_it() -> None:
     """Hash `user_id`, range `credential_type`, both strings."""
-    from app.db.tables import TABLES
+    from app.common.db.tables import TABLES
 
     spec = TABLES["credentials"]
 
@@ -252,7 +321,7 @@ def test_refresh_tokens_carries_the_family_index_under_the_packages_name() -> No
     """DynamoDB resolves an index by name, so the two cannot differ."""
     from webbpulse.identity import REFRESH_FAMILY_INDEX
 
-    from app.db.tables import TABLES
+    from app.common.db.tables import TABLES
 
     spec = TABLES["refresh-tokens"]
 
@@ -267,7 +336,7 @@ def test_refresh_tokens_carries_the_family_index_under_the_packages_name() -> No
 
 def test_login_attempts_ranges_on_the_timestamp_so_an_attempt_is_an_append() -> None:
     """Hash `identity_key`, range `attempted_at`."""
-    from app.db.tables import TABLES
+    from app.common.db.tables import TABLES
 
     assert TABLES["login-attempts"]["KeySchema"] == [
         {"AttributeName": "identity_key", "KeyType": "HASH"},
@@ -277,7 +346,7 @@ def test_login_attempts_ranges_on_the_timestamp_so_an_attempt_is_an_append() -> 
 
 def test_credentials_has_no_ttl_and_the_other_two_expire_on_expires_at() -> None:
     """A credential that expired on a reclaim schedule signs somebody out."""
-    from app.db.tables import ALL_TABLES
+    from app.common.db.tables import ALL_TABLES
 
     ttl = dict(ALL_TABLES)
 
@@ -290,8 +359,8 @@ def test_every_registered_table_is_actually_created_by_the_suite() -> None:
     """`ALL_TABLES` is what `conftest.create_all_tables` walks."""
     import boto3
 
-    from app.config import settings
-    from app.db.tables import ALL_TABLES, TABLES
+    from app.common.config import settings
+    from app.common.db.tables import ALL_TABLES, TABLES
 
     assert {name for name, _ in ALL_TABLES} == set(TABLES)
 
@@ -305,8 +374,8 @@ def identity_app(rsa_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     """The identity router built and mounted exactly as the composition root does."""
     import boto3
 
-    from app.composition.identity import build_router
-    from app.composition.settings import Settings
+    from app.common.composition.settings import Settings
+    from app.domains.identity.package_glue import build_router
 
     monkeypatch.setenv("IDENTITY_ENVIRONMENT", "staging")
     monkeypatch.setenv("IDENTITY_ISSUER", ISSUER)
@@ -390,7 +459,7 @@ def test_the_flows_do_not_mount_without_hooks_and_a_credential_store(
     import boto3
     from webbpulse.identity import IdentitySettings, build_identity_router
 
-    from app.version import VERSION
+    from app.common.version import VERSION
 
     del identity_app
 

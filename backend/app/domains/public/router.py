@@ -5,7 +5,8 @@ and no tags."""
 
 from fastapi import APIRouter, Response
 
-from ...version import VERSION
+from app.common.version import VERSION
+
 from .seo import router as seo_router
 from .service import database_status
 

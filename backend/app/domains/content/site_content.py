@@ -2,7 +2,8 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from ...core.security import CurrentUser, require_admin
+from app.common.core.security import CurrentUser, require_admin
+
 from .repository import SITE_CONTENT_ID, site_content
 from .schemas import SiteContent, SiteContentUpdate
 

@@ -10,8 +10,9 @@ from collections.abc import Mapping
 from typing import Any
 
 from webbpulse.identity import AuthenticationRefused
+from webbpulse.identity.flows import EPHEMERAL_VIA
 
-from ..db.entities import users
+from app.common.db.entities import users
 
 REFUSAL_MESSAGE = "This account may not sign in."
 """What `may_authenticate` says when it refuses. One message for every failing
@@ -65,8 +66,21 @@ class PortfolioIdentityHooks:
         return {"roles": [ADMIN_ROLE]}
 
     def on_user_created(self, user: Mapping[str, Any], via: str) -> None:
-        """No side effects to run. The verification email is the flow's job."""
-        del user, via
+        """Promote an ephemeral e2e user to administrator, and nothing else.
+
+        `may_authenticate` admits only active administrators, so an e2e run signing
+        in as a non-administrator could never log in. Keyed on `via` rather than on
+        an attribute or the address, because `EPHEMERAL_VIA` is the one signal the
+        package passes for this path and registration never carries it. Reached only
+        where `ephemeral_users_enabled` is set, which the router refuses to honour in
+        production, so no production account can be promoted here.
+        """
+        if via != EPHEMERAL_VIA:
+            return
+        user_id = user.get("id")
+        if user_id is None:
+            return
+        users.update(int(user_id), {"is_admin": True})
 
     def create_user(self, *, email: str, attributes: Mapping[str, Any]) -> Mapping[str, Any]:
         """Create a Portfolio user row for a registration and return it.
@@ -102,6 +116,20 @@ class PortfolioIdentityHooks:
                 "was consumed, so the address is not verified and the user needs a "
                 "new one."
             )
+
+    def delete_user(self, user_id: str) -> bool:
+        """Hard-delete this product's users row, returning whether one was there.
+
+        Only the users row: that row's stream carries the REMOVE that purges every
+        identity row keyed on the id, so the deletion path an e2e run exercises is
+        the one production uses. An id that is not one of this product's integer ids
+        names no row, so it answers `False` rather than raising.
+        """
+        try:
+            numeric_id = int(user_id)
+        except (TypeError, ValueError):
+            return False
+        return bool(users.hard_delete(numeric_id))
 
     def has_other_sign_in_method(self, user_id: str) -> bool:
         """Whether this user holds a sign-in method the package cannot see.

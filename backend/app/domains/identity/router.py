@@ -3,13 +3,14 @@
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 
-from ...core import login_limiter
-from ...core.login_limiter import client_ip
-from ...core.security import (
+from app.common.core import login_limiter
+from app.common.core.login_limiter import client_ip
+from app.common.core.security import (
     create_access_token,
     get_password_hash,
     verify_password,
 )
+
 from .repository import users
 from .schemas import Token, UserLogin
 

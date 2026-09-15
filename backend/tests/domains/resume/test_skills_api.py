@@ -26,7 +26,7 @@ class TestSkillsAPI:
     @pytest.mark.api
     def test_get_skills_ordering(self, client: TestClient):
         """Skills should be ordered by (order asc, name asc)."""
-        from app.db.entities import skills
+        from app.common.db.entities import skills
 
         for name, order in (("Zeta", 10), ("Alpha", 20), ("Beta", 10)):
             skills.create(
@@ -63,7 +63,7 @@ class TestSkillsAPI:
     @pytest.mark.api
     def test_inactive_skill_hidden(self, client: TestClient):
         """An inactive skill is 404 on the public endpoint."""
-        from app.db.entities import skills
+        from app.common.db.entities import skills
 
         inactive = skills.create(
             {

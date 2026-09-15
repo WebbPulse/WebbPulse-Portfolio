@@ -1,6 +1,7 @@
 """Education entry routes, built from the generic resume CRUD router."""
 
-from ...db import ordering
+from app.common.db import ordering
+
 from .crud_router import CrudConfig, build_crud_router
 from .repository import education
 from .schemas import Education, EducationCreate, EducationList, EducationUpdate

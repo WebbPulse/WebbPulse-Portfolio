@@ -37,8 +37,8 @@ def client(identity_env: None, rsa_key: Any, monkeypatch: pytest.MonkeyPatch) ->
     """The identity router mounted the way the composition root mounts it."""
     import boto3
 
-    from app.composition.identity import build_router
-    from app.composition.settings import Settings
+    from app.common.composition.settings import Settings
+    from app.domains.identity.package_glue import build_router
 
     fake = FakeKms(rsa_key)
     monkeypatch.setattr(boto3, "client", lambda service, *a, **kw: fake)

@@ -65,6 +65,21 @@ locals {
   )
 }
 
+variable "ephemeral_users_enabled" {
+  description = "Whether the admin-only ephemeral e2e user routes are mounted. Null derives it from the environment: true in staging, false in production."
+  type        = bool
+  default     = null
+  nullable    = true
+}
+
+locals {
+  ephemeral_users_enabled = (
+    var.ephemeral_users_enabled != null
+    ? var.ephemeral_users_enabled
+    : var.environment != "production"
+  )
+}
+
 variable "identity_rp_name" {
   description = "WebAuthn Relying Party display name shown during a passkey ceremony. A display string only, safe to change at any time."
   type        = string

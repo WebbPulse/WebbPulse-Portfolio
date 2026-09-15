@@ -13,10 +13,10 @@ import webbpulse.security
 from webbpulse.security import app_secrets as read_app_secrets
 from webbpulse.security import reset_secret_cache
 
-from app.composition.settings import Settings
-from app.composition.wiring import DOMAINS, check_required_secrets
+from app.common.composition.settings import Settings
+from app.common.composition.wiring import DOMAINS, check_required_secrets
 
-BACKEND = Path(__file__).resolve().parents[1]
+BACKEND = Path(__file__).resolve().parents[2]
 
 MISSING_SECRET_ARN = "arn:aws:secretsmanager:us-west-2:123456789012:secret:webbpulse-test/missing-AbCdEf"
 
@@ -64,15 +64,15 @@ def run_probe(source, env=None):
 
 IMPORT_PROBE = """
 import json, sys
-import app.config as config
-from app.composition.settings import Settings
+import app.common.config as config
+from app.common.composition.settings import Settings
 
 import webbpulse.config as shared_config
 shared_config._secrets_client = lambda region=None: (
     (_ for _ in ()).throw(AssertionError("client built"))
 )
 
-app_module = __import__("app.entrypoints.%s", fromlist=["build_app"])
+app_module = __import__("app.domains.%s.entrypoint", fromlist=["build_app"])
 built = app_module.build_app()
 print(json.dumps({"routes": len(built.routes), "arn": config.settings.APP_SECRETS_ARN}))
 """
@@ -94,7 +94,7 @@ def test_building_a_domain_app_makes_no_secrets_manager_call(domain):
 def test_importing_config_with_no_aws_environment_at_all():
     """No credentials, no region, no ARN: importing settings still works."""
     result = run_probe(
-        "from app.config import settings\n"
+        "from app.common.config import settings\n"
         "assert settings.SECRET_KEY is None\n"
         "assert settings.ADMIN_USERNAME is None\n"
         "print('ok')"
@@ -299,11 +299,11 @@ def test_the_content_app_does_not_seed_the_admin_user(monkeypatch):
     """The behaviour, not just the descriptor."""
     from starlette.testclient import TestClient
 
-    from app.composition.wiring import build_domain_app
+    from app.common.composition.wiring import build_domain_app
 
     seeded = []
     monkeypatch.setattr(
-        "app.core.middleware.SEEDERS",
+        "app.common.core.middleware.SEEDERS",
         {
             "admin": lambda: seeded.append("admin"),
             "site_content": lambda: seeded.append("site_content"),
@@ -321,11 +321,11 @@ def test_the_identity_app_still_seeds_the_admin_user(monkeypatch):
     """The admin seed on cold start has to keep working where it belongs."""
     from starlette.testclient import TestClient
 
-    from app.composition.wiring import build_domain_app
+    from app.common.composition.wiring import build_domain_app
 
     seeded = []
     monkeypatch.setattr(
-        "app.core.middleware.SEEDERS",
+        "app.common.core.middleware.SEEDERS",
         {
             "admin": lambda: seeded.append("admin"),
             "site_content": lambda: seeded.append("site_content"),
@@ -344,11 +344,11 @@ def test_a_domain_that_owns_no_table_runs_no_seeder(monkeypatch, domain):
     """A domain owning no table runs no seeder on a request."""
     from starlette.testclient import TestClient
 
-    from app.composition.wiring import build_domain_app
+    from app.common.composition.wiring import build_domain_app
 
     seeded = []
     monkeypatch.setattr(
-        "app.core.middleware.SEEDERS",
+        "app.common.core.middleware.SEEDERS",
         {
             "admin": lambda: seeded.append("admin"),
             "site_content": lambda: seeded.append("site_content"),
@@ -365,7 +365,7 @@ def test_a_domain_that_owns_no_table_runs_no_seeder(monkeypatch, domain):
 def test_an_unknown_seed_name_is_rejected():
     """The descriptor names seeds by string, so a typo has to fail loudly
     rather than silently seeding nothing."""
-    from app.core.middleware import SeedMiddleware
+    from app.common.core.middleware import SeedMiddleware
 
     with pytest.raises(ValueError, match="Unknown seed"):
         SeedMiddleware(lambda *a: None, seeds=("not_a_seed",))

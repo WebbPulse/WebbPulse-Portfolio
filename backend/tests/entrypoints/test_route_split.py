@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from app.composition.wiring import DOMAIN_NAMES, DOMAINS, build_domain_app
+from app.common.composition.wiring import DOMAIN_NAMES, DOMAINS, build_domain_app
 
 from ..routes import method_path_pairs
 
@@ -114,7 +114,7 @@ def test_the_union_of_the_documented_operations_is_the_contract_document():
 
 def test_root_a_serves_the_same_surface_as_the_four_together():
     """Root A and root B, still two views of one list."""
-    from app.composition.app import build_app
+    from app.common.composition.app import build_app
 
     union = set()
     for name in DOMAIN_NAMES:

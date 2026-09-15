@@ -51,6 +51,11 @@ RUN test -n "${DOMAIN}" || { \
 COPY --from=builder /opt/venv /opt/venv
 COPY app/ /var/task/app/
 
+RUN test -f "/var/task/app/domains/${DOMAIN}/entrypoint.py" || { \
+        echo "app/domains/${DOMAIN}/entrypoint.py is missing, so the CMD below has nothing to run." >&2; \
+        exit 1; \
+    }
+
 ENV DOMAIN=${DOMAIN} \
     VIRTUAL_ENV=/opt/venv \
     PATH=/opt/venv/bin:$PATH \
@@ -79,4 +84,4 @@ ENV AWS_LWA_READINESS_CHECK_PATH=/health \
 
 WORKDIR /var/task
 
-CMD ["sh", "-c", "exec python -m app.entrypoints.${DOMAIN}"]
+CMD ["sh", "-c", "exec python -m app.domains.${DOMAIN}.entrypoint"]

@@ -4,10 +4,10 @@ import pytest
 from webbpulse.identity import PASSWORD_CREDENTIAL_TYPE, CredentialRecord
 from webbpulse.security import hash_password, verify_password
 
-from app.config import settings
-from app.core import middleware
-from app.db import entities
-from app.db.tables import CREDENTIALS
+from app.common.config import settings
+from app.common.core import middleware
+from app.common.db import entities
+from app.common.db.tables import CREDENTIALS
 from app.domains.identity.service import (
     LEGACY_HASH_FIELD,
     reset_seed_state,
@@ -181,7 +181,7 @@ class TestMissingCredentialIsCreatedOnce:
 
 
 class TestTheStoreResolution:
-    """`app/core/middleware.py` is what decides which mode the seeder runs in."""
+    """`app/common/core/middleware.py` is what decides which mode the seeder runs in."""
 
     def test_no_identity_issuer_means_no_store(self, monkeypatch):
         """With no identity issuer configured there is no credential store."""

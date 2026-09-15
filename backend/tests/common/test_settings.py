@@ -7,7 +7,7 @@ import pytest
 from webbpulse.security import app_secrets as read_app_secrets
 from webbpulse.security import reset_secret_cache
 
-from app.config import Settings
+from app.common.config import Settings
 
 FULL_PAYLOAD = {
     "SECRET_KEY": "sm-secret",

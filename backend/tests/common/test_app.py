@@ -3,7 +3,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.db import client as db_client
+from app.common.db import client as db_client
 
 
 @pytest.mark.api

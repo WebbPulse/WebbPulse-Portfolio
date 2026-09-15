@@ -204,6 +204,17 @@ module "api" {
       }
     },
 
+    local.ephemeral_users_enabled ? {
+      "POST /api/auth/e2e/users" = {
+        integration          = "identity"
+        require_identity_jwt = true
+      }
+      "DELETE /api/auth/e2e/users/{user_id}" = {
+        integration          = "identity"
+        require_identity_jwt = true
+      }
+    } : {},
+
     local.domain_identity_jwt_route_keys,
   )
 

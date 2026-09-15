@@ -8,10 +8,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...config import settings
-from ...core.logging import logger
-from ...core.security import get_password_hash, verify_password
-from ...db.repository import UniqueViolation
+from app.common.config import settings
+from app.common.core.logging import logger
+from app.common.core.security import get_password_hash, verify_password
+from app.common.db.repository import UniqueViolation
+
 from .repository import users
 
 _seeded = False

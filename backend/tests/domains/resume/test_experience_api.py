@@ -55,7 +55,7 @@ class TestExperienceAPI:
     @pytest.mark.api
     def test_get_inactive_experience_fails(self, client: TestClient):
         """Inactive experience entries are not accessible via public endpoint"""
-        from app.db.entities import experience
+        from app.common.db.entities import experience
 
         inactive_experience = experience.create(
             {
@@ -296,7 +296,7 @@ class TestExperienceAPIPerformance:
     @pytest.mark.slow
     def test_get_experience_large_dataset(self, client: TestClient):
         """Test getting experience entries with a large dataset"""
-        from app.db.entities import experience
+        from app.common.db.entities import experience
 
         for i in range(25):
             experience.create(

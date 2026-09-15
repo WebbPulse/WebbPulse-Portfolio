@@ -2,10 +2,25 @@ name: Deploy Backend
 
 on:
   workflow_dispatch:
+    inputs:
+      fresh-dependencies:
+        description: >-
+          Force a fresh dependency resolution instead of keying the layer on the
+          newest published webbpulse version. The images are pushed under their
+          own tag, so this rebuilds and redeploys even on a commit that is
+          already deployed.
+        type: boolean
+        required: false
+        default: false
   push:
     branches: [main, staging]
     paths:
       - "backend/**"
+      - "!backend/tests/**"
+      - "!backend/e2e/**"
+      - "!backend/scripts/**"
+      - "!backend/README.md"
+      - "!backend/docs/**"
       - ".github/workflows/deploy-backend.yml"
 
 permissions:
@@ -24,10 +39,13 @@ jobs:
       && vars.BACKEND_IMAGE_BUILD_ENABLED == 'true'
     runs-on: ubuntu-latest
     environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
-    permissions: {}
+    permissions:
+      contents: read
+      id-token: write
     outputs:
       name: ${{ steps.values.outputs.name }}
       role-arn: ${{ steps.values.outputs.role-arn }}
+      dependency-stamp: ${{ steps.stamp.outputs.dependency-stamp }}
     steps:
       - name: Resolve the environment values
         id: values
@@ -44,13 +62,172 @@ jobs:
           echo "name=${ENVIRONMENT}" >> "$GITHUB_OUTPUT"
           echo "role-arn=${ROLE_TO_ASSUME}" >> "$GITHUB_OUTPUT"
 
+      - name: Configure AWS credentials via OIDC
+        if: inputs.fresh-dependencies != true
+        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        with:
+          role-to-assume: ${{ steps.values.outputs.role-arn }}
+          aws-region: us-west-2
+
+      - name: Resolve the dependency resolution stamp
+        id: stamp
+        env:
+          FRESH_DEPENDENCIES: ${{ inputs.fresh-dependencies }}
+          RUN_ID: ${{ github.run_id }}
+          CODEARTIFACT_DOMAIN_OWNER: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
+        run: |
+          set -euo pipefail
+          if [ "$FRESH_DEPENDENCIES" = "true" ]; then
+            STAMP="$RUN_ID"
+            echo "fresh-dependencies was requested, so the dependency layer rebuilds."
+          else
+            if [ -z "$CODEARTIFACT_DOMAIN_OWNER" ]; then
+              echo "vars.CODEARTIFACT_DOMAIN_OWNER is not set, so the newest webbpulse version cannot be resolved."
+              exit 1
+            fi
+            STAMP="$(aws codeartifact list-package-versions \
+              --domain webbpulse \
+              --domain-owner "$CODEARTIFACT_DOMAIN_OWNER" \
+              --repository python \
+              --format pypi \
+              --package webbpulse \
+              --status Published \
+              --sort-by PUBLISHED_TIME \
+              --query 'versions[0].version' \
+              --output text)"
+            if [ -z "$STAMP" ] || [ "$STAMP" = "None" ]; then
+              echo "No Published webbpulse version resolved from CodeArtifact, so the dependency layer cannot be keyed."
+              exit 1
+            fi
+          fi
+          echo "Dependency resolution stamp: ${STAMP}"
+          echo "dependency-stamp=${STAMP}" >> "$GITHUB_OUTPUT"
+
+  affected:
+    name: Resolve the affected domains
+    needs: resolve-env
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      domains: ${{ steps.affected.outputs.domains }}
+      any: ${{ steps.affected.outputs.any }}
+      all: ${{ steps.affected.outputs.all }}
+      reason: ${{ steps.affected.outputs.reason }}
+      base: ${{ steps.base.outputs.base }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The base is the head sha of the most recent successful run of this workflow
+      # on this branch. That is a correct floor: a successful run means every domain
+      # was either rebuilt at that sha or was not affected by it, so everything
+      # deployed is at least as new as that commit. A run that failed part way never
+      # becomes the base, so the next run diffs from further back and automatically
+      # rebuilds whatever the failed run left behind. An empty base, and a base that
+      # is not an ancestor of head, are both reported as unknown, which yields every
+      # domain.
+      - name: Resolve the base commit
+        id: base
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+          FRESH_DEPENDENCIES: ${{ inputs.fresh-dependencies }}
+        run: |
+          set -euo pipefail
+          if [ "${FRESH_DEPENDENCIES:-false}" = "true" ]; then
+            echo "fresh-dependencies was requested, so every domain rebuilds."
+            echo "base=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CANDIDATES=$(gh api \
+            "repos/${GH_REPO}/actions/workflows/deploy-backend.yml/runs?branch=${REF_NAME}&status=success&event=push&per_page=20" \
+            --jq '.workflow_runs[].head_sha')
+
+          BASE=""
+          for SHA in $CANDIDATES; do
+            [ "$SHA" = "$GITHUB_SHA" ] && continue
+            if ! git cat-file -e "${SHA}^{commit}" 2>/dev/null; then
+              continue
+            fi
+            if git merge-base --is-ancestor "$SHA" "$GITHUB_SHA"; then
+              BASE="$SHA"
+              break
+            fi
+          done
+
+          if [ -z "$BASE" ]; then
+            echo "No successful run on ${REF_NAME} has a head sha that is an ancestor of ${GITHUB_SHA}."
+          else
+            echo "Base: ${BASE}"
+          fi
+          echo "base=${BASE}" >> "$GITHUB_OUTPUT"
+
+      # unattributed: none is safe here because backend/tests/common/test_reachability.py
+      # forbids an unreached file under app/ outside its allow list, and the single
+      # allow-listed file is the composed local app that nothing deploys.
+      - name: Work out the affected domains
+        id: affected
+        uses: WebbPulse/.github/actions/affected-domains@v3
+        with:
+          working-directory: backend
+          base: ${{ steps.base.outputs.base }}
+          head: ${{ github.sha }}
+          mode: deploy
+          unattributed: none
+          extra-full-paths: |
+            .github/workflows/deploy-backend.yml
+
+      - name: Write the verdict to the summary
+        env:
+          REASON: ${{ steps.affected.outputs.reason }}
+          DOMAINS: ${{ steps.affected.outputs.domains }}
+          BASE: ${{ steps.base.outputs.base }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## Deploy scope"
+            echo
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| base | \`${BASE:-none, so every domain}\` |"
+            echo "| head | \`${GITHUB_SHA}\` |"
+            echo "| domains | \`${DOMAINS}\` |"
+            echo
+            echo "${REASON}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  warm-base-image:
+    name: Warm the base image cache
+    needs: [resolve-env, affected]
+    if: needs.affected.outputs.any == 'true'
+    permissions:
+      contents: read
+      id-token: write
+    uses: WebbPulse/.github/.github/workflows/base-image-cache.yml@v3
+    with:
+      environment: ${{ needs.resolve-env.outputs.name }}
+      aws-region: us-west-2
+      dockerfile: backend/Dockerfile
+      platform: linux/arm64
+      additional-ecr-registries: "432410731887"
+    secrets:
+      role-to-assume: ${{ needs.resolve-env.outputs.role-arn }}
+
   build-images:
     name: Build and push domain images
-    needs: resolve-env
+    needs: [resolve-env, affected, warm-base-image]
+    if: needs.affected.outputs.any == 'true'
     strategy:
       fail-fast: false
       matrix:
-        domain: [content, resume, identity, public]
+        domain: ${{ fromJSON(needs.affected.outputs.domains) }}
     permissions:
       contents: read
       id-token: write
@@ -65,19 +242,20 @@ jobs:
       build-args: |
         DOMAIN=${{ matrix.domain }}
         READINESS_PROTOCOL=${{ matrix.domain == 'public' && 'tcp' || 'http' }}
-        DEPENDENCY_RESOLUTION=${{ github.run_id }}
+        DEPENDENCY_RESOLUTION=${{ needs.resolve-env.outputs.dependency-stamp }}
       codeartifact-domain: webbpulse
       codeartifact-domain-owner: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
       codeartifact-repository: python
       additional-ecr-registries: "432410731887"
+      image-tag-suffix: ${{ inputs.fresh-dependencies == true && format('deps-{0}', github.run_id) || '' }}
       upload-manifest-artifact: true
     secrets:
       role-to-assume: ${{ needs.resolve-env.outputs.role-arn }}
 
   image-map:
     name: Assemble the function image map
-    needs: [resolve-env, build-images]
-    if: always() && needs.build-images.result != 'skipped'
+    needs: [resolve-env, affected, build-images]
+    if: always() && needs.affected.outputs.any == 'true' && needs.build-images.result != 'skipped'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -96,6 +274,7 @@ jobs:
         id: map
         env:
           ENVIRONMENT: ${{ needs.resolve-env.outputs.name }}
+          DOMAINS: ${{ needs.affected.outputs.domains }}
         run: |
           set -euo pipefail
           mkdir -p manifests
@@ -104,10 +283,16 @@ jobs:
 
           env = os.environ["ENVIRONMENT"]
           out = {}
+          expected = set(json.loads(os.environ["DOMAINS"]))
           for path in sorted(pathlib.Path("manifests").glob("*.json")):
               manifest = json.loads(path.read_text())
               domain = manifest["repository"].rsplit("/", 1)[-1]
               out[f"webbpulse-{env}-{domain}"] = manifest["image_uri"]
+
+          built = {name.rsplit("-", 1)[-1] for name in out}
+          missing = sorted(expected - built)
+          if missing:
+              raise SystemExit(f"No image manifest for affected domain(s): {', '.join(missing)}")
           print(json.dumps(out, indent=2))
           PY
           cat function-image-map.json
@@ -115,19 +300,31 @@ jobs:
           MAP=$(python3 -c 'import json,sys; print(json.dumps(json.load(open("function-image-map.json"))))')
           echo "function-image-map=${MAP}" >> "$GITHUB_OUTPUT"
 
+          TAGS=$(python3 -c '
+          import json, pathlib
+
+          tags = sorted({json.loads(p.read_text())["tag"] for p in pathlib.Path("manifests").glob("*.json")})
+          print(", ".join(tags) if tags else "none")
+          ')
+          echo "image-tag=${TAGS}" >> "$GITHUB_OUTPUT"
+
       - name: Write the image map to the summary
         env:
           RESULT: ${{ needs.build-images.result }}
+          DOMAINS: ${{ needs.affected.outputs.domains }}
+          REASON: ${{ needs.affected.outputs.reason }}
+          IMAGE_TAG: ${{ steps.map.outputs.image-tag }}
         run: |
           set -euo pipefail
           {
             echo "## Domain images"
             echo
-            echo "Matrix result: \`${RESULT}\`. Tag: \`sha-${GITHUB_SHA}\`."
+            echo "Matrix result: \`${RESULT}\`. Tag: \`${IMAGE_TAG}\`."
             echo
-            echo "The map PR 10 passes to \`lambda-image-deploy.yml\` as"
-            echo "\`function-image-map\`, once the functions exist. Every value is"
-            echo "pinned by digest, not by tag."
+            echo "Affected domains: \`${DOMAINS}\`. ${REASON}"
+            echo
+            echo "The map passed to \`lambda-image-deploy.yml\` as"
+            echo "\`function-image-map\`. Every value is pinned by digest, not by tag."
             echo
             echo '```json'
             cat function-image-map.json
