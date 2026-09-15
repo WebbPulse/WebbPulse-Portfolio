@@ -5,9 +5,10 @@ on:
     inputs:
       fresh-dependencies:
         description: >-
-          Resolve the newest webbpulse now instead of reusing today's cached
-          dependency layer. The images are pushed under their own tag, so this
-          rebuilds and redeploys even on a commit that is already deployed.
+          Force a fresh dependency resolution instead of keying the layer on the
+          newest published webbpulse version. The images are pushed under their
+          own tag, so this rebuilds and redeploys even on a commit that is
+          already deployed.
         type: boolean
         required: false
         default: false
@@ -38,7 +39,9 @@ jobs:
       && vars.BACKEND_IMAGE_BUILD_ENABLED == 'true'
     runs-on: ubuntu-latest
     environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
-    permissions: {}
+    permissions:
+      contents: read
+      id-token: write
     outputs:
       name: ${{ steps.values.outputs.name }}
       role-arn: ${{ steps.values.outputs.role-arn }}
@@ -59,18 +62,43 @@ jobs:
           echo "name=${ENVIRONMENT}" >> "$GITHUB_OUTPUT"
           echo "role-arn=${ROLE_TO_ASSUME}" >> "$GITHUB_OUTPUT"
 
+      - name: Configure AWS credentials via OIDC
+        if: inputs.fresh-dependencies != true
+        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        with:
+          role-to-assume: ${{ steps.values.outputs.role-arn }}
+          aws-region: us-west-2
+
       - name: Resolve the dependency resolution stamp
         id: stamp
         env:
           FRESH_DEPENDENCIES: ${{ inputs.fresh-dependencies }}
           RUN_ID: ${{ github.run_id }}
+          CODEARTIFACT_DOMAIN_OWNER: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
         run: |
           set -euo pipefail
           if [ "$FRESH_DEPENDENCIES" = "true" ]; then
             STAMP="$RUN_ID"
             echo "fresh-dependencies was requested, so the dependency layer rebuilds."
           else
-            STAMP="$(date -u +%Y-%m-%d)"
+            if [ -z "$CODEARTIFACT_DOMAIN_OWNER" ]; then
+              echo "vars.CODEARTIFACT_DOMAIN_OWNER is not set, so the newest webbpulse version cannot be resolved."
+              exit 1
+            fi
+            STAMP="$(aws codeartifact list-package-versions \
+              --domain webbpulse \
+              --domain-owner "$CODEARTIFACT_DOMAIN_OWNER" \
+              --repository python \
+              --format pypi \
+              --package webbpulse \
+              --status Published \
+              --sort-by PUBLISHED_TIME \
+              --query 'versions[0].version' \
+              --output text)"
+            if [ -z "$STAMP" ] || [ "$STAMP" = "None" ]; then
+              echo "No Published webbpulse version resolved from CodeArtifact, so the dependency layer cannot be keyed."
+              exit 1
+            fi
           fi
           echo "Dependency resolution stamp: ${STAMP}"
           echo "dependency-stamp=${STAMP}" >> "$GITHUB_OUTPUT"
