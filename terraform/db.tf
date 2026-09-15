@@ -10,7 +10,7 @@ resource "random_password" "secret_key" {
 
 module "app_secrets" {
   source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/app-secrets"
-  version = "~> 2.21"
+  version = "~> 2.22"
 
   name_prefix = local.prefix
 
@@ -26,6 +26,12 @@ module "app_secrets" {
 
         OAUTH_GOOGLE_CLIENT_SECRET = var.oauth_google_client_secret
         OAUTH_GITHUB_CLIENT_SECRET = var.oauth_github_client_secret
+      }
+      json_generate = {
+        mfa_master_key = {
+          format = "bytes32-base64"
+          keep   = false
+        }
       }
     }
   }

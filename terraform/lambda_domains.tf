@@ -123,6 +123,8 @@ module "lambda_domain" {
       IDENTITY_SES_CONFIGURATION_SET = local.identity_ses_configuration_set
       IDENTITY_REGISTRATION_ENABLED  = "false"
 
+      IDENTITY_TOTP_CIPHER = "secret"
+
       IDENTITY_OAUTH_REDIRECT_URIS = local.identity_oauth_redirect_uris
       IDENTITY_GOOGLE_CLIENT_ID    = var.oauth_google_client_id
       IDENTITY_GITHUB_CLIENT_ID    = var.oauth_github_client_id
