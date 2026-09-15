@@ -203,9 +203,26 @@ jobs:
             echo "${REASON}"
           } >> "$GITHUB_STEP_SUMMARY"
 
+  warm-base-image:
+    name: Warm the base image cache
+    needs: [resolve-env, affected]
+    if: needs.affected.outputs.any == 'true'
+    permissions:
+      contents: read
+      id-token: write
+    uses: WebbPulse/.github/.github/workflows/base-image-cache.yml@v3
+    with:
+      environment: ${{ needs.resolve-env.outputs.name }}
+      aws-region: us-west-2
+      dockerfile: backend/Dockerfile
+      platform: linux/arm64
+      additional-ecr-registries: "432410731887"
+    secrets:
+      role-to-assume: ${{ needs.resolve-env.outputs.role-arn }}
+
   build-images:
     name: Build and push domain images
-    needs: [resolve-env, affected]
+    needs: [resolve-env, affected, warm-base-image]
     if: needs.affected.outputs.any == 'true'
     strategy:
       fail-fast: false
