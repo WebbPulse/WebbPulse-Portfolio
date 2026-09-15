@@ -17,7 +17,7 @@ module "app_secrets" {
   secrets = {
     "app" = {
       description = "JSON map of runtime secrets read by the Lambda API at cold start"
-      version     = 1
+      version     = 2
       json = {
         SECRET_KEY     = random_password.secret_key.result
         ADMIN_USERNAME = var.admin_username
