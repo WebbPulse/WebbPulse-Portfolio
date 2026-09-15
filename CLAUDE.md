@@ -181,7 +181,7 @@ ruff format --check app tests
 |---|---|---|
 | `.github/workflows/ci.yml` | PR to `main`/`staging` | `dorny/paths-filter` gates a `Backend` job on the org `python-ci.yml@v3` (uv sync, pytest on moto per test domain, ruff, pyright, bandit, pip-audit) and a `Frontend` job on `typescript-ci.yml@v2` (lint, format check, Vitest with coverage, build). An `affected` job narrows the pytest shards to the domains the diff touches. `all-checks-passed` is the aggregating gate job |
 | `.github/workflows/deploy-backend.yml` | push to `main`/`staging`, paths `backend/**` minus tests, e2e, scripts and docs | An `affected` job picks the domains to rebuild, then `container-image.yml@v3` builds those images, a digest-pinned `function-image-map` is assembled, `lambda-image-deploy.yml@v3` points the functions at them, and each function is invoke-smoke-tested on `GET /health`; the e2e suite verifies the live gateway |
-| `.github/workflows/deploy-frontend.yml` | push to `main`/`staging`, paths `frontend/**` | Resolves the environment, then calls the org `spa-deploy.yml` (pinned to a sha): CodeArtifact login, `npm run build`, wait for any active TFC run, `s3 sync --delete`, CloudFront invalidation |
+| `.github/workflows/deploy-frontend.yml` | push to `main`/`staging`, paths `frontend/**` | Resolves the environment, then calls the org `spa-deploy.yml@v3`: CodeArtifact login, `npm run build`, `s3 sync --delete`, CloudFront invalidation |
 
 There is no `test-backend.yml` or `test-frontend.yml`; CI is one `ci.yml`.
 
@@ -200,8 +200,8 @@ itself rebuilds every domain. `all-checks-passed` stays the required context and
 counts a skipped shard as a pass, so no ruleset changes with this.
 
 Deploy workflows pick the `production` or `staging` GitHub Environment from the
-branch and assume `vars.AWS_DEPLOY_ROLE_ARN` via OIDC. The TFC-polling step keeps
-a code deploy from racing an apply touching the same function.
+branch and assume `vars.AWS_DEPLOY_ROLE_ARN` via OIDC. Neither waits on HCP
+Terraform: applies are confirmed by hand and never auto-run.
 
 Environment-scoped inputs each GitHub Environment must define:
 
@@ -213,7 +213,6 @@ Environment-scoped inputs each GitHub Environment must define:
 | `CLOUDFRONT_DISTRIBUTION_ID` | variable | `deploy-frontend.yml` |
 | `CODEARTIFACT_DOMAIN_OWNER` | variable | repository-scoped; the account owning the `webbpulse` CodeArtifact domain |
 | `CI_AWS_ROLE_ARN` | variable | repository-scoped; the role `ci.yml` assumes to read CodeArtifact |
-| `TFC_API_TOKEN` | secret | `deploy-frontend.yml`; optional, the wait step is skipped when unset |
 
 `codeartifact-domain-owner` is passed as a `with:` input to
 `container-image.yml` and as a `secrets:` entry to `python-ci.yml`,
