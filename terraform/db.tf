@@ -30,7 +30,7 @@ module "app_secrets" {
       json_generate = {
         mfa_master_key = {
           format = "bytes32-base64"
-          keep   = false
+          keep   = true
         }
       }
     }
