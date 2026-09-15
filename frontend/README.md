@@ -125,6 +125,6 @@ src/
 
 A push to `staging` or `main` touching `frontend/**` runs `deploy-frontend.yml`,
 which resolves the GitHub Environment from the branch and calls the org
-`spa-deploy.yml`: CodeArtifact login, `npm run build`, a wait for any active HCP
-Terraform run on that workspace, `s3 sync --delete`, then a CloudFront
-invalidation. The TFC wait keeps a code deploy from racing an apply.
+`spa-deploy.yml@v3`: CodeArtifact login, `npm run build`, `s3 sync --delete`, then
+a CloudFront invalidation. It does not wait on HCP Terraform: applies are confirmed
+by hand and never auto-run, so a deploy cannot race one.
