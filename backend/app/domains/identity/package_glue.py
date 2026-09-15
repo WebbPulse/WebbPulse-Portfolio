@@ -2,6 +2,11 @@
 
 The router mounts with no prefix of its own: the package places every route
 under the issuer's path. Clients are constructed lazily so no import calls AWS.
+
+The signing client follows the package's own `IDENTITY_SIGNER` switch rather than
+being a `boto3.client("kms")` this module names, so a local stack signs in process
+with no AWS credential at all. The package refuses the local signer in production
+in two places, so the switch cannot put a seed derived key in front of real users.
 """
 
 from __future__ import annotations
@@ -10,7 +15,6 @@ from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from fastapi import APIRouter
-    from webbpulse.identity import KmsClient
     from webbpulse.identity.email import SesV2Client
 
     from app.common.config import Settings
@@ -34,7 +38,6 @@ def build_router(settings: Settings) -> APIRouter:
     Which route groups the package declares follows from which stores, senders
     and settings flags are supplied here; unsupplied halves stay unmounted.
     """
-    import boto3
     from webbpulse.dynamodb import Repository
     from webbpulse.identity import (
         DynamoCredentialStore,
@@ -49,6 +52,7 @@ def build_router(settings: Settings) -> APIRouter:
         DynamoWebAuthnChallengeStore,
         IdentityStores,
         build_identity_router,
+        signing_client,
     )
 
     from app.common.db.tables import (
@@ -97,7 +101,7 @@ def build_router(settings: Settings) -> APIRouter:
         identity_settings,
         PortfolioIdentityHooks(),
         stores,
-        kms_client=cast("KmsClient", boto3.client("kms")),
+        kms_client=signing_client(identity_settings),
         service="webbpulse-portfolio-identity",
         version=VERSION,
         attempts=DynamoLoginAttemptStore(repository(LOGIN_ATTEMPTS)),
