@@ -50,23 +50,6 @@ so the document is built against the same route set the environment under test m
 SCHEMA_ONLY_PATHS = frozenset({"/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json"})
 """Paths FastAPI adds for its own documentation, which the gateway does not route."""
 
-DOCUMENT_UNSET = ("IDENTITY_ISSUER",)
-"""Settings cleared before the document is built, whatever the ambient environment holds.
-
-The identity package annotates nineteen of its route handlers `-> JSONResponse` under
-`from __future__ import annotations` while importing that name only under `TYPE_CHECKING`,
-so FastAPI cannot resolve the forward reference and tries to build a response model from
-it, which raises `PydanticUserError`. `identity_prefix` derives the mount path from the
-issuer, so clearing the issuer mounts no identity routes and the document builds. On a
-local stack the backend process is given an issuer, and the reusable workflow exports the
-whole backend environment job wide, so pytest inherits it and the document would otherwise
-fail to build here but not in a deployed run.
-
-Nothing is lost: the identity surface is the shared package's own contract, covered by its
-tests rather than by this product's coverage assertions, and the routes the product owns
-are unaffected.
-"""
-
 
 def _gateway_path(path: str) -> str:
     """The spelling API Gateway routes, which never carries a trailing slash.
@@ -92,8 +75,6 @@ def _merged_document() -> dict[str, Any]:
     for name, value in DOCUMENT_ENVIRONMENT.items():
         os.environ.setdefault(name, value)
     os.environ.pop("APP_SECRETS_ARN", None)
-    for name in DOCUMENT_UNSET:
-        os.environ.pop(name, None)
 
     from app.common.composition.wiring import DOMAIN_NAMES, build_domain_app
 
