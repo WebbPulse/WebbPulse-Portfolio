@@ -156,6 +156,8 @@ jobs:
     with:
       working-directory: backend
       install-command: >-
+        uv lock --check &&
+        uv lock --upgrade-package webbpulse &&
         uv sync --locked --group e2e &&
         uv run --no-sync python -c "import importlib.metadata as m; print('webbpulse', m.version('webbpulse'))"
       pytest-args: "-o addopts="
