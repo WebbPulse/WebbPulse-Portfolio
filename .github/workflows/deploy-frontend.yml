@@ -80,6 +80,7 @@ jobs:
       build-env-json: ${{ needs.resolve-env.outputs.build-env-json }}
       s3-bucket: ${{ needs.resolve-env.outputs.s3-bucket }}
       cloudfront-distribution-id: ${{ needs.resolve-env.outputs.cloudfront-distribution-id }}
+      invalidate-cloudfront: false
       aws-region: us-west-2
       codeartifact-domain: webbpulse
       codeartifact-repository: npm
