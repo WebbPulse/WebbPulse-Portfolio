@@ -4,6 +4,8 @@ module "registry" {
 
   name_prefix = local.prefix
 
+  keep_last_tagged_images = 3
+
   repositories = {
     content  = {}
     resume   = {}
