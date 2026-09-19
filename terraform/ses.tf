@@ -102,3 +102,11 @@ output "identity_ses_dkim_tokens" {
   description = "Easy DKIM tokens SES issued for the sending domain, each published as a CNAME at <token>._domainkey.<domain>"
   value       = local.custom_domains_enabled ? aws_sesv2_email_identity.primary[0].dkim_signing_attributes[0].tokens : []
 }
+
+resource "aws_sesv2_email_identity" "recipient" {
+  for_each = toset(var.ses_verified_recipients)
+
+  email_identity = each.value
+
+  tags = { Name = "${local.prefix}-ses-recipient" }
+}
