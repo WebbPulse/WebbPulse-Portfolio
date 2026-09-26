@@ -10,22 +10,17 @@ resource "random_password" "secret_key" {
 
 module "app_secrets" {
   source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/app-secrets"
-  version = "~> 2.22"
+  version = "~> 2.30"
 
   name_prefix = local.prefix
 
   secrets = {
     "app" = {
-      description = "JSON map of runtime secrets read by the Lambda API at cold start"
-      version     = 2
+      description             = "JSON map of runtime secrets read by the Lambda API at cold start"
+      version                 = 2
+      json_preserve_unmanaged = true
       json = {
-        SECRET_KEY     = random_password.secret_key.result
-        ADMIN_USERNAME = var.admin_username
-        ADMIN_PASSWORD = var.admin_password
-        ADMIN_EMAIL    = var.admin_email
-
-        OAUTH_GOOGLE_CLIENT_SECRET = var.oauth_google_client_secret
-        OAUTH_GITHUB_CLIENT_SECRET = var.oauth_github_client_secret
+        SECRET_KEY = random_password.secret_key.result
       }
       json_generate = {
         mfa_master_key = {

@@ -23,20 +23,6 @@ variable "oauth_github_client_id" {
   default     = ""
 }
 
-variable "oauth_google_client_secret" {
-  description = "Google OAuth client secret matching oauth_google_client_id, delivered into the webbpulse-<env>/app secret. Set it in the same apply as the client id."
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
-variable "oauth_github_client_secret" {
-  description = "GitHub OAuth client secret matching oauth_github_client_id, delivered into the webbpulse-<env>/app secret. Set it in the same apply as the client id."
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
 variable "passkeys_enabled" {
   description = "Whether the passkey routes are declared. Null derives it from the environment: true in staging, false in production."
   type        = bool
