@@ -65,24 +65,6 @@ variable "staging_access_users" {
   default     = []
 }
 
-variable "admin_username" {
-  description = "Username of the seeded admin user, delivered into the webbpulse-<env>/app secret. No default, so an unset workspace fails to plan."
-  type        = string
-  sensitive   = true
-}
-
-variable "admin_password" {
-  description = "Password of the seeded admin user, delivered into the webbpulse-<env>/app secret. No default, so an unset workspace fails to plan."
-  type        = string
-  sensitive   = true
-}
-
-variable "admin_email" {
-  description = "Email address of the seeded admin user, delivered into the webbpulse-<env>/app secret. No default, so an unset workspace fails to plan."
-  type        = string
-  sensitive   = true
-}
-
 variable "manage_spans_log_group" {
   description = "Adopt the aws/spans log group into state and apply the platform's 7 day retention. Leave false until X-Ray has created the group, since Terraform cannot create it."
   type        = bool
@@ -111,10 +93,4 @@ variable "domain_jwt_enforced" {
 
   type    = bool
   default = false
-}
-
-variable "ses_verified_recipients" {
-  description = "Mailbox addresses to verify as SES email identities so the sandbox can deliver to them. Empty once the account has production access."
-  type        = list(string)
-  default     = []
 }

@@ -104,7 +104,7 @@ output "identity_ses_dkim_tokens" {
 }
 
 resource "aws_sesv2_email_identity" "recipient" {
-  for_each = toset(var.ses_verified_recipients)
+  for_each = toset(try(module.config.values.ses_verified_recipients, []))
 
   email_identity = each.value
 
