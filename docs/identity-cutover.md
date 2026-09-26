@@ -16,16 +16,15 @@ identity features. The migration narrative is in
 | --- | --- | --- |
 | Frontend auth mode | identity, the only mode | identity, the only mode |
 | `identity_jwt_mode` | `gate` | `native` |
-| `domain_jwt_enforced` | n/a in gate mode | `true` on the workspace |
+| `domain_jwt_enforced` | n/a in gate mode | `true` in `env/production.tfvars` |
 | Legacy `hashed_password` column | cleared | cleared |
-| Passkeys | derived on | `passkeys_enabled = true` on the workspace |
-| Passwordless | derived on | `passkeys_passwordless = true` on the workspace |
+| Passkeys | derived on | `passkeys_enabled = true` in `env/production.tfvars` |
+| Passwordless | derived on | `passkeys_passwordless = true` in `env/production.tfvars` |
 | OAuth providers | client ids unset | client ids unset |
 
 `var.domain_jwt_enforced` defaults to `false` in `terraform/variables.tf` and is
-overridden to `true` as an HCP workspace variable on `WebbPulse-Portfolio`
-(`terraform` category, `hcl = true`). The repository default is not evidence
-that enforcement is off. Read the workspace through the HCP API to confirm.
+overridden to `true` in `terraform/env/production.tfvars`. The repository
+default is not evidence that enforcement is off.
 
 **Rollback from either environment is fix-forward.** There is no build time
 switch back: the bearer branch, its token store and `authMode.ts` are deleted,
@@ -112,7 +111,7 @@ is deliberately no script for that. The identity store is the system of record.
   owner-approved support case says otherwise.
 
 Passkeys are on in production: the owner enabled both `passkeys_enabled` and
-`passkeys_passwordless` on the workspace. Whether to leave the SES sandbox
+`passkeys_passwordless` in `env/production.tfvars`. Whether to leave the SES sandbox
 remains the owner's decision.
 
 ## Later, in a separate PR: remove the legacy routes
@@ -233,10 +232,11 @@ configured.** Both client id variables are empty in both environments, so the
 OpenAPI document contains no `/api/auth/oauth` path at all, asserted by
 `backend/tests/test_identity_m6.py`.
 
-Client ids go to HCP as workspace variables (`oauth_google_client_id`,
+Client ids go in `terraform/env/<env>.tfvars` (`oauth_google_client_id`,
 `oauth_github_client_id`); the secrets go into the `webbpulse-<env>/app` JSON
-secret under `oauth_google_client_secret` and `oauth_github_client_secret`. Set
-the secret first, then the variable, then apply. The redirect URI is derived
+secret under `OAUTH_GOOGLE_CLIENT_SECRET` and `OAUTH_GITHUB_CLIENT_SECRET` with
+`webbpulse-config secret set`. Set the secret first, then the client id, then
+apply. The redirect URI is derived
 from `local.identity_issuer`:
 
 | Environment | Redirect URI |
@@ -256,19 +256,19 @@ draw, so a flipped variable changes the affordance within five minutes.
 variable in `terraform/identity.tf` with a null default, and null means the
 environment's answer: true in staging, false in production. The package's own
 default for both is true, which is the opposite of what production ships, so
-the locals always render an explicit bool. Setting either variable on a
-workspace overrides the derived answer, which is what keeps rollback a one
-variable change with no code deploy.
+the locals always render an explicit bool. Setting either variable in the
+environment's tfvars file overrides the derived answer, which is what keeps
+rollback a one line Terraform change with no image build.
 
 | Variable | Resolves to | What true means |
 |---|---|---|
-| `passkeys_enabled` | true in both, production set explicitly on the workspace | The five management routes mount. A user can enrol, list, rename and delete a passkey, and use one as a second factor |
-| `passkeys_passwordless` | true in both, production set explicitly on the workspace | The two `/api/auth/login/passkey/*` routes stop refusing. A passkey becomes a way in with no password at all |
+| `passkeys_enabled` | true in both, production set explicitly in `env/production.tfvars` | The five management routes mount. A user can enrol, list, rename and delete a passkey, and use one as a second factor |
+| `passkeys_passwordless` | true in both, production set explicitly in `env/production.tfvars` | The two `/api/auth/login/passkey/*` routes stop refusing. A passkey becomes a way in with no password at all |
 
 `passkeys_passwordless` is a policy decision, not a rollout step. The owner
 turned it on in production, so a passkey there is both a managed credential and
 a way in with no password. Production therefore overrides both derived
-defaults with explicit `true` workspace variables.
+defaults with explicit `true` values in `env/production.tfvars`.
 
 ### RP id and origins
 
@@ -308,7 +308,7 @@ minted on the real site being replayed from a lookalike.
 
 ### Rolling passkeys back
 
-Set `passkeys_enabled = false` on the environment's workspace and apply. The
+Set `passkeys_enabled = false` in the environment's tfvars file and apply. The
 seven routes stop being declared on the next cold start. Enrolled credentials
 stay in `passkeys` and become reachable again when the variable goes back to
 true; the RP id they were enrolled under has not changed. In-flight challenges
