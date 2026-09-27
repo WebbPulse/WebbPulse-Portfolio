@@ -24,7 +24,7 @@ e2e = [
   "pytest-xdist>=3.8.0",
 ]
 dev = [
-  "webbpulse[testing]>=0.39.0,<1",
+  "webbpulse[testing]>=0.58.0,<1",
   "moto[dynamodb]>=5.2.3",
   "pytest>=9.1.1",
   "pytest-cov>=7.1.0",

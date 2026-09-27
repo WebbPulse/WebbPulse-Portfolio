@@ -404,6 +404,10 @@ IDENTITY_M6_JWT_ROUTE_KEYS = {
     "DELETE /api/auth/oauth/{provider}/link",
 }
 
+IDENTITY_STEP_UP_PASSKEY_ROUTE_KEYS = {
+    "POST /api/auth/step-up/passkey/options",
+}
+
 IDENTITY_EPHEMERAL_ROUTE_KEYS = {
     "POST /api/auth/e2e/users",
     "DELETE /api/auth/e2e/users/{user_id}",
@@ -420,6 +424,7 @@ def identity_route_keys() -> set[str]:
         - IDENTITY_M4_ROUTE_KEYS
         - IDENTITY_M5_ROUTE_KEYS
         - IDENTITY_M6_ROUTE_KEYS
+        - IDENTITY_STEP_UP_PASSKEY_ROUTE_KEYS
         - IDENTITY_EPHEMERAL_ROUTE_KEYS
     )
     assert keys, "no identity route keys were parsed out of apigateway.tf"
@@ -754,6 +759,20 @@ def test_no_m5_or_m6_route_is_anonymous():
 
     overlap = (IDENTITY_M5_ROUTE_KEYS | IDENTITY_M6_ROUTE_KEYS) & anonymous
     assert overlap == set(), sorted(overlap)
+
+
+def test_the_step_up_passkey_key_is_present_and_matches_the_package_path():
+    """The passkey step-up challenge has a gateway key built from the package's own suffix."""
+    from webbpulse.identity.passkey_routes import STEP_UP_PASSKEY_OPTIONS_PATH
+
+    assert IDENTITY_STEP_UP_PASSKEY_ROUTE_KEYS == {f"POST /api/auth{STEP_UP_PASSKEY_OPTIONS_PATH}"}
+    assert IDENTITY_STEP_UP_PASSKEY_ROUTE_KEYS <= gateway_route_keys()["identity"]
+
+
+def test_the_step_up_passkey_key_requires_an_identity_token():
+    """Step-up re-authenticates a signed-in caller, so the gateway reads the subject first."""
+    missing = sorted(IDENTITY_STEP_UP_PASSKEY_ROUTE_KEYS - identity_jwt_route_keys_in_terraform())
+    assert missing == [], missing
 
 
 EPHEMERAL_GROUP_GUARD = re.compile(r"local\.ephemeral_users_enabled\s*\?\s*\{")
