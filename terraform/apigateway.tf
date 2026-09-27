@@ -184,6 +184,10 @@ module "api" {
         integration          = "identity"
         require_identity_jwt = true
       }
+      "POST /api/auth/step-up/passkey/options" = {
+        integration          = "identity"
+        require_identity_jwt = true
+      }
     },
 
     {
