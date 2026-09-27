@@ -1,7 +1,10 @@
 """Shared fixtures: a mocked AWS environment, seeded entities and auth headers."""
 
+from __future__ import annotations
+
 import os
 from datetime import date, datetime, timezone
+from typing import TYPE_CHECKING
 
 pytest_plugins = ["webbpulse.testing"]
 """The package's own fixtures, which is where `fake_kms` and `rsa_key` come from."""
@@ -39,6 +42,9 @@ from app.common.db.tables import ALL_TABLES, table_definition  # noqa: E402
 from app.domains.content import service as site_content  # noqa: E402
 from app.domains.identity import service as admin  # noqa: E402
 
+if TYPE_CHECKING:
+    from webbpulse.testing import CheckedKey
+
 
 def create_all_tables(prefix: str = settings.DYNAMODB_TABLE_PREFIX):
     """Create every table this backend owns, TTL included where there is one."""
@@ -61,6 +67,12 @@ def reset_seed_state():
     """Clear the admin and site content seed guards between tests."""
     admin.reset_seed_state()
     site_content.reset_seed_state()
+
+
+@pytest.fixture(autouse=True)
+def _primary_keys_only(primary_keys_only: list[CheckedKey]) -> list[CheckedKey]:
+    """Hold every moto test to DynamoDB's exact primary key rule."""
+    return primary_keys_only
 
 
 @pytest.fixture(autouse=True)
