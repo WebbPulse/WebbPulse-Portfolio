@@ -5,7 +5,7 @@ skills, blog and site copy, is driven from the API through an admin panel rather
 than hardcoded.
 
 **Stack:** FastAPI (Python 3.13) on AWS Lambda, React (TypeScript), DynamoDB,
-Terraform. **License:** MIT.
+Terraform. **License:** [PolyForm Strict License 1.0.0](LICENSE).
 
 ## Structure
 
