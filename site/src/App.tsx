@@ -73,14 +73,11 @@ export default function App() {
 
       <main id="main">
         <section className="hero wrap" aria-labelledby="hero-title">
-          <p className="eyebrow">Products by Tyler Webb</p>
-          <h1 id="hero-title">
-            Two products, built and run by one software engineer.
-          </h1>
+          <p className="eyebrow">Software products</p>
+          <h1 id="hero-title">WebbPulse builds and runs software products.</h1>
           <p className="lede">
-            WebbPulse is the name I put on the software I build. I design,
-            write, deploy and support each product myself, on infrastructure I
-            also maintain.
+            We design, build, deploy and support each product end to end, on
+            infrastructure we run ourselves.
           </p>
           <HeroPulse className="hero-pulse" />
         </section>
@@ -128,12 +125,14 @@ export default function App() {
           </h2>
           <div className="prose">
             <p>
-              I am Tyler Webb, a software engineer. WebbPulse is not a
-              registered company yet. It is the umbrella for the products I
-              build and operate on my own time, and it grows one product at a
-              time.
+              WebbPulse was founded by Tyler Webb, a software engineer, and is
+              not yet a registered company. It builds and operates its own
+              products and adds new ones as they are ready.
             </p>
-            <p>My background, past projects and writing are on my portfolio.</p>
+            <p>
+              The founder&apos;s background and writing are on the portfolio
+              site.
+            </p>
             <a className="text-link" href={PORTFOLIO_URL}>
               portfolio.webbpulse.com<span aria-hidden="true"> →</span>
             </a>
@@ -151,7 +150,7 @@ export default function App() {
           <div className="prose">
             <p>
               Questions about a product, a bug report or anything else: email is
-              the quickest way to reach me.
+              the quickest way to reach us.
             </p>
             <ul className="contact-list">
               {CONTACT_LINKS.map((link) => (
@@ -171,7 +170,7 @@ export default function App() {
             <PulseMark className="wordmark-mark" />
             <span>WebbPulse</span>
           </span>
-          <span>© Tyler Webb</span>
+          <span>© WebbPulse</span>
         </div>
       </footer>
     </>

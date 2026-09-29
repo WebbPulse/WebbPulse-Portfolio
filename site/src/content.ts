@@ -65,20 +65,17 @@ export const PRACTICES: { title: string; body: string }[] = [
   },
 ];
 
+export const CONTACT_EMAIL = 'hello@webbpulse.com';
+
 export const CONTACT_LINKS: ContactLink[] = [
   {
     label: 'Email',
-    href: 'mailto:tyler@webbpulse.com',
-    display: 'tyler@webbpulse.com',
+    href: `mailto:${CONTACT_EMAIL}`,
+    display: CONTACT_EMAIL,
   },
   {
     label: 'GitHub',
-    href: 'https://github.com/T-Webb1',
-    display: 'github.com/T-Webb1',
-  },
-  {
-    label: 'LinkedIn',
-    href: 'https://www.linkedin.com/in/tylert2610/',
-    display: 'linkedin.com/in/tylert2610',
+    href: 'https://github.com/WebbPulse',
+    display: 'github.com/WebbPulse',
   },
 ];
