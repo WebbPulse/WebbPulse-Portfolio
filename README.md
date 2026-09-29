@@ -1,6 +1,7 @@
 # WebbPulse
 
-A full-stack personal portfolio and blog. Every section, projects, experience,
+A full-stack personal portfolio and blog, served at
+[portfolio.webbpulse.com](https://portfolio.webbpulse.com). Every section, projects, experience,
 skills, blog and site copy, is driven from the API through an admin panel rather
 than hardcoded.
 
@@ -138,13 +139,13 @@ Parts of the stack come from `app.terraform.io/WebbPulse/platform-modules/aws`:
 
 | Module | What it owns here |
 | --- | --- |
-| `staging-dns` | The `staging.webbpulse.com` child zone and its NS delegation; a no-op in production (`route53.tf`) |
+| `staging-dns` | The `staging.portfolio.webbpulse.com` child zone and its NS delegation; a no-op in production (`route53.tf`) |
 | `http-api` | The HTTP API, `$default` stage, integrations, routes, access log group, custom domain (`apigateway.tf`) |
 | `staging-access-gate` | Cognito, the login Lambda, signed-cookie key group, viewer-request function, origin-verify secret, HTTP API authorizer (`staging_access_gate.tf`) |
 | `identity` | The KMS signing key and alias, the identity tables, and the two IAM grants the identity function needs (`identity.tf`) |
 | `ecr-repository` | The four domain image repositories (`ecr.tf`) |
 
-The ACM certificates (`acm.tf`) and the `www`, apex and `api` alias records
+The ACM certificates (`acm.tf`) and the site and `api` alias records
 (`route53.tf`) stay hand-written, because a module has one `aws` provider and
 production writes DNS cross-account through the `aws.dns` alias.
 
@@ -197,10 +198,10 @@ them, so its plan is a no-op.
 
 - Any visit without a live session is redirected to a Cognito hosted UI. Only
   invited addresses can sign in. Sessions are CloudFront signed cookies scoped
-  to `staging.webbpulse.com`.
+  to `staging.portfolio.webbpulse.com`.
 - The frontend calls the API on the site origin and CloudFront proxies `/api/*`
-  to `api.staging.webbpulse.com` with an `x-origin-verify` header, so staging's
-  `API_BASE_URL` must be `https://www.staging.webbpulse.com`. The Terraform
+  to `api.staging.portfolio.webbpulse.com` with an `x-origin-verify` header, so
+  staging's `API_BASE_URL` must be `https://staging.portfolio.webbpulse.com`. The Terraform
   output `frontend_api_base_url` says which value is right.
 - The HTTP API's `execute-api` endpoint is disabled and every route uses the
   module's REQUEST authorizer. The deploy workflow reads the header value from
@@ -209,9 +210,18 @@ them, so its plan is a no-op.
 - `/_auth/logout` ends a session. For sign-in problems check the pool named by
   the `staging_access_gate_user_pool_id` output.
 
-The apex to www redirect lives in `cloudfront_functions/app_handler.js.tftpl`
-and is shared by production's `apex_redirect` function and the gate's
-viewer-request function.
+### Legacy hosts
+
+Production serves the site at `portfolio.webbpulse.com` and the API at
+`api.portfolio.webbpulse.com`. Until the company site takes the apex over,
+`webbpulse.com` and `www.webbpulse.com` stay on the portfolio distribution
+(aliases, certificate SANs and A records) and answer every request with a 301 to
+the same path and query string on `portfolio.webbpulse.com`. All of that lives in
+`terraform/legacy_hosts.tf`; staging has no legacy hosts.
+
+The redirect is `cloudfront_functions/app_handler.js.tftpl`, shared by
+production's `legacy_host_redirect` function and the gate's viewer-request
+function. For any other host it passes the request through unchanged.
 
 ## Documentation
 

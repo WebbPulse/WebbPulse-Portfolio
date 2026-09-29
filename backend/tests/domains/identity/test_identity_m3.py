@@ -22,7 +22,7 @@ EMAIL_PATHS = (
     "/api/auth/reset/confirm",
 )
 
-FROM_ADDRESS = "no-reply@staging.webbpulse.com"
+FROM_ADDRESS = "no-reply@staging.portfolio.webbpulse.com"
 CONFIGURATION_SET = "webbpulse-staging-identity"
 
 
@@ -239,8 +239,8 @@ def _identity_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("IDENTITY_ISSUER", ISSUER)
     monkeypatch.setenv("IDENTITY_AUDIENCE", AUDIENCE)
     monkeypatch.setenv("IDENTITY_SIGNING_KEY_ARNS", json.dumps([KEY_ARN]))
-    monkeypatch.setenv("IDENTITY_COOKIE_DOMAIN", "staging.webbpulse.com")
-    monkeypatch.setenv("IDENTITY_RP_ID", "staging.webbpulse.com")
+    monkeypatch.setenv("IDENTITY_COOKIE_DOMAIN", "staging.portfolio.webbpulse.com")
+    monkeypatch.setenv("IDENTITY_RP_ID", "staging.portfolio.webbpulse.com")
 
 
 @pytest.fixture

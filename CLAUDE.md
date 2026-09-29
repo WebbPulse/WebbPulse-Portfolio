@@ -14,7 +14,7 @@ Lambdas.
 
 ```bash
 npm run dev:local        # Dev server on 5173 (proxies /api to localhost:8000)
-npm run dev:remote-api   # Dev server against https://api.webbpulse.com/api/v1
+npm run dev:remote-api   # Dev server against https://api.portfolio.webbpulse.com/api/v1
 npm run build            # tsc -b + Vite production build
 npm run lint             # ESLint
 npm run lint:fix         # ESLint with auto-fixes
@@ -92,7 +92,7 @@ ruff format --check app tests
   The backend's legacy login route stays mounted and unused until a later PR
 - **Dev proxy**: Vite proxies `/api/*` to `http://localhost:8000` in local dev; a
   production build reads `VITE_API_BASE_URL` and falls back to
-  `https://api.webbpulse.com/api/v1`
+  `https://api.portfolio.webbpulse.com/api/v1`
 
 ### Backend
 

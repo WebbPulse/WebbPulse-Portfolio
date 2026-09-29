@@ -5,7 +5,7 @@ export function UnderConstruction() {
       <div className="max-w-md w-full space-y-8">
         <div className="space-y-3">
           <p className="text-gray-500 text-sm font-mono tracking-widest uppercase">
-            webbpulse.com
+            portfolio.webbpulse.com
           </p>
           <h1 className="text-4xl font-bold text-white">Under Construction</h1>
           <p className="text-gray-400 text-lg leading-relaxed">

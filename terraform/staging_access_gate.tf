@@ -5,19 +5,15 @@ module "staging_access_gate" {
 
   version = "~> 2.19"
 
-  name             = local.prefix
-  cookie_domain    = local.domain
-  site_host        = local.www_host
-  additional_hosts = [local.domain]
-  allowed_emails   = var.staging_access_users
+  name           = local.prefix
+  cookie_domain  = local.domain
+  site_host      = local.domain
+  allowed_emails = var.staging_access_users
 
   http_api_id      = module.api.api_id
-  invite_login_url = "https://${local.www_host}/"
+  invite_login_url = "https://${local.domain}/"
 
-  viewer_request_handler_js = templatefile("${path.module}/cloudfront_functions/app_handler.js.tftpl", {
-    domain   = local.domain
-    www_host = local.www_host
-  })
+  viewer_request_handler_js = local.viewer_request_handler_js
 
   identity_jwt = local.identity_jwt_gate_enforced ? {
     issuer   = local.identity_issuer

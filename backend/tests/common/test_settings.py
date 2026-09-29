@@ -175,10 +175,10 @@ def test_values_are_cached_per_execution_environment():
 @pytest.mark.unit
 def test_cors_origins_include_localhost(monkeypatch):
     """The configured origins are kept and localhost is always added."""
-    monkeypatch.setenv("CORS_ORIGINS", "https://www.webbpulse.com, https://webbpulse.com")
+    monkeypatch.setenv("CORS_ORIGINS", "https://portfolio.webbpulse.com, https://staging.portfolio.webbpulse.com")
     settings = Settings(_env_file=None)
-    assert "https://www.webbpulse.com" in settings.CORS_ORIGINS
-    assert "https://webbpulse.com" in settings.CORS_ORIGINS
+    assert "https://portfolio.webbpulse.com" in settings.CORS_ORIGINS
+    assert "https://staging.portfolio.webbpulse.com" in settings.CORS_ORIGINS
     assert any(origin.startswith("http://localhost") for origin in settings.CORS_ORIGINS)
 
 
