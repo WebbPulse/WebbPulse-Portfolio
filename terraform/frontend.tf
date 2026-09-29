@@ -4,10 +4,8 @@ module "frontend" {
 
   name = "${local.prefix}-frontend"
 
-  aliases             = local.custom_domains_enabled ? concat([local.domain], local.legacy_hosts) : []
+  aliases             = local.custom_domains_enabled ? [local.domain] : []
   acm_certificate_arn = module.site_certificate.certificate_arn
-
-  viewer_request_function_arn = one(aws_cloudfront_function.legacy_host_redirect[*].arn)
 
   cache_mode            = "forwarded_values"
   error_caching_min_ttl = 10
