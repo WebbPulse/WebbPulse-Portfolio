@@ -142,11 +142,24 @@ module "github_actions_role" {
       ]
     },
     {
+      sid = "CompanySiteBucket"
+      actions = [
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:DeleteObject",
+        "s3:ListBucket",
+      ]
+      resources = [
+        module.company_site.bucket_arn,
+        "${module.company_site.bucket_arn}/*",
+      ]
+    },
+    {
       actions = [
         "cloudfront:CreateInvalidation",
         "cloudfront:GetInvalidation",
       ]
-      resources = [module.frontend.distribution_arn]
+      resources = [module.frontend.distribution_arn, module.company_site.distribution_arn]
     },
     {
       sid       = "EcrAuth"

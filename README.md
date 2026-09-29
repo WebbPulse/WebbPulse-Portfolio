@@ -210,18 +210,24 @@ them, so its plan is a no-op.
 - `/_auth/logout` ends a session. For sign-in problems check the pool named by
   the `staging_access_gate_user_pool_id` output.
 
-### Legacy hosts
+### Company site
 
-Production serves the site at `portfolio.webbpulse.com` and the API at
-`api.portfolio.webbpulse.com`. Until the company site takes the apex over,
-`webbpulse.com` and `www.webbpulse.com` stay on the portfolio distribution
-(aliases, certificate SANs and A records) and answer every request with a 301 to
-the same path and query string on `portfolio.webbpulse.com`. All of that lives in
-`terraform/legacy_hosts.tf`; staging has no legacy hosts.
+The static company site in `site/` is a second `spa-frontend` in the same
+accounts and workspaces, defined entirely in `terraform/company_site.tf` so it
+can move to its own repo with moved blocks.
 
-The redirect is `cloudfront_functions/app_handler.js.tftpl`, shared by
-production's `legacy_host_redirect` function and the gate's viewer-request
-function. For any other host it passes the request through unchanged.
+- Production serves it at `webbpulse.com`, with `www.webbpulse.com` on the same
+  distribution. Staging serves `staging.webbpulse.com` and
+  `www.staging.webbpulse.com` from its own child zone, behind a second
+  staging access gate whose cookies are scoped to `staging.webbpulse.com`.
+- The viewer-request handler is
+  `terraform/company_site_functions/app_handler.js.tftpl`. It sends `www` to the
+  apex, sends the old portfolio paths (`/blog`, `/privacy`, `/admin`,
+  `/verify-email`, `/reset-password` and anything under them) with a 301 to the
+  portfolio host, serves `/` and files with an extension from the bucket, and
+  answers any other path with a 404 page.
+- `deploy-site.yml` builds `site/` and syncs it to the bucket named by the
+  `SITE_S3_BUCKET` environment variable (`company_site_bucket` output).
 
 ## Documentation
 

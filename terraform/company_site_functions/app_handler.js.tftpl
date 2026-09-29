@@ -1,0 +1,94 @@
+/**
+ * Rebuilds the request query string for a redirect, preserving multi-value parameters.
+ * @param {object} request CloudFront Functions viewer-request request.
+ * @returns {string} The query string with a leading ?, or an empty string.
+ */
+function siteQueryString(request) {
+  var parts = [];
+  var qs = request.querystring || {};
+  for (var k in qs) {
+    var entry = qs[k];
+    var ek = encodeURIComponent(k);
+    if (entry.multiValue) {
+      for (var i = 0; i < entry.multiValue.length; i++) {
+        parts.push(ek + "=" + encodeURIComponent(entry.multiValue[i].value));
+      }
+    } else {
+      parts.push(ek + "=" + encodeURIComponent(entry.value));
+    }
+  }
+  return parts.length ? "?" + parts.join("&") : "";
+}
+
+/**
+ * Builds a 301 response to the given origin, keeping the request path and query string.
+ * @param {string} origin Scheme and host to redirect to.
+ * @param {object} request CloudFront Functions viewer-request request.
+ * @returns {object} The 301 response.
+ */
+function siteRedirect(origin, request) {
+  return {
+    statusCode: 301,
+    statusDescription: "Moved Permanently",
+    headers: {
+      location: { value: origin + request.uri + siteQueryString(request) },
+      "cache-control": { value: "max-age=3600" },
+    },
+  };
+}
+
+/**
+ * True when the path is one the portfolio served on this host before it moved.
+ * @param {string} uri Request path.
+ * @returns {boolean} Whether the path belongs to the portfolio.
+ */
+function isPortfolioPath(uri) {
+  var prefixes = ${jsonencode(portfolio_paths)};
+  for (var i = 0; i < prefixes.length; i++) {
+    if (uri === prefixes[i] || uri.indexOf(prefixes[i] + "/") === 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * CloudFront viewer-request handler for the company site distribution.
+ * Sends ${www_host} to ${canonical_host}, sends old portfolio paths to
+ * ${portfolio_host}, serves the page and its static files from the bucket, and
+ * answers any other extensionless path with a 404, since the site is one page.
+ * @param {object} event CloudFront Functions viewer-request event.
+ * @returns {object} A redirect or 404 response, otherwise the unchanged request.
+ */
+function appHandler(event) {
+  var request = event.request;
+  var uri = request.uri;
+  var host = request.headers.host ? request.headers.host.value.toLowerCase() : "";
+
+  if (host === "${www_host}") {
+    return siteRedirect("https://${canonical_host}", request);
+  }
+
+  if (isPortfolioPath(uri)) {
+    return siteRedirect("https://${portfolio_host}", request);
+  }
+
+  if (uri === "/" || uri === "/index.html") {
+    return request;
+  }
+
+  var lastSegment = uri.slice(uri.lastIndexOf("/") + 1);
+  if (lastSegment.indexOf(".") !== -1) {
+    return request;
+  }
+
+  return {
+    statusCode: 404,
+    statusDescription: "Not Found",
+    headers: {
+      "content-type": { value: "text/html; charset=utf-8" },
+      "cache-control": { value: "max-age=300" },
+    },
+    body: '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Page not found - WebbPulse</title><style>:root{color-scheme:light dark}body{font-family:system-ui,sans-serif;max-width:32rem;margin:20vh auto;padding:0 16px;line-height:1.5}</style></head><body><h1>Page not found</h1><p>There is nothing at this address. <a href="/">Go to the WebbPulse home page</a>.</p></body></html>',
+  };
+}
