@@ -39,7 +39,7 @@ SITE_CONTENT_DEFAULTS = {
     "profile_image_url": "/headshot.jpg",
     "resume_url": "/Profile.pdf",
     "email": "tyler@webbpulse.com",
-    "github_url": "https://github.com/TW-WebbPulse",
+    "github_url": "https://github.com/T-Webb1",
     "linkedin_url": "https://www.linkedin.com/in/tylert2610/",
     "footer_tagline": ("Software engineer focused on building reliable, maintainable systems."),
     "project_sort_mode": "manual",
