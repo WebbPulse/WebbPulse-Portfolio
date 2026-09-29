@@ -1,7 +1,6 @@
 import {
   CONTACT_LINKS,
   PORTFOLIO_URL,
-  PRACTICES,
   PRODUCTS,
   type Product,
 } from './content';
@@ -99,20 +98,6 @@ export default function App() {
               />
             ))}
           </ol>
-        </section>
-
-        <section id="how" className="section wrap" aria-labelledby="how-title">
-          <h2 id="how-title" className="section-title">
-            How they are run
-          </h2>
-          <ul className="practices">
-            {PRACTICES.map((practice) => (
-              <li key={practice.title} className="practice">
-                <h3>{practice.title}</h3>
-                <p>{practice.body}</p>
-              </li>
-            ))}
-          </ul>
         </section>
 
         <section

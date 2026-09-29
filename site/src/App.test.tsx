@@ -25,8 +25,8 @@ describe('App', () => {
     render(<App />);
     const contact = screen.getByRole('region', { name: 'Contact' });
     expect(
-      within(contact).getByRole('link', { name: 'hello@webbpulse.com' })
-    ).toHaveAttribute('href', 'mailto:hello@webbpulse.com');
+      within(contact).getByRole('link', { name: 'tyler@webbpulse.com' })
+    ).toHaveAttribute('href', 'mailto:tyler@webbpulse.com');
   });
 
   it('keeps em dashes out of the copy', () => {

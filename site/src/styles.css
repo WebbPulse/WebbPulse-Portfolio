@@ -306,30 +306,6 @@ a:hover {
   color: var(--bg);
 }
 
-.practices {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-  gap: 1px;
-  background: var(--line);
-  border: 1px solid var(--line);
-}
-
-.practice {
-  padding: 1.5rem;
-  background: var(--surface);
-}
-
-.practice h3 {
-  font-size: 1rem;
-  font-weight: 650;
-  margin-bottom: 0.5rem;
-}
-
-.practice p {
-  color: var(--muted);
-  font-size: 0.9375rem;
-}
-
 .split {
   display: grid;
   gap: 0 3rem;
