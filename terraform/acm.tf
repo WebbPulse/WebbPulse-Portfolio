@@ -7,10 +7,9 @@ module "site_certificate" {
     aws.records = aws.dns
   }
 
-  enabled                   = local.custom_domains_enabled
-  domain_name               = local.domain
-  subject_alternative_names = local.legacy_hosts
-  zone_id                   = local.records_zone_id
+  enabled     = local.custom_domains_enabled
+  domain_name = local.domain
+  zone_id     = local.records_zone_id
 
   depends_on = [module.staging_dns]
 }

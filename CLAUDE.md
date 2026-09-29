@@ -34,7 +34,8 @@ The static webbpulse.com landing page: Vite, React and TypeScript on
 build` prerenders the page and drops the client bundle, so `dist/` is HTML plus
 static files. `npm run dev` serves it on 5174; `lint`, `format:check`,
 `test:run` and `build` match `frontend/`, and `ci.yml` runs a path-scoped `Site`
-job on `site/**`.
+job on `site/**`. `deploy-site.yml` publishes it; hosting is
+`terraform/company_site.tf`.
 
 ### Backend (`backend/`)
 
