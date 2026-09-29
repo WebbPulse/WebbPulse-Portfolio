@@ -19,7 +19,7 @@ export function PulseMark({ className }: { className?: string }) {
   );
 }
 
-/** A wide pulse line that draws itself under the hero copy. */
+/** A wide pulse line that spans the hero copy at any width. */
 export function HeroPulse({ className }: { className?: string }) {
   return (
     <svg
@@ -31,7 +31,6 @@ export function HeroPulse({ className }: { className?: string }) {
     >
       <path
         d="M2 36h300l14-28 22 52 18-40 11 16h191"
-        pathLength={1}
         fill="none"
         stroke="currentColor"
         strokeWidth="2"

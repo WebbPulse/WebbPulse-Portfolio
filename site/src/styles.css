@@ -199,18 +199,6 @@ a:hover {
   overflow: visible;
 }
 
-.hero-pulse path {
-  stroke-dasharray: 1;
-  stroke-dashoffset: 0;
-  animation: draw 1.6s ease-out both;
-}
-
-@keyframes draw {
-  from {
-    stroke-dashoffset: 1;
-  }
-}
-
 .section {
   padding-top: 3.5rem;
   padding-bottom: 3.5rem;
@@ -425,10 +413,6 @@ a:hover {
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
-  }
-
-  .hero-pulse path {
-    animation: none;
   }
 
   .product-link,
