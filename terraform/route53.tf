@@ -12,22 +12,7 @@ module "staging_dns" {
   parent_zone_id = var.route53_zone_id
 }
 
-resource "aws_route53_record" "www" {
-  count    = local.custom_domain_count
-  provider = aws.dns
-
-  zone_id = local.records_zone_id
-  name    = local.www_host
-  type    = "A"
-
-  alias {
-    name                   = module.frontend.distribution_domain_name
-    zone_id                = module.frontend.distribution_hosted_zone_id
-    evaluate_target_health = false
-  }
-}
-
-resource "aws_route53_record" "apex_a" {
+resource "aws_route53_record" "site" {
   count    = local.custom_domain_count
   provider = aws.dns
 

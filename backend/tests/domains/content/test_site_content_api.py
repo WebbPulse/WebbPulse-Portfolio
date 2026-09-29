@@ -26,7 +26,7 @@ class TestSiteContentSeeding:
         seed_site_content()
         content = entities.site_content.get(entities.SITE_CONTENT_ID)
         assert content["hero_title"] == SITE_CONTENT_DEFAULTS["hero_title"]
-        assert content["github_url"] == "https://github.com/TW-WebbPulse"
+        assert content["github_url"] == "https://github.com/T-Webb1"
         assert content["resume_url"] == "/Profile.pdf"
         assert content["project_sort_mode"] == "manual"
         assert len(content["about_values"]) == 3

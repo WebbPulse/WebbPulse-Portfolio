@@ -48,16 +48,16 @@ use these profiles at all and obtains a token over OIDC.
 
 ## Scripts
 
-| Command                          | What it does                                           |
-| -------------------------------- | ------------------------------------------------------ |
-| `npm run dev:local`              | Dev server on :5173, proxying `/api` to localhost:8000 |
-| `npm run dev:remote-api`         | Dev server against `https://api.webbpulse.com/api/v1`  |
-| `npm run build`                  | `tsc -b` then a Vite production build                  |
-| `npm run lint`, `lint:fix`       | ESLint                                                 |
-| `npm run format`, `format:check` | Prettier                                               |
-| `npm run test`                   | Vitest in watch mode                                   |
-| `npm run test:run`               | Vitest once. CI appends `-- --coverage`                |
-| `npm run preview`                | Serve the built bundle                                 |
+| Command                          | What it does                                                    |
+| -------------------------------- | --------------------------------------------------------------- |
+| `npm run dev:local`              | Dev server on :5173, proxying `/api` to localhost:8000          |
+| `npm run dev:remote-api`         | Dev server against `https://api.portfolio.webbpulse.com/api/v1` |
+| `npm run build`                  | `tsc -b` then a Vite production build                           |
+| `npm run lint`, `lint:fix`       | ESLint                                                          |
+| `npm run format`, `format:check` | Prettier                                                        |
+| `npm run test`                   | Vitest in watch mode                                            |
+| `npm run test:run`               | Vitest once. CI appends `-- --coverage`                         |
+| `npm run preview`                | Serve the built bundle                                          |
 
 There is no `npm run dev`. Use `dev:local`.
 
@@ -66,9 +66,9 @@ There is no `npm run dev`. Use `dev:local`.
 The bundle's configuration comes from the deploy workflow's build step only.
 There is no `.env` file and no Terraform input for it.
 
-| Variable            | Meaning                                                                                               |
-| ------------------- | ----------------------------------------------------------------------------------------------------- |
-| `VITE_API_BASE_URL` | API base. Set from the environment's `API_BASE_URL`; falls back to `https://api.webbpulse.com/api/v1` |
+| Variable            | Meaning                                                                                                         |
+| ------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `VITE_API_BASE_URL` | API base. Set from the environment's `API_BASE_URL`; falls back to `https://api.portfolio.webbpulse.com/api/v1` |
 
 In local dev Vite proxies `/api/*` to `http://localhost:8000`, so neither needs
 setting.

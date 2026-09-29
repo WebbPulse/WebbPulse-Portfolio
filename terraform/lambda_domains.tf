@@ -116,7 +116,7 @@ module "lambda_domain" {
       IDENTITY_ENVIRONMENT       = var.environment
       IDENTITY_RP_NAME           = var.identity_rp_name
       IDENTITY_PRODUCT_NAME      = "WebbPulse Portfolio"
-      IDENTITY_SUPPORT_EMAIL     = "support@${local.domain}"
+      IDENTITY_SUPPORT_EMAIL     = local.support_email
       IDENTITY_FRONTEND_BASE_URL = "https://${local.domain}"
 
       IDENTITY_EMAIL_FROM            = local.identity_email_from

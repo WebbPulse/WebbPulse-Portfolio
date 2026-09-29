@@ -26,8 +26,7 @@ LOCALHOST_ORIGINS = [
 ]
 
 DEFAULT_CORS_ORIGINS = (
-    "http://localhost:3000,http://localhost:5173,http://localhost:4000,"
-    "https://webbpulse.com,https://www.webbpulse.com,http://webbpulse.com"
+    "http://localhost:3000,http://localhost:5173,http://localhost:4000,https://portfolio.webbpulse.com"
 )
 
 ENVIRONMENT_ALIASES = {
@@ -69,7 +68,7 @@ class Settings(BaseServiceSettings):
     `IDENTITY_*` field belongs to `IdentitySettings`."""
 
     APP_NAME: str = "Portfolio Blog API"
-    SITE_URL: str = "https://www.webbpulse.com"
+    SITE_URL: str = "https://portfolio.webbpulse.com"
     DEBUG: bool = False
     LOG_LEVEL: str = "INFO"
     CORS_ORIGINS: str = DEFAULT_CORS_ORIGINS

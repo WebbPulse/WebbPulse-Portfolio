@@ -14,7 +14,7 @@ import { identityOriginFrom as packageIdentityOriginFrom } from '@webbpulse/disc
 const config = loadAppConfig(import.meta.env, {
   defaultApiBaseUrl:
     import.meta.env.MODE === 'production'
-      ? 'https://api.webbpulse.com/api/v1'
+      ? 'https://api.portfolio.webbpulse.com/api/v1'
       : 'http://localhost:8000/api/v1',
   defaultAppName: 'WebbPulse Portfolio',
 });

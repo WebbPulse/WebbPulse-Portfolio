@@ -14,7 +14,7 @@ Lambdas.
 
 ```bash
 npm run dev:local        # Dev server on 5173 (proxies /api to localhost:8000)
-npm run dev:remote-api   # Dev server against https://api.webbpulse.com/api/v1
+npm run dev:remote-api   # Dev server against https://api.portfolio.webbpulse.com/api/v1
 npm run build            # tsc -b + Vite production build
 npm run lint             # ESLint
 npm run lint:fix         # ESLint with auto-fixes
@@ -26,6 +26,15 @@ npm run test:run         # Vitest once. CI appends -- --coverage
 
 There is no `npm run dev`. Run a single test file with
 `npm run test:run -- --reporter=verbose path/to/test.spec.ts`.
+
+### Company site (`site/`)
+
+The static webbpulse.com landing page: Vite, React and TypeScript on
+`@webbpulse/tsconfig` and `@webbpulse/eslint-config`, with no backend. `npm run
+build` prerenders the page and drops the client bundle, so `dist/` is HTML plus
+static files. `npm run dev` serves it on 5174; `lint`, `format:check`,
+`test:run` and `build` match `frontend/`, and `ci.yml` runs a path-scoped `Site`
+job on `site/**`.
 
 ### Backend (`backend/`)
 
@@ -83,7 +92,7 @@ ruff format --check app tests
   The backend's legacy login route stays mounted and unused until a later PR
 - **Dev proxy**: Vite proxies `/api/*` to `http://localhost:8000` in local dev; a
   production build reads `VITE_API_BASE_URL` and falls back to
-  `https://api.webbpulse.com/api/v1`
+  `https://api.portfolio.webbpulse.com/api/v1`
 
 ### Backend
 

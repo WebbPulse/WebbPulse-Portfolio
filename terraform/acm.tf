@@ -1,4 +1,4 @@
-module "www_certificate" {
+module "site_certificate" {
   source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/acm-certificate"
   version = "~> 1.6"
 
@@ -8,8 +8,8 @@ module "www_certificate" {
   }
 
   enabled                   = local.custom_domains_enabled
-  domain_name               = local.www_host
-  subject_alternative_names = [local.domain]
+  domain_name               = local.domain
+  subject_alternative_names = local.legacy_hosts
   zone_id                   = local.records_zone_id
 
   depends_on = [module.staging_dns]
@@ -29,4 +29,9 @@ module "api_certificate" {
   zone_id     = local.records_zone_id
 
   depends_on = [module.staging_dns]
+}
+
+moved {
+  from = module.www_certificate
+  to   = module.site_certificate
 }
