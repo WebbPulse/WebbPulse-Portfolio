@@ -4,10 +4,10 @@ module "frontend" {
 
   name = "${local.prefix}-frontend"
 
-  aliases             = local.custom_domains_enabled ? [local.www_host, local.domain] : []
-  acm_certificate_arn = module.www_certificate.certificate_arn
+  aliases             = local.custom_domains_enabled ? concat([local.domain], local.legacy_hosts) : []
+  acm_certificate_arn = module.site_certificate.certificate_arn
 
-  viewer_request_function_arn = one(aws_cloudfront_function.apex_redirect[*].arn)
+  viewer_request_function_arn = one(aws_cloudfront_function.legacy_host_redirect[*].arn)
 
   cache_mode            = "forwarded_values"
   error_caching_min_ttl = 10
@@ -26,20 +26,4 @@ module "frontend" {
   } : null
 
   create_dns_records = false
-}
-
-resource "aws_cloudfront_function" "apex_redirect" {
-  count = local.custom_domain_count
-
-  name    = "${local.prefix}-apex-redirect"
-  runtime = "cloudfront-js-2.0"
-  publish = true
-
-  code = join("\n", [
-    templatefile("${path.module}/cloudfront_functions/app_handler.js.tftpl", {
-      domain   = local.domain
-      www_host = local.www_host
-    }),
-    "async function handler(event) { return appHandler(event); }",
-  ])
 }

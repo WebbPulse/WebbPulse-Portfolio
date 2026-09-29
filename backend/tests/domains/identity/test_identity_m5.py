@@ -33,9 +33,9 @@ ALL_PASSKEY_PATHS = frozenset(
     + PASSKEY_LOGIN_POST_PATHS
 )
 
-RP_ID = "staging.webbpulse.com"
+RP_ID = "staging.portfolio.webbpulse.com"
 RP_NAME = "WebbPulse Portfolio"
-WEBAUTHN_ORIGIN = "https://staging.webbpulse.com"
+WEBAUTHN_ORIGIN = "https://staging.portfolio.webbpulse.com"
 
 
 def test_the_passkey_table_names_are_the_packages_own_constants() -> None:

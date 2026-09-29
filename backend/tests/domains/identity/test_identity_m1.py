@@ -16,7 +16,7 @@ cryptography = pytest.importorskip("cryptography")
 
 KEY_ARN = "arn:aws:kms:us-west-2:621554169154:key/11111111-2222-3333-4444-555555555555"
 
-ISSUER = "https://api.staging.webbpulse.com/api/auth"
+ISSUER = "https://api.staging.portfolio.webbpulse.com/api/auth"
 
 AUDIENCE = "webbpulse-portfolio-staging-api"
 
@@ -28,8 +28,8 @@ def identity_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("IDENTITY_ISSUER", ISSUER)
     monkeypatch.setenv("IDENTITY_AUDIENCE", AUDIENCE)
     monkeypatch.setenv("IDENTITY_SIGNING_KEY_ARNS", json.dumps([KEY_ARN]))
-    monkeypatch.setenv("IDENTITY_COOKIE_DOMAIN", "staging.webbpulse.com")
-    monkeypatch.setenv("IDENTITY_RP_ID", "staging.webbpulse.com")
+    monkeypatch.setenv("IDENTITY_COOKIE_DOMAIN", "staging.portfolio.webbpulse.com")
+    monkeypatch.setenv("IDENTITY_RP_ID", "staging.portfolio.webbpulse.com")
 
 
 @pytest.fixture
@@ -66,8 +66,8 @@ def test_discovery_points_at_a_jwks_uri_that_is_actually_served(
     discovery = client.get("/api/auth/.well-known/openid-configuration").json()
     jwks_uri = discovery["jwks_uri"]
 
-    assert jwks_uri.startswith("https://api.staging.webbpulse.com/")
-    path = jwks_uri.removeprefix("https://api.staging.webbpulse.com")
+    assert jwks_uri.startswith("https://api.staging.portfolio.webbpulse.com/")
+    path = jwks_uri.removeprefix("https://api.staging.portfolio.webbpulse.com")
     assert client.get(path).status_code == 200
 
 

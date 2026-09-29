@@ -47,7 +47,7 @@ only the legacy bearer login.
 | `SECRET_KEY`, `ADMIN_*` | The same four as env vars. An env value wins per field | required |
 | `ENVIRONMENT` | Environment label | `development` |
 | `CORS_ORIGINS` | Comma-separated origins; localhost dev origins are always added | empty |
-| `SITE_URL` | Base URL used in sitemap and robots | `https://www.webbpulse.com` |
+| `SITE_URL` | Base URL used in sitemap and robots | `https://portfolio.webbpulse.com` |
 | `LOG_LEVEL` | Root log level | `INFO` |
 | `LOGIN_MAX_FAILURES` / `LOGIN_FAILURE_WINDOW_SECONDS` | Login limiter | `10` / `900` |
 

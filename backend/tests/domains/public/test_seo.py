@@ -13,7 +13,7 @@ def test_robots_txt(client):
     body = r.text
     assert "User-agent: *" in body
     assert "Disallow: /admin" in body
-    assert "Sitemap: https://www.webbpulse.com/sitemap.xml" in body
+    assert "Sitemap: https://portfolio.webbpulse.com/sitemap.xml" in body
 
 
 def test_sitemap_has_static_routes(client):
@@ -23,8 +23,8 @@ def test_sitemap_has_static_routes(client):
     assert r.headers["content-type"].startswith("application/xml")
     body = r.text
     assert body.startswith('<?xml version="1.0" encoding="UTF-8"?>')
-    assert "<loc>https://www.webbpulse.com/</loc>" in body
-    assert "<loc>https://www.webbpulse.com/blog</loc>" in body
+    assert "<loc>https://portfolio.webbpulse.com/</loc>" in body
+    assert "<loc>https://portfolio.webbpulse.com/blog</loc>" in body
     assert "/admin" not in body
 
 

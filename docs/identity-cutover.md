@@ -104,11 +104,13 @@ is deliberately no script for that. The identity store is the system of record.
 ## Close out, done
 
 - `~/prod-users-preflight.json` is deleted.
-- `_dmarc.webbpulse.com` is `p=none` with its `rua`, unchanged by the promotion.
+- `_dmarc.webbpulse.com` is `p=none` with its `rua`, and covers
+  `portfolio.webbpulse.com` as its organizational domain.
 - The eight production CloudWatch alarms are all `OK`.
-- SES DKIM for `webbpulse.com` reached `SUCCESS` and the domain is verified for
-  sending. Sending stays sandbox-limited (200 a day, 1 per second) until an
-  owner-approved support case says otherwise.
+- The SES sending identity is `portfolio.webbpulse.com`, verified by Easy DKIM,
+  and identity mail comes from `no-reply@portfolio.webbpulse.com`. Sending stays
+  sandbox-limited (200 a day, 1 per second) until an owner-approved support case
+  says otherwise. Sandbox status is per account and region, not per identity.
 
 Passkeys are on in production: the owner enabled both `passkeys_enabled` and
 `passkeys_passwordless` in `env/production.tfvars`. Whether to leave the SES sandbox
@@ -241,8 +243,8 @@ from `local.identity_issuer`:
 
 | Environment | Redirect URI |
 | --- | --- |
-| staging | `https://api.staging.webbpulse.com/api/auth/oauth/callback` |
-| production | `https://api.webbpulse.com/api/auth/oauth/callback` |
+| staging | `https://api.staging.portfolio.webbpulse.com/api/auth/oauth/callback` |
+| production | `https://api.portfolio.webbpulse.com/api/auth/oauth/callback` |
 
 ## Passkeys
 
@@ -282,8 +284,8 @@ the origin a ceremony checks cannot drift.
 
 | Environment | RP id | WebAuthn origin |
 |---|---|---|
-| staging | `staging.webbpulse.com` | `https://staging.webbpulse.com` |
-| production | `webbpulse.com` | `https://webbpulse.com` |
+| staging | `staging.portfolio.webbpulse.com` | `https://staging.portfolio.webbpulse.com` |
+| production | `portfolio.webbpulse.com` | `https://portfolio.webbpulse.com` |
 
 The origin is an origin and not a URL with a path, because `clientDataJSON`
 carries only scheme, host and port. A passkey enrolled against staging does not

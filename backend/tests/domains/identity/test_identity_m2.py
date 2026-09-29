@@ -381,8 +381,8 @@ def identity_app(rsa_key: Any, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     monkeypatch.setenv("IDENTITY_ISSUER", ISSUER)
     monkeypatch.setenv("IDENTITY_AUDIENCE", AUDIENCE)
     monkeypatch.setenv("IDENTITY_SIGNING_KEY_ARNS", json.dumps([KEY_ARN]))
-    monkeypatch.setenv("IDENTITY_COOKIE_DOMAIN", "staging.webbpulse.com")
-    monkeypatch.setenv("IDENTITY_RP_ID", "staging.webbpulse.com")
+    monkeypatch.setenv("IDENTITY_COOKIE_DOMAIN", "staging.portfolio.webbpulse.com")
+    monkeypatch.setenv("IDENTITY_RP_ID", "staging.portfolio.webbpulse.com")
 
     fake = FakeKms(rsa_key)
     monkeypatch.setattr(boto3, "client", lambda service, *a, **kw: fake)

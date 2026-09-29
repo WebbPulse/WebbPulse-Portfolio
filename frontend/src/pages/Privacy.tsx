@@ -61,10 +61,10 @@ export const Privacy: React.FC = () => {
           <div className="space-y-10">
             <Section title="About this site">
               <p>
-                webbpulse.com is the personal portfolio site of Tyler Webb, a
-                software engineer. It publishes writing and project information.
-                You can read every public page without signing in and without
-                giving me any personal information.
+                portfolio.webbpulse.com is the personal portfolio site of Tyler
+                Webb, a software engineer. It publishes writing and project
+                information. You can read every public page without signing in
+                and without giving me any personal information.
               </p>
             </Section>
 
