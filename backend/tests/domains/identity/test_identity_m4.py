@@ -371,8 +371,11 @@ def test_the_routes_do_not_mount_without_the_factor_store(rsa_key: Any, monkeypa
 
     paths = _post_paths(app)
     for path in MFA_PATHS:
+        if path == "/api/auth/step-up":
+            continue
         assert path not in paths
 
+    assert "/api/auth/step-up" in paths
     assert "/api/auth/login" in paths
 
 
