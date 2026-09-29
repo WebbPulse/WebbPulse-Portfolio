@@ -73,8 +73,8 @@ export const CONTACT_LINKS: ContactLink[] = [
   },
   {
     label: 'GitHub',
-    href: 'https://github.com/TW-WebbPulse',
-    display: 'github.com/TW-WebbPulse',
+    href: 'https://github.com/T-Webb1',
+    display: 'github.com/T-Webb1',
   },
   {
     label: 'LinkedIn',
