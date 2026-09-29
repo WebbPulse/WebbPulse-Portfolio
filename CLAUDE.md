@@ -269,7 +269,7 @@ Each value lives in exactly one place.
 | Where | What |
 | --- | --- |
 | `terraform/env/<environment>.tfvars`, committed | Non-secret config: `bootstrap_image_tag`, `identity_jwt_mode`, `domain_jwt_enforced`, the OAuth client ids, `manage_spans_log_group`, and in production the passkey flags. WebbPulse-Platform loads the file on every plan through the workspace's `TF_CLI_ARGS_plan` env var. |
-| HCP workspace variables pushed by WebbPulse-Platform | `environment`, `staging_profile`, `route53_zone_id`, `route53_write_role_arn`, the staging gate variables and the cloud identity env vars. Never repeat these in a tfvars file. |
+| HCP workspace variables pushed by WebbPulse-Platform | `environment`, `staging_profile`, `route53_zone_id`, `route53_write_role_arn`, `route53_read_role_arn` (assumed instead of the writer when the control plane exports `webbpulse_run_phase=plan`), the staging gate variables and the cloud identity env vars. Never repeat these in a tfvars file. |
 | `webbpulse-<env>/app` Secrets Manager JSON secret | `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ADMIN_EMAIL`, `OAUTH_GOOGLE_CLIENT_SECRET`, `OAUTH_GITHUB_CLIENT_SECRET`, set by an operator with `webbpulse-config --prefix webbpulse-<env> secret set <KEY>`. Terraform declares only the generated `SECRET_KEY` and `mfa_master_key` and keeps every other live key (`json_preserve_unmanaged`). |
 | `/webbpulse-<env>/config` SSM String parameter | Private non-secret config as a JSON object, owned by an operator and read through `operator-config`: `ses_verified_recipients`. Change it with `aws ssm put-parameter --overwrite` carrying the whole object; the next plan follows it. |
 
