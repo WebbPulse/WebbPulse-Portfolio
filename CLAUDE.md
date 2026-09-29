@@ -27,6 +27,15 @@ npm run test:run         # Vitest once. CI appends -- --coverage
 There is no `npm run dev`. Run a single test file with
 `npm run test:run -- --reporter=verbose path/to/test.spec.ts`.
 
+### Company site (`site/`)
+
+The static webbpulse.com landing page: Vite, React and TypeScript on
+`@webbpulse/tsconfig` and `@webbpulse/eslint-config`, with no backend. `npm run
+build` prerenders the page and drops the client bundle, so `dist/` is HTML plus
+static files. `npm run dev` serves it on 5174; `lint`, `format:check`,
+`test:run` and `build` match `frontend/`, and `ci.yml` runs a path-scoped `Site`
+job on `site/**`.
+
 ### Backend (`backend/`)
 
 ```bash
