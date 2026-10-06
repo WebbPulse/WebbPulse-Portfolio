@@ -368,7 +368,7 @@ export class ApiService {
   async createProject(
     project: Omit<Project, 'id' | 'created_at'>
   ): Promise<ApiResponse<Project>> {
-    return this.request<Project>('/projects/', {
+    return this.request<Project>('/projects', {
       method: 'POST',
       body: project,
     });
@@ -393,7 +393,7 @@ export class ApiService {
   async createExperience(
     experience: Omit<Experience, 'id' | 'created_at'>
   ): Promise<ApiResponse<Experience>> {
-    return this.request<Experience>('/experience/', {
+    return this.request<Experience>('/experience', {
       method: 'POST',
       body: experience,
     });
@@ -500,7 +500,7 @@ export class ApiService {
   async createSkill(
     skill: Omit<Skill, 'id' | 'created_at'>
   ): Promise<ApiResponse<Skill>> {
-    return this.request<Skill>('/skills/', {
+    return this.request<Skill>('/skills', {
       method: 'POST',
       body: skill,
     });
@@ -529,7 +529,7 @@ export class ApiService {
   async createEducation(
     entry: Omit<Education, 'id' | 'created_at'>
   ): Promise<ApiResponse<Education>> {
-    return this.request<Education>('/education/', {
+    return this.request<Education>('/education', {
       method: 'POST',
       body: entry,
     });
@@ -558,7 +558,7 @@ export class ApiService {
   async createCertification(
     entry: Omit<Certification, 'id' | 'created_at'>
   ): Promise<ApiResponse<Certification>> {
-    return this.request<Certification>('/certifications/', {
+    return this.request<Certification>('/certifications', {
       method: 'POST',
       body: entry,
     });
@@ -589,7 +589,7 @@ export class ApiService {
   async updateSiteContent(
     patch: Partial<SiteContent>
   ): Promise<ApiResponse<SiteContent>> {
-    return this.request<SiteContent>('/site-content/', {
+    return this.request<SiteContent>('/site-content', {
       method: 'PUT',
       body: patch,
     });
