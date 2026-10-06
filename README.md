@@ -111,10 +111,12 @@ inside `TransactWriteItems`.
 
 ## Infrastructure
 
-`terraform/` is applied by HCP Terraform in org `WebbPulse`: workspace
-`WebbPulse-Portfolio` tracks `main` (production, account 036807648992) and
+`terraform/` is applied by the WebbPulse control plane at `terraform.webbpulse.com`:
+workspace `WebbPulse-Portfolio` tracks `main` (production, account 036807648992) and
 `WebbPulse-Portfolio-staging` tracks `staging` (account 621554169154). Both are
-`us-west-2`. AWS credentials come from TFC dynamic provider credentials.
+`us-west-2`. There is no backend block: the plane's runner writes an S3 backend per
+run, and AWS credentials come from the workspace's run role. `required_version` is a
+range that admits both workspaces' exact engine versions.
 Terraform never ships application code: functions are created with a placeholder
 and `ignore_changes` on the code attributes, and CI updates the code.
 
@@ -135,7 +137,7 @@ S3/CloudFront on default AWS hostnames; `full` adds the custom domains.
 
 ### Shared platform modules
 
-Parts of the stack come from `app.terraform.io/WebbPulse/platform-modules/aws`:
+Parts of the stack come from `terraform.webbpulse.com/WebbPulse/platform-modules/aws`:
 
 | Module | What it owns here |
 | --- | --- |

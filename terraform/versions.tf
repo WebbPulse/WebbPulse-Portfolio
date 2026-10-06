@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.10"
+  required_version = ">= 1.14.8, <= 1.16.5"
 
   required_providers {
     aws = {
@@ -13,14 +13,6 @@ terraform {
     archive = {
       source  = "hashicorp/archive"
       version = "~> 2.0"
-    }
-  }
-
-  cloud {
-    organization = "WebbPulse"
-
-    workspaces {
-      name = "WebbPulse-Portfolio"
     }
   }
 }
