@@ -105,7 +105,7 @@ locals {
 }
 
 module "github_actions_role" {
-  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/github-actions-role"
+  source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/github-actions-role"
   version = "~> 1.1"
 
   role_name = "${local.prefix}-github-actions-deploy"
@@ -194,7 +194,7 @@ module "github_actions_role" {
 }
 
 module "github_actions_ci_role" {
-  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/github-actions-role"
+  source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/github-actions-role"
   version = "~> 1.1"
 
   role_name        = "${local.prefix}-github-actions-ci"

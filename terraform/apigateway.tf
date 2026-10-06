@@ -57,7 +57,7 @@ locals {
 }
 
 module "api" {
-  source = "app.terraform.io/WebbPulse/platform-modules/aws//modules/http-api"
+  source = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/http-api"
 
   version = "~> 2.9"
 

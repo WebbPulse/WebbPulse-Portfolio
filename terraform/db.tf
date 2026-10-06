@@ -9,7 +9,7 @@ resource "random_password" "secret_key" {
 }
 
 module "app_secrets" {
-  source  = "app.terraform.io/WebbPulse/platform-modules/aws//modules/app-secrets"
+  source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/app-secrets"
   version = "~> 2.30"
 
   name_prefix = local.prefix
