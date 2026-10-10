@@ -106,7 +106,7 @@ locals {
 
 module "github_actions_role" {
   source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/github-actions-role"
-  version = "~> 1.1"
+  version = "~> 2.39"
 
   role_name = "${local.prefix}-github-actions-deploy"
 
@@ -128,38 +128,6 @@ module "github_actions_role" {
     {
       actions   = ["lambda:InvokeFunction"]
       resources = local.lambda_domain_function_arns
-    },
-    {
-      actions = [
-        "s3:PutObject",
-        "s3:GetObject",
-        "s3:DeleteObject",
-        "s3:ListBucket",
-      ]
-      resources = [
-        module.frontend.bucket_arn,
-        "${module.frontend.bucket_arn}/*",
-      ]
-    },
-    {
-      sid = "CompanySiteBucket"
-      actions = [
-        "s3:PutObject",
-        "s3:GetObject",
-        "s3:DeleteObject",
-        "s3:ListBucket",
-      ]
-      resources = [
-        module.company_site.bucket_arn,
-        "${module.company_site.bucket_arn}/*",
-      ]
-    },
-    {
-      actions = [
-        "cloudfront:CreateInvalidation",
-        "cloudfront:GetInvalidation",
-      ]
-      resources = [module.frontend.distribution_arn, module.company_site.distribution_arn]
     },
     {
       sid       = "EcrAuth"
@@ -191,11 +159,16 @@ module "github_actions_role" {
       resources = [local.shared_base_image_repository_arn]
     },
   ], local.github_actions_codeartifact_statements, local.github_actions_gate_statements, local.github_actions_e2e_statements)
+
+  spa_deploy = {
+    bucket_arns       = [module.frontend.bucket_arn, module.company_site.bucket_arn]
+    distribution_arns = [module.frontend.distribution_arn, module.company_site.distribution_arn]
+  }
 }
 
 module "github_actions_ci_role" {
   source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/github-actions-role"
-  version = "~> 1.1"
+  version = "~> 2.39"
 
   role_name        = "${local.prefix}-github-actions-ci"
   role_description = "Read-only CodeArtifact access for pull request CI in WebbPulse/WebbPulse-Portfolio. Deploy permissions live on the separate github-actions-deploy role."
