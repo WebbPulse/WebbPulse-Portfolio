@@ -82,7 +82,7 @@ module "lambda_domain" {
   for_each = local.lambda_domains
 
   source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/lambda-function"
-  version = "~> 2.1"
+  version = "~> 2.39"
 
   function_name = "${local.prefix}-${each.key}"
   role_name     = "${local.prefix}-${each.key}-lambda"
@@ -147,6 +147,10 @@ module "lambda_domain" {
 
   tracing_mode             = "Active"
   attach_xray_write_policy = true
+
+  enable_log_write = true
+  enable_xray      = true
+  app_secret_arns  = each.value.secrets ? [module.app_secrets.arns["app"]] : []
 }
 
 resource "aws_iam_role_policy" "lambda_domain" {
