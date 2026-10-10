@@ -1,36 +1,6 @@
-"""ASGI middleware shared by every composition root: slash tolerance,
-first-request seeding and the serving-domain header.
+"""First-request seeding, the middleware every composition root adds beside the
+shared `webbpulse.http` slash tolerance and serving-domain header.
 """
-
-from starlette.routing import Match
-
-
-class TrailingSlashMiddleware:
-    """Serve a path whose trailing slash does not match any declared route."""
-
-    def __init__(self, app, router):
-        """Wrap `app`, matching candidate paths against `router`."""
-        self.app = app
-        self.router = router
-
-    def _matches(self, scope):
-        """Whether any route in the router matches this scope's path."""
-        for route in self.router.routes:
-            match, _ = route.matches(scope)
-            if match != Match.NONE:
-                return True
-        return False
-
-    async def __call__(self, scope, receive, send):
-        """Rewrite the scope's path to its matching alternate, then pass it on."""
-        if scope["type"] == "http" and not self._matches(scope):
-            path = scope["path"]
-            alternate = path[:-1] if path.endswith("/") and path != "/" else path + "/"
-            if self._matches({**scope, "path": alternate}):
-                scope["path"] = alternate
-                scope["raw_path"] = alternate.encode("utf-8")
-        await self.app(scope, receive, send)
-
 
 _ADMIN_CREDENTIAL_STORE: dict = {}
 """One-slot cache for `_admin_credential_store`. A dict rather than a global so "not
@@ -114,39 +84,3 @@ class SeedMiddleware:
             for name in self.seeds:
                 SEEDERS[name]()
         await self.app(scope, receive, send)
-
-
-DOMAIN_HEADER = "x-webbpulse-domain"
-"""Response header naming the application that served the request, so which function
-answered is readable from the response rather than from CloudWatch."""
-
-MONOLITH_DOMAIN = "monolith"
-"""What the whole-surface root reports, since no single domain name is true of it.
-Distinguishes a local whole-surface response from a domain function's."""
-
-
-class DomainHeaderMiddleware:
-    """Stamp every response with the name of the application that produced it.
-
-    Written on `http.response.start`, so it lands on the error envelopes too.
-    """
-
-    def __init__(self, app, domain: str):
-        """Wrap `app`, stamping responses with `domain`."""
-        self.app = app
-        self.value = domain.encode("latin-1")
-
-    async def __call__(self, scope, receive, send):
-        """Add the domain header to the outgoing response."""
-        if scope["type"] != "http":
-            await self.app(scope, receive, send)
-            return
-
-        async def send_wrapper(message):
-            """Append the domain header as the response starts."""
-            if message["type"] == "http.response.start":
-                headers = message.setdefault("headers", [])
-                headers.append((DOMAIN_HEADER.encode("latin-1"), self.value))
-            await send(message)
-
-        await self.app(scope, receive, send_wrapper)

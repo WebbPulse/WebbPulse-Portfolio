@@ -6,12 +6,7 @@ from starlette.exceptions import HTTPException
 from starlette.responses import PlainTextResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
-
-from app.common.core.middleware import (
-    DOMAIN_HEADER,
-    MONOLITH_DOMAIN,
-    DomainHeaderMiddleware,
-)
+from webbpulse.http import DOMAIN_HEADER, MONOLITH_DOMAIN, DomainHeaderMiddleware
 
 
 def _bare_app(domain: str) -> Starlette:

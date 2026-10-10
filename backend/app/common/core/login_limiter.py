@@ -10,12 +10,9 @@ shared package's convention, so staging is never rate limited and every other
 environment keeps its lockout.
 """
 
-import json
 import time
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
-from fastapi import Request
-from webbpulse.http import REQUEST_CONTEXT_HEADER
 from webbpulse.ratelimit import TTL_ATTRIBUTE, RateLimiter
 
 from ..config import get_settings
@@ -24,56 +21,6 @@ from .logging import logger
 
 LOGIN_NAMESPACE = "login"
 """The limiter namespace, which is the partition key prefix for its rows."""
-
-
-def _source_ip_from_context(context: Any) -> str:
-    """Pull the source IP out of one API Gateway request context mapping."""
-    if not isinstance(context, dict):
-        return ""
-    http_section = context.get("http")
-    if isinstance(http_section, dict):
-        source_ip = http_section.get("sourceIp")
-        if isinstance(source_ip, str) and source_ip:
-            return source_ip
-    identity = context.get("identity")
-    if isinstance(identity, dict):
-        source_ip = identity.get("sourceIp")
-        if isinstance(source_ip, str) and source_ip:
-            return source_ip
-    return ""
-
-
-def client_ip(request: Request) -> str:
-    """The caller's IP, taken from the API Gateway request context.
-
-    The adapter header first, then the Mangum scope, then the socket peer, which
-    is reached only locally. `X-Forwarded-For` is never consulted. Kept rather
-    than taken from `webbpulse.http.client_ip`, which reads neither the nested
-    `requestContext` shape nor the Mangum scope this backend still tolerates.
-    """
-    raw = request.headers.get(REQUEST_CONTEXT_HEADER)
-    if raw:
-        try:
-            parsed = json.loads(raw)
-        except (TypeError, ValueError):
-            logger.warning(
-                "Could not parse the request context header as JSON; ignoring it.",
-                extra={"header": REQUEST_CONTEXT_HEADER},
-            )
-            parsed = None
-        source_ip = _source_ip_from_context(parsed)
-        if not source_ip and isinstance(parsed, dict):
-            source_ip = _source_ip_from_context(parsed.get("requestContext"))
-        if source_ip:
-            return source_ip
-
-    event = request.scope.get("aws.event")
-    if isinstance(event, dict):
-        source_ip = _source_ip_from_context(event.get("requestContext"))
-        if source_ip:
-            return source_ip
-
-    return request.client.host if request.client else "unknown"
 
 
 def _rate_limiting_enabled() -> bool:
