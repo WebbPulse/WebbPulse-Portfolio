@@ -2,9 +2,9 @@
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import JSONResponse
+from webbpulse.http import client_ip
 
 from app.common.core import login_limiter
-from app.common.core.login_limiter import client_ip
 from app.common.core.security import (
     create_access_token,
     get_password_hash,

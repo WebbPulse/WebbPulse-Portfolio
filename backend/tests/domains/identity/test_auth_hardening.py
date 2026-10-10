@@ -9,12 +9,11 @@ import boto3
 import pytest
 from fastapi import Request
 from fastapi.testclient import TestClient
-from webbpulse.http import REQUEST_CONTEXT_HEADER
+from webbpulse.http import REQUEST_CONTEXT_HEADER, client_ip
 from webbpulse.ratelimit import RateLimiter
 
 from app.common.config import get_settings, reset_settings_cache, settings
 from app.common.core import login_limiter as limiter_module
-from app.common.core.login_limiter import client_ip
 from app.common.core.security import create_access_token, get_password_hash, verify_password
 from app.common.db import client as db_client
 from app.common.db import entities
