@@ -6,7 +6,6 @@ from starlette.exceptions import HTTPException
 from starlette.responses import PlainTextResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
-
 from webbpulse.http import DOMAIN_HEADER, MONOLITH_DOMAIN, DomainHeaderMiddleware
 
 
