@@ -1,16 +1,16 @@
-"""Domain descriptors and the builder that turns one into an application.
+"""Portfolio's domain registry and the builder both composition roots go through.
 
-Both composition roots read this map, so a mounted application and a deployed
-function cannot drift apart.
+The descriptor, the builder, the entrypoint pair, tracing and the local authorizer come
+from `webbpulse.composition`. What stays here is Portfolio's own: the four registry rows,
+the seed middleware, the trailing slash and domain header middleware, and the stricter
+secrets check that also refuses to start in staging.
 """
 
 from __future__ import annotations
 
-import warnings
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Callable, Iterable
+from typing import TYPE_CHECKING, Any, Iterable, Sequence
 
-from webbpulse.http import create_app
+from webbpulse import composition
 
 from ..version import VERSION
 from .settings import Settings, get_settings
@@ -30,41 +30,19 @@ SERVICE_NAME_TEMPLATE = "webbpulse-portfolio-{domain}"
 """Service name pattern. Terraform sets `SERVICE_NAME` to the same string, which
 becomes the OpenTelemetry `service.name` and the `service` log field."""
 
+ENFORCED_ENVIRONMENTS = ("staging", "production")
+"""Environments where a missing secret is a startup failure rather than a warning.
+Elsewhere a checkout with no AWS has to stay runnable."""
 
-@dataclass(frozen=True)
-class Domain:
-    """One deployable domain."""
 
-    name: str
-    title: str
-    load_routers: Callable[[], "list[APIRouter]"]
-    """Called lazily so importing this module imports no domain package."""
-    load_unprefixed_routers: Callable[[Settings], "list[APIRouter]"] | None = None
-    """Routers the domain mounts at the root with no prefix and no tags, because
-    the router itself declares its full paths. Called lazily, like `load_routers`,
-    so the glue behind it belongs to this domain's import closure alone."""
-    router_prefix: str = API_PREFIX
-    """Where the domain's routers mount, so both roots supply the same prefix."""
-    router_tags: tuple[str, ...] = ()
-    """Tags applied when the routers mount, shared by both roots."""
-    requires_secrets: tuple[str, ...] = ()
-    """Secret fields the domain cannot serve a request without. A domain naming none
-    needs no `secretsmanager:GetSecretValue` grant."""
-    seeds: tuple[str, ...] = ()
-    """Seeders the domain runs on the first request, by the names in
-    `app.common.core.middleware.SEEDERS`. A domain seeds only the tables it owns."""
-    extra: dict = field(default_factory=dict)
-    """Extra keyword arguments for `create_app`."""
+class Domain(composition.Domain):
+    """The shared descriptor, plus the seeders Portfolio keeps in `metadata`."""
 
     @property
-    def service_name(self) -> str:
-        """The name this domain's function reports to logs and traces."""
-        return SERVICE_NAME_TEMPLATE.format(domain=self.name)
-
-    @property
-    def mount_path(self) -> str:
-        """Where root A mounts this domain's application."""
-        return self.router_prefix or "/"
+    def seeds(self) -> tuple[str, ...]:
+        """Seeders the domain runs on the first request, by the names in
+        `app.common.core.middleware.SEEDERS`. A domain seeds only the tables it owns."""
+        return tuple(self.metadata.get("seeds", ()))
 
 
 def _content_routers() -> "list[APIRouter]":
@@ -109,109 +87,148 @@ def _public_routers() -> "list[APIRouter]":
     return [router]
 
 
-DOMAINS: dict[str, Domain] = {
-    "content": Domain(
-        name="content",
-        title="WebbPulse Portfolio content",
-        load_routers=_content_routers,
-        requires_secrets=("SECRET_KEY",),
-        seeds=("site_content",),
-    ),
-    "resume": Domain(
-        name="resume",
-        title="WebbPulse Portfolio resume",
-        load_routers=_resume_routers,
-        requires_secrets=("SECRET_KEY",),
-    ),
-    "identity": Domain(
-        name="identity",
-        title="WebbPulse Portfolio identity",
-        load_routers=_identity_routers,
-        load_unprefixed_routers=_identity_unprefixed_routers,
-        router_prefix=f"{API_PREFIX}/admin",
-        router_tags=("admin",),
-        requires_secrets=(
-            "SECRET_KEY",
-            "ADMIN_USERNAME",
-            "ADMIN_PASSWORD",
-            "ADMIN_EMAIL",
+DOMAINS = composition.DomainRegistry(
+    [
+        Domain(
+            name="content",
+            title="WebbPulse Portfolio content",
+            load_routers=_content_routers,
+            router_prefix=API_PREFIX,
+            service_name_template=SERVICE_NAME_TEMPLATE,
+            requires_secrets=("SECRET_KEY",),
+            metadata={"seeds": ("site_content",)},
         ),
-        seeds=("admin",),
-    ),
-    "public": Domain(
-        name="public",
-        title="WebbPulse Portfolio public",
-        load_routers=_public_routers,
-        router_prefix="",
-    ),
-}
+        Domain(
+            name="resume",
+            title="WebbPulse Portfolio resume",
+            load_routers=_resume_routers,
+            router_prefix=API_PREFIX,
+            service_name_template=SERVICE_NAME_TEMPLATE,
+            requires_secrets=("SECRET_KEY",),
+        ),
+        Domain(
+            name="identity",
+            title="WebbPulse Portfolio identity",
+            load_routers=_identity_routers,
+            load_unprefixed_routers=_identity_unprefixed_routers,
+            router_prefix=f"{API_PREFIX}/admin",
+            router_tags=("admin",),
+            service_name_template=SERVICE_NAME_TEMPLATE,
+            requires_secrets=(
+                "SECRET_KEY",
+                "ADMIN_USERNAME",
+                "ADMIN_PASSWORD",
+                "ADMIN_EMAIL",
+            ),
+            metadata={"seeds": ("admin",)},
+        ),
+        Domain(
+            name="public",
+            title="WebbPulse Portfolio public",
+            load_routers=_public_routers,
+            router_prefix="",
+            service_name_template=SERVICE_NAME_TEMPLATE,
+        ),
+    ]
+)
 
-DOMAIN_NAMES = tuple(DOMAINS)
+DOMAIN_NAMES = DOMAINS.names
 
 
-ENFORCED_ENVIRONMENTS = ("staging", "production")
-"""Environments where a missing secret is a startup failure rather than a warning.
-Elsewhere a checkout with no AWS has to stay runnable."""
-
-
-def check_required_secrets(domains: "Iterable[Domain]", *, settings: Settings | None = None) -> None:
+def check_required_secrets(domains: "Iterable[composition.Domain]", *, settings: Settings | None = None) -> None:
     """Fail fast on a missing secret, once at startup, per the domains served.
 
-    Resolution stays lazy, so a root serving no domain that names a secret makes
-    no Secrets Manager call. Outside a deployed environment this warns instead.
+    The shared `check_secrets` with Portfolio's policy: strict in staging as well as
+    production, and a warning for every missing name elsewhere rather than for
+    `SECRET_KEY` alone. Resolution stays lazy, so a root serving no domain that names
+    a secret makes no Secrets Manager call.
     """
-    wanted = sorted({name for domain in domains for name in domain.requires_secrets})
-    if not wanted:
-        return
+    served = list(domains)
     resolved = settings if settings is not None else get_settings()
-    if resolved.environment in ENFORCED_ENVIRONMENTS:
-        resolved.require_secrets(*wanted)
-        return
-    missing = [name for name in wanted if getattr(resolved, name) is None]
-    if missing:
-        warnings.warn(
-            f"Missing secret(s): {', '.join(missing)}. Set them as environment "
-            "variables or as keys of the APP_SECRETS_ARN secret. Tokens signed "
-            "with an empty key are insecure.",
-            UserWarning,
-            stacklevel=2,
-        )
-
-
-def build_domain_app(domain: Domain | str, *, settings: Settings | None = None) -> "FastAPI":
-    """Build one domain's application: root B's whole job, and root A's unit.
-
-    Both roots go through here, so the middleware stack is identical locally, in
-    the suite and in each deployed function.
-    """
-    from webbpulse.http import DomainHeaderMiddleware, TrailingSlashMiddleware
-
-    if isinstance(domain, str):
-        domain = DOMAINS[domain]
-    resolved = settings if settings is not None else get_settings()
-
-    app = create_app(
-        title=domain.title,
-        version=VERSION,
-        service_name=domain.service_name,
-        settings=resolved,
-        include_health=domain.name != "public",
-        redirect_slashes=False,
-        error_envelope=ERROR_ENVELOPE,
-        **domain.extra,
+    composition.check_secrets(
+        served,
+        resolved,
+        strict=resolved.environment in ENFORCED_ENVIRONMENTS,
+        warn_on={name for domain in served for name in domain.requires_secrets},
     )
 
-    for router in domain.load_routers():
-        app.include_router(router, prefix=domain.router_prefix, tags=list(domain.router_tags))
 
-    if domain.load_unprefixed_routers is not None:
-        for router in domain.load_unprefixed_routers(resolved):
-            app.include_router(router)
+def check_domain_secrets(domain: composition.Domain, settings: Settings | None) -> None:
+    """The `check` hook each entrypoint's `main` runs, over its one domain."""
+    check_required_secrets([domain], settings=settings)
 
-    if domain.seeds:
+
+def add_seed_middleware(seeds: Sequence[str] | None):
+    """A hook adding `SeedMiddleware` for these seeders, or for every seeder on `None`."""
+
+    def hook(app: "FastAPI", domains: Sequence[composition.Domain]) -> None:
+        """Run the seeders on the first request."""
         from ..core.middleware import SeedMiddleware
 
-        app.add_middleware(SeedMiddleware, seeds=domain.seeds)
-    app.add_middleware(TrailingSlashMiddleware, router=app.router)
-    app.add_middleware(DomainHeaderMiddleware, domain=domain.name)
-    return app
+        if seeds is None:
+            app.add_middleware(SeedMiddleware)
+        elif seeds:
+            app.add_middleware(SeedMiddleware, seeds=tuple(seeds))
+
+    return hook
+
+
+def add_routing_middleware(domain_header: str):
+    """A hook adding trailing slash handling and the `X-WebbPulse-Domain` header."""
+
+    def hook(app: "FastAPI", domains: Sequence[composition.Domain]) -> None:
+        """Outermost middleware, added last, so every response carries the header."""
+        from webbpulse.http import DomainHeaderMiddleware, TrailingSlashMiddleware
+
+        app.add_middleware(TrailingSlashMiddleware, router=app.router)
+        app.add_middleware(DomainHeaderMiddleware, domain=domain_header)
+
+    return hook
+
+
+def build(
+    domains: "composition.Domain | str | Sequence[composition.Domain | str]",
+    *,
+    domain_header: str,
+    settings: Settings | None = None,
+    before_routing: Sequence[Any] = (),
+    seeds: Sequence[str] | None = (),
+    **create_app_kwargs: Any,
+) -> "FastAPI":
+    """Both roots' builder: the shared `build_domain_app` with Portfolio's middleware.
+
+    Middleware is added once every router is in and in the order it always was, seeds
+    first, then `before_routing`, then trailing slash and the domain header outermost.
+    """
+    resolved = settings if settings is not None else get_settings()
+    return composition.build_domain_app(
+        domains,
+        registry=DOMAINS,
+        settings=resolved,
+        after_routers=[
+            add_seed_middleware(seeds),
+            *before_routing,
+            add_routing_middleware(domain_header),
+        ],
+        instrument=True,
+        version=VERSION,
+        redirect_slashes=False,
+        error_envelope=ERROR_ENVELOPE,
+        **create_app_kwargs,
+    )
+
+
+def build_domain_app(domain: composition.Domain | str, *, settings: Settings | None = None) -> "FastAPI":
+    """Build one domain's application: root B's whole job.
+
+    Both roots go through `build`, so the middleware stack is identical locally, in
+    the suite and in each deployed function.
+    """
+    resolved_domain = DOMAINS[domain] if isinstance(domain, str) else domain
+    return build(
+        resolved_domain,
+        settings=settings,
+        domain_header=resolved_domain.name,
+        seeds=resolved_domain.metadata.get("seeds", ()),
+        include_health=resolved_domain.name != "public",
+    )
