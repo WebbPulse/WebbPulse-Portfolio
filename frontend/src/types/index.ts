@@ -4,17 +4,6 @@ export interface BaseComponentProps {
   children?: React.ReactNode;
 }
 
-/** Props for the shared Button, covering its visual variants and sizes. */
-export interface ButtonProps extends BaseComponentProps {
-  variant?: 'primary' | 'secondary' | 'outline' | 'ghost';
-  size?: 'sm' | 'md' | 'lg';
-  disabled?: boolean;
-  onClick?: () => void;
-  type?: 'button' | 'submit' | 'reset';
-  /** Stamped as `data-testid`, so the e2e browser suite can address this control. */
-  testId?: string;
-}
-
 /** A header or footer link, marked external when it leaves the site. */
 export interface NavigationItem {
   label: string;

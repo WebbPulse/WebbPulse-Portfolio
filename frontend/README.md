@@ -1,18 +1,17 @@
 # Frontend
 
 React 19 and TypeScript on Vite, styled with Tailwind CSS. It serves the public
-portfolio and blog plus the admin panel that drives every section through the
-API.
+portfolio and blog. Content lives in typed files under `src/content/`; there
+is no admin panel and no sign-in.
 
 ## Routes
 
-| Path                               | What it is                                      |
-| ---------------------------------- | ----------------------------------------------- |
-| `/`                                | The portfolio                                   |
-| `/blog`, `/blog/:slug`             | The blog index and a post                       |
-| `/privacy`                         | The public privacy policy                       |
-| `/verify-email`, `/reset-password` | The two identity link pages                     |
-| `/admin`                           | The admin panel, the only authenticated surface |
+| Path                   | What it is                                    |
+| ---------------------- | --------------------------------------------- |
+| `/`                    | The portfolio                                 |
+| `/blog`, `/blog/:slug` | The blog index and a post                     |
+| `/privacy`             | The public privacy policy                     |
+| anything else          | The 404 page, `/admin` included               |
 
 ## Getting started
 
@@ -26,9 +25,8 @@ npm run dev:local # :5173, proxies /api to localhost:8000
 
 ### Shared packages from CodeArtifact
 
-`@webbpulse/api-client`, `auth`, `config`, `discovery`, `qrcode`, `tsconfig` and
-`eslint-config` are published to CodeArtifact rather than the public registry,
-all pinned to `^0.10.2`. `frontend/.npmrc` points the `@webbpulse` scope at that
+`@webbpulse/api-client`, `config`, `tsconfig` and `eslint-config` are
+published to CodeArtifact rather than the public registry. `frontend/.npmrc` points the `@webbpulse` scope at that
 repository but deliberately holds no token. Before your first install, fetch a
 12 hour one:
 
@@ -73,47 +71,19 @@ There is no `.env` file and no Terraform input for it.
 In local dev Vite proxies `/api/*` to `http://localhost:8000`, so neither needs
 setting.
 
-## Auth
-
-Auth is `AuthClient` from `@webbpulse/auth`: an in-memory access token, an
-httpOnly refresh cookie, and one retry on a 401. There is no build time switch
-and no second mechanism to select.
-
-**Both environments run on identity.** Staging flipped 2026-09-11 02:25Z,
-production the same day at 07:18Z. The gateway enforces identity JWTs on the 24
-`/api/v1` admin route keys.
-
-The mode used to be chosen by `VITE_AUTH_MODE`, which defaulted to `bearer` when
-unset. `deploy-frontend.yml` stopped forwarding it in `ce34362`, so builds after
-that commit silently shipped a bearer bundle against JWT enforced routes. The
-switch has been removed rather than repaired: `authMode.ts` and
-`bearerTokenStore.ts` are gone, `ApiService` always builds an `AuthClient`, and
-`getAuthClient` and `getIdentityClient` never return null.
-
-Two guards hold the line. `src/services/api.test.ts` asserts in `built auth
-mode` that sign-in goes to `/api/auth/login`, that nothing posts to
-`/admin/login`, and that no access token reaches `localStorage`. The
-`resolve-env` job in `deploy-frontend.yml` fails the deploy if `frontend/src`
-reintroduces `VITE_AUTH_MODE` or the legacy login route.
-
-The backend's `POST /api/v1/admin/login` stays mounted and unused until a later
-PR retires it with the `hashed_password` column. Until then, reverting the
-frontend to an earlier commit is still a working rollback.
-
 ## API layer
 
-Every call goes through `src/services/api.ts` (`apiService`). The transport is
-`@webbpulse/api-client` and startup configuration is `@webbpulse/config`. That
-client rejects on a non-2xx, so `ApiService` adapts it back into the
-`{ data, error }` envelope every page component reads. The envelope is
-Portfolio's own and is unchanged.
+`src/services/api.ts` (`apiService`) holds only the anonymous
+`getPublicFigures()` read. The transport is `@webbpulse/api-client` and startup
+configuration is `@webbpulse/config`. That client rejects on a non-2xx, so
+`ApiService` adapts it back into Portfolio's own `{ data, error }` envelope.
 
 ## Structure
 
 ```
 src/
 ├── components/   common, layout and section components
-├── pages/        Home, Privacy, VerifyEmail, ResetPassword, NotFound
+├── pages/        Home, Privacy, NotFound
 ├── hooks/        custom React hooks
 ├── services/     api.ts
 ├── types/        shared TypeScript types

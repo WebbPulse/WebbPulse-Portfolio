@@ -4,12 +4,9 @@ import {
   createEnvelopeClient,
   getWebbPulseError,
   type ApiEnvelope,
-  type AuthTokenProvider,
   type EnvelopeClient,
 } from '@webbpulse/api-client';
 import { loadAppConfig } from '@webbpulse/config';
-import { createAuthClient, type AuthClient } from '@webbpulse/auth';
-import { identityOriginFrom as packageIdentityOriginFrom } from '@webbpulse/discovery';
 
 const config = loadAppConfig(import.meta.env, {
   defaultApiBaseUrl:
@@ -21,17 +18,6 @@ const config = loadAppConfig(import.meta.env, {
 
 /** Base URL of this application's API, from the resolved app config. */
 export const API_BASE_URL = config.apiBaseUrl;
-
-/**
- * The origin the identity routes hang off, derived from the API base URL.
- *
- * Identity mounts at `/api/auth` on the origin while this application's routes
- * live under `/api/v1`. `passthrough` keeps a root relative base unchanged, which
- * is what this application's callers already depend on.
- */
-export function identityOriginFrom(apiBaseUrl: string): string {
-  return packageIdentityOriginFrom(apiBaseUrl, { relativeAs: 'passthrough' });
-}
 
 /**
  * Logs a failed request with the fields the backend's error envelope carries.
@@ -177,23 +163,6 @@ export interface SiteContent {
   updated_at?: string | null;
 }
 
-/** Credentials posted to the sign in route. */
-export interface UserLogin {
-  username: string;
-  password: string;
-}
-
-/**
- * What a sign in attempt produced.
- *
- * An MFA challenge is its own case rather than an error: it is a successful
- * first leg that carries no access token.
- */
-export type LoginResult =
-  | { status: 'authenticated' }
-  | { status: 'mfa-required'; ticket: string }
-  | { status: 'failed'; error: string };
-
 /**
  * The envelope every call site in this application reads.
  *
@@ -202,28 +171,13 @@ export type LoginResult =
  */
 export type ApiResponse<T> = ApiEnvelope<T>;
 
-/** Typed client for the portfolio API. */
+/** Typed client for the portfolio API's public, anonymous routes. */
 export class ApiService {
   private readonly client: EnvelopeClient;
 
-  /**
-   * The auth client that holds the access token and spends the refresh cookie.
-   */
-  private readonly auth: AuthClient<unknown>;
-
   constructor(baseUrl: string = API_BASE_URL) {
-    const credentials = 'include' as const;
-
-    this.auth = createAuthClient({
-      baseUrl: identityOriginFrom(baseUrl),
-      clientOptions: { credentials },
-    });
     this.client = createEnvelopeClient(
-      createApiClient({
-        baseUrl,
-        credentials,
-        auth: this.auth satisfies AuthTokenProvider,
-      }),
+      createApiClient({ baseUrl, credentials: 'include' }),
       {
         onError: (error) => {
           logApiFailure(error);
@@ -232,372 +186,9 @@ export class ApiService {
     );
   }
 
-  /**
-   * The auth client.
-   *
-   * Exposed so `AuthProvider` shares the instance the API client refreshes through.
-   */
-  getAuthClient(): AuthClient<unknown> {
-    return this.auth;
-  }
-
-  private request<T>(
-    endpoint: string,
-    options: { method?: string; body?: unknown } = {}
-  ): Promise<ApiResponse<T>> {
-    const method = options.method ?? 'GET';
-    return this.client.request<T>(method, endpoint, {
-      ...(options.body === undefined ? {} : { body: options.body }),
-    });
-  }
-
-  /**
-   * Signs in.
-   *
-   * The username is sent as the standard's `email` field. An MFA challenge comes
-   * back as its own result carrying the ticket to finish with.
-   */
-  async login(credentials: UserLogin): Promise<LoginResult> {
-    try {
-      const outcome = await this.auth.login({
-        email: credentials.username,
-        password: credentials.password,
-      });
-      return this.readLoginOutcome(outcome);
-    } catch (error) {
-      return this.readLoginFailure(error);
-    }
-  }
-
-  /** Finishes an MFA login with a TOTP code. */
-  async completeTotp(input: {
-    ticket: string;
-    code: string;
-  }): Promise<LoginResult> {
-    try {
-      return this.readLoginOutcome(await this.auth.completeTotp(input));
-    } catch (error) {
-      return this.readLoginFailure(error);
-    }
-  }
-
-  /** Turns a package login outcome into this application's result. */
-  private readLoginOutcome(outcome: {
-    mfaRequired: boolean;
-    ticket?: string;
-  }): LoginResult {
-    if (outcome.mfaRequired) {
-      return {
-        status: 'mfa-required',
-        ticket: outcome.ticket ?? '',
-      };
-    }
-    return { status: 'authenticated' };
-  }
-
-  /** Turns a thrown login error into a rendered sentence. */
-  private readLoginFailure(error: unknown): LoginResult {
-    logApiFailure(error);
-    return {
-      status: 'failed',
-      error:
-        error instanceof ApiError
-          ? getWebbPulseError(error).message
-          : 'Sign in failed. Please try again.',
-    };
-  }
-
-  /**
-   * The auth client, for the identity pages that call it directly.
-   *
-   * Those routes answer discriminated outcomes rather than this service's envelope,
-   * so the pages get the client itself.
-   */
-  getIdentityClient(): AuthClient<unknown> {
-    return this.auth;
-  }
-
-  /**
-   * Spends the refresh cookie on page load to restore the in-memory token.
-   * Resolves to whether a session came back; false rather than throwing when
-   * there is no cookie.
-   */
-  async restoreSession(): Promise<boolean> {
-    try {
-      await this.auth.initialize();
-    } catch {
-      return false;
-    }
-    return this.isAuthenticated();
-  }
-
-  /**
-   * Signs out.
-   *
-   * Synchronous: the revoke call is started and not awaited, and the in-memory
-   * token is cleared either way.
-   */
-  logout(): void {
-    void this.auth.logout().catch(logApiFailure);
-  }
-
-  isAuthenticated(): boolean {
-    return this.auth.getState().status === 'authenticated';
-  }
-
-  async getProjects(
-    featuredOnly: boolean = false
-  ): Promise<ApiResponse<Project[]>> {
-    return this.client.get<Project[]>('/projects/', {
-      ...(featuredOnly ? { query: { featured_only: true } } : {}),
-    });
-  }
-
-  async getProject(id: number): Promise<ApiResponse<Project>> {
-    return this.request<Project>(`/projects/${id}`);
-  }
-
-  async getExperience(): Promise<ApiResponse<Experience[]>> {
-    return this.request<Experience[]>('/experience/');
-  }
-
-  async getExperienceEntry(id: number): Promise<ApiResponse<Experience>> {
-    return this.request<Experience>(`/experience/${id}`);
-  }
-
-  async createProject(
-    project: Omit<Project, 'id' | 'created_at'>
-  ): Promise<ApiResponse<Project>> {
-    return this.request<Project>('/projects', {
-      method: 'POST',
-      body: project,
-    });
-  }
-
-  async updateProject(
-    id: number,
-    project: Partial<Project>
-  ): Promise<ApiResponse<Project>> {
-    return this.request<Project>(`/projects/${id}`, {
-      method: 'PUT',
-      body: project,
-    });
-  }
-
-  async deleteProject(id: number): Promise<ApiResponse<{ message: string }>> {
-    return this.request<{ message: string }>(`/projects/${id}`, {
-      method: 'DELETE',
-    });
-  }
-
-  async createExperience(
-    experience: Omit<Experience, 'id' | 'created_at'>
-  ): Promise<ApiResponse<Experience>> {
-    return this.request<Experience>('/experience', {
-      method: 'POST',
-      body: experience,
-    });
-  }
-
-  async updateExperience(
-    id: number,
-    experience: Partial<Experience>
-  ): Promise<ApiResponse<Experience>> {
-    return this.request<Experience>(`/experience/${id}`, {
-      method: 'PUT',
-      body: experience,
-    });
-  }
-
-  async deleteExperience(
-    id: number
-  ): Promise<ApiResponse<{ message: string }>> {
-    return this.request<{ message: string }>(`/experience/${id}`, {
-      method: 'DELETE',
-    });
-  }
-
-  async getBlogPosts(): Promise<ApiResponse<BlogPost[]>> {
-    return this.request<BlogPost[]>('/posts/');
-  }
-
-  async getAdminBlogPosts(): Promise<ApiResponse<BlogPost[]>> {
-    return this.request<BlogPost[]>('/posts/admin');
-  }
-
-  async getBlogPost(id: number): Promise<ApiResponse<BlogPost>> {
-    return this.request<BlogPost>(`/posts/${id}`);
-  }
-
-  async getBlogPostBySlug(slug: string): Promise<ApiResponse<BlogPost>> {
-    return this.request<BlogPost>(`/posts/${slug}`);
-  }
-
-  async createBlogPost(
-    post: Omit<BlogPost, 'id' | 'created_at' | 'updated_at'>
-  ): Promise<ApiResponse<BlogPost>> {
-    return this.request<BlogPost>('/posts/admin', {
-      method: 'POST',
-      body: post,
-    });
-  }
-
-  async updateBlogPost(
-    id: number,
-    post: Partial<BlogPost>
-  ): Promise<ApiResponse<BlogPost>> {
-    return this.request<BlogPost>(`/posts/admin/${id}`, {
-      method: 'PUT',
-      body: post,
-    });
-  }
-
-  async deleteBlogPost(id: number): Promise<ApiResponse<{ message: string }>> {
-    return this.request<{ message: string }>(`/posts/admin/${id}`, {
-      method: 'DELETE',
-    });
-  }
-
-  async publishBlogPost(id: number): Promise<ApiResponse<{ message: string }>> {
-    return this.request<{ message: string }>(`/posts/admin/${id}/publish`, {
-      method: 'POST',
-    });
-  }
-
-  async getCategories(): Promise<ApiResponse<Category[]>> {
-    return this.request<Category[]>('/posts/categories');
-  }
-
-  async createCategory(
-    category: Omit<Category, 'id'>
-  ): Promise<ApiResponse<Category>> {
-    return this.request<Category>('/posts/categories', {
-      method: 'POST',
-      body: category,
-    });
-  }
-
-  async updateCategory(
-    id: number,
-    category: Partial<Category>
-  ): Promise<ApiResponse<Category>> {
-    return this.request<Category>(`/posts/categories/${id}`, {
-      method: 'PUT',
-      body: category,
-    });
-  }
-
-  async deleteCategory(id: number): Promise<ApiResponse<{ message: string }>> {
-    return this.request<{ message: string }>(`/posts/categories/${id}`, {
-      method: 'DELETE',
-    });
-  }
-
-  async getSkills(): Promise<ApiResponse<Skill[]>> {
-    return this.request<Skill[]>('/skills/');
-  }
-
-  async createSkill(
-    skill: Omit<Skill, 'id' | 'created_at'>
-  ): Promise<ApiResponse<Skill>> {
-    return this.request<Skill>('/skills', {
-      method: 'POST',
-      body: skill,
-    });
-  }
-
-  async updateSkill(
-    id: number,
-    skill: Partial<Skill>
-  ): Promise<ApiResponse<Skill>> {
-    return this.request<Skill>(`/skills/${id}`, {
-      method: 'PUT',
-      body: skill,
-    });
-  }
-
-  async deleteSkill(id: number): Promise<ApiResponse<{ message: string }>> {
-    return this.request<{ message: string }>(`/skills/${id}`, {
-      method: 'DELETE',
-    });
-  }
-
-  async getEducation(): Promise<ApiResponse<Education[]>> {
-    return this.request<Education[]>('/education/');
-  }
-
-  async createEducation(
-    entry: Omit<Education, 'id' | 'created_at'>
-  ): Promise<ApiResponse<Education>> {
-    return this.request<Education>('/education', {
-      method: 'POST',
-      body: entry,
-    });
-  }
-
-  async updateEducation(
-    id: number,
-    entry: Partial<Education>
-  ): Promise<ApiResponse<Education>> {
-    return this.request<Education>(`/education/${id}`, {
-      method: 'PUT',
-      body: entry,
-    });
-  }
-
-  async deleteEducation(id: number): Promise<ApiResponse<{ message: string }>> {
-    return this.request<{ message: string }>(`/education/${id}`, {
-      method: 'DELETE',
-    });
-  }
-
-  async getCertifications(): Promise<ApiResponse<Certification[]>> {
-    return this.request<Certification[]>('/certifications/');
-  }
-
-  async createCertification(
-    entry: Omit<Certification, 'id' | 'created_at'>
-  ): Promise<ApiResponse<Certification>> {
-    return this.request<Certification>('/certifications', {
-      method: 'POST',
-      body: entry,
-    });
-  }
-
-  async updateCertification(
-    id: number,
-    entry: Partial<Certification>
-  ): Promise<ApiResponse<Certification>> {
-    return this.request<Certification>(`/certifications/${id}`, {
-      method: 'PUT',
-      body: entry,
-    });
-  }
-
-  async deleteCertification(
-    id: number
-  ): Promise<ApiResponse<{ message: string }>> {
-    return this.request<{ message: string }>(`/certifications/${id}`, {
-      method: 'DELETE',
-    });
-  }
-
-  async getSiteContent(): Promise<ApiResponse<SiteContent>> {
-    return this.request<SiteContent>('/site-content/');
-  }
-
-  async updateSiteContent(
-    patch: Partial<SiteContent>
-  ): Promise<ApiResponse<SiteContent>> {
-    return this.request<SiteContent>('/site-content', {
-      method: 'PUT',
-      body: patch,
-    });
-  }
-
   /** Live public system figures, cached server side for about 15 minutes. */
   async getPublicFigures(): Promise<ApiResponse<PublicFiguresResponse>> {
-    return this.request<PublicFiguresResponse>('/public/figures');
+    return this.client.get<PublicFiguresResponse>('/public/figures');
   }
 }
 

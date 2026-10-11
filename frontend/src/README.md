@@ -77,7 +77,7 @@ Import components and utilities using the barrel exports:
 
 ```typescript
 // Import components
-import { Button, Card } from './components/common';
+import { ErrorBoundary } from './components/common';
 import { Header, Footer } from './components/layout';
 import { Hero } from './components/sections';
 
@@ -88,7 +88,7 @@ import { useScrollPosition, useLocalStorage } from './hooks';
 import { validateEmail } from './utils';
 
 // Import types
-import { ButtonProps, Project } from './types';
+import { Project } from './types';
 ```
 
 ## Development Guidelines

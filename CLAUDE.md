@@ -4,7 +4,7 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
 
 ## Project Overview
 
-WebbPulse is a personal portfolio website with a blog and admin panel. It is a
+WebbPulse is a personal portfolio website with a blog. It is a
 monorepo with a React/TypeScript frontend and four per-domain FastAPI/Python
 Lambdas.
 
@@ -69,33 +69,23 @@ ruff format --check app tests
 
 ### Frontend
 
-- **Pages**: `/` (portfolio), `/blog`, `/blog/:slug`, `/privacy`,
-  `/verify-email`, `/reset-password`, `/admin`
+- **Pages**: `/` (portfolio), `/blog`, `/blog/:slug`, `/privacy`. Any other
+  path, `/admin` included, renders the 404 page. There is no admin panel and no
+  sign-in in the frontend
 - **Public content**: every public page reads `src/content/`, typed data files
   plus markdown (`blog/*.md` posts, `work/<slug>.md` case studies) loaded at
   build time with `import.meta.glob`. Edit content through a PR; public routes
   make no `/api/v1` content calls, and `SITE_CONTENT_DEFAULTS` parity no longer
   applies to the frontend
-- **API layer**: Admin and auth calls go through `src/services/api.ts` (`apiService`). The
-  transport is `@webbpulse/api-client` and startup configuration is
-  `@webbpulse/config`. That client rejects on a non-2xx, so `ApiService` adapts
-  it back into the `{ data, error }` envelope every page component reads; the
-  envelope is Portfolio's own and is unchanged
-- **Shared packages**: `@webbpulse/api-client`, `auth`, `config`, `discovery`,
-  `qrcode`, `tsconfig` and `eslint-config` resolve from CodeArtifact through
-  `frontend/.npmrc`, all pinned to `^0.10.2`. Run `aws codeartifact login`
-  before installing; see `frontend/README.md`
-- **Auth**: identity only, with no build time switch. `AuthClient` from
-  `@webbpulse/auth` holds a short-lived access token in memory and refreshes it
-  from an httpOnly cookie, and `ApiService` always constructs one. The mode was
-  once chosen by `VITE_AUTH_MODE`, which defaulted to `bearer`; the deploy
-  stopped forwarding it in `ce34362` and silently shipped bearer bundles against
-  the 24 JWT enforced admin route keys. The switch was removed rather than
-  repaired, so `authMode.ts` and `bearerTokenStore.ts` no longer exist and
-  `getAuthClient`/`getIdentityClient` never return null. A unit test
-  (`built auth mode` in `src/services/api.test.ts`) and a `deploy-frontend.yml`
-  step both fail if `VITE_AUTH_MODE` or `POST /api/v1/admin/login` comes back.
-  The backend's legacy login route stays mounted and unused until a later PR
+- **API layer**: `src/services/api.ts` (`apiService`) holds only the anonymous
+  `getPublicFigures()` read. The transport is `@webbpulse/api-client` and
+  startup configuration is `@webbpulse/config`. That client rejects on a
+  non-2xx, so `ApiService` adapts it back into Portfolio's own `{ data, error }`
+  envelope. The content types stay in `api.ts` because `src/content/types.ts`
+  imports them
+- **Shared packages**: `@webbpulse/api-client`, `config`, `tsconfig` and
+  `eslint-config` resolve from CodeArtifact through `frontend/.npmrc`. Run
+  `aws codeartifact login` before installing; see `frontend/README.md`
 - **Dev proxy**: Vite proxies `/api/*` to `http://localhost:8000` in local dev; a
   production build reads `VITE_API_BASE_URL` and falls back to
   `https://api.portfolio.webbpulse.com/api/v1`
