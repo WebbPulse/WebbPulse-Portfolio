@@ -101,7 +101,10 @@ const Footer: React.FC = () => {
           <div
             className={`${cell} flex flex-wrap items-center justify-between gap-3 md:col-span-12`}
           >
-            <p className="font-mono text-xs text-ink-muted">
+            <p
+              className="font-mono text-xs text-ink-muted"
+              suppressHydrationWarning
+            >
               © {currentYear} Tyler Webb
             </p>
             <Link

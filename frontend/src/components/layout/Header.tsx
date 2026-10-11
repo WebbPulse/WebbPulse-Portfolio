@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { NavigationItem } from '../../types';
-import { useTheme } from '../../hooks';
+import { useClientValue, useTheme } from '../../hooks';
 import { CommandMenu } from './CommandMenu';
 import { SITE_NAV } from './nav';
 
@@ -30,11 +30,15 @@ const SiteMark: React.FC = () => (
   </svg>
 );
 
-/** The sun and moon glyphs for the theme switch. */
-const ThemeGlyph: React.FC<{ dark: boolean }> = ({ dark }) =>
-  dark ? (
+/**
+ * The sun and moon glyphs for the theme switch. Both are drawn and the
+ * document theme picks one, so the prerendered button never shows the wrong
+ * glyph before hydration.
+ */
+const ThemeGlyph: React.FC = () => (
+  <>
     <svg
-      className="h-4 w-4"
+      className="hidden h-4 w-4 [[data-theme=dark]_&]:block"
       viewBox="0 0 16 16"
       fill="none"
       stroke="currentColor"
@@ -44,9 +48,8 @@ const ThemeGlyph: React.FC<{ dark: boolean }> = ({ dark }) =>
       <circle cx="8" cy="8" r="3" />
       <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.4 1.4M11.6 11.6 13 13M3 13l1.4-1.4M11.6 4.4 13 3" />
     </svg>
-  ) : (
     <svg
-      className="h-4 w-4"
+      className="h-4 w-4 [[data-theme=dark]_&]:hidden"
       viewBox="0 0 16 16"
       fill="none"
       stroke="currentColor"
@@ -55,7 +58,8 @@ const ThemeGlyph: React.FC<{ dark: boolean }> = ({ dark }) =>
     >
       <path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7Z" />
     </svg>
-  );
+  </>
+);
 
 /**
  * The sticky site header: name and role, section navigation, the theme switch
@@ -65,7 +69,7 @@ const Header: React.FC<HeaderProps> = ({ navigationItems = SITE_NAV }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const { theme, toggleTheme } = useTheme();
-  const [apple] = useState(isApplePlatform);
+  const apple = useClientValue(isApplePlatform, false);
 
   const closeMenu = useCallback(() => setMenuOpen(false), []);
 
@@ -181,7 +185,7 @@ const Header: React.FC<HeaderProps> = ({ navigationItems = SITE_NAV }) => {
             title={`Switch to ${nextTheme} theme`}
             className="flex h-8 w-8 items-center justify-center border border-line text-ink-muted transition-colors hover:border-line-strong hover:text-ink"
           >
-            <ThemeGlyph dark={theme === 'dark'} />
+            <ThemeGlyph />
           </button>
 
           <button

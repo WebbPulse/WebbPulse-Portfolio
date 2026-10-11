@@ -264,6 +264,7 @@ export const CaseStudy: React.FC = () => {
   useDocumentMeta({
     title: view ? view.title : 'Case study not found',
     description: view?.summary || undefined,
+    noindex: !view,
   });
 
   useLayoutEffect(() => {

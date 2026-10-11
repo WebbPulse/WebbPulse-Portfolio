@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { PublicShell } from '../layout';
 import { getPostBySlug, getSiteContent } from '../../content';
-import { useDocumentMeta } from '../../hooks';
+import { useClientValue, useDocumentMeta } from '../../hooks';
 import { processMarkdown, extractHeadings } from '../../utils/markdown';
 import { MonoLabel, Sheet } from '../drawing';
 
@@ -12,7 +12,12 @@ const longDate = (iso: string): string =>
     year: 'numeric',
     month: 'long',
     day: 'numeric',
+    timeZone: 'UTC',
   });
+
+/** True when the browser offers the native share sheet. */
+const browserCanShare = (): boolean =>
+  typeof navigator !== 'undefined' && 'share' in navigator;
 
 /** A centred message in place of a post that does not exist. */
 const Placeholder: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -30,7 +35,7 @@ const Placeholder: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 /** Share and copy link controls for the current page. */
 const ShareControls: React.FC<{ title: string }> = ({ title }) => {
   const [copied, setCopied] = useState(false);
-  const canShare = typeof navigator !== 'undefined' && 'share' in navigator;
+  const canShare = useClientValue(browserCanShare, false);
 
   return (
     <div className="flex gap-2">
@@ -73,6 +78,7 @@ export const BlogPost: React.FC = () => {
   useDocumentMeta({
     title: post ? post.title : 'Post not found',
     description: post?.excerpt || undefined,
+    noindex: !post,
   });
 
   useEffect(() => {

@@ -77,6 +77,16 @@ ruff format --check app tests
   build time with `import.meta.glob`. Edit content through a PR; public routes
   make no `/api/v1` content calls, and `SITE_CONTENT_DEFAULTS` parity no longer
   applies to the frontend
+- **Prerender**: `npm run build` also builds `src/entry-server.tsx` for SSR and
+  runs `scripts/prerender.js`, which writes `dist/<route>/index.html` for `/`,
+  `/blog`, `/privacy`, every `/work/<slug>` and published post, plus
+  `dist/404.html` and `dist/sitemap.xml`, each with head tags from
+  `useDocumentMeta`. The client bundle stays: `main.tsx` hydrates when the
+  root's `data-prerendered` path matches the URL and renders fresh otherwise.
+  Browser-only values (theme, reduced motion, platform) go through
+  `useSyncExternalStore` with a server snapshot so hydration matches. The
+  `spa-frontend` `viewer_request_function` maps `/work/x` to
+  `/work/x/index.html`; with the staging gate it runs inside the gate's function
 - **API layer**: `src/services/api.ts` (`apiService`) holds only the anonymous
   `getPublicFigures()` read. The transport is `@webbpulse/api-client` and
   startup configuration is `@webbpulse/config`. That client rejects on a
