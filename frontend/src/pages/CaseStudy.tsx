@@ -1,4 +1,4 @@
-import React, { useLayoutEffect } from 'react';
+import React, { useLayoutEffect, useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { PublicShell } from '../components/layout';
 import { MonoLabel, Sheet } from '../components/drawing';
@@ -73,13 +73,21 @@ const MissingCaseStudy: React.FC = () => (
 /** The man page body for one resolved case study. */
 const CaseStudyBody: React.FC<{ view: CaseStudyView }> = ({ view }) => {
   const name = manName(view.slug);
-  const headings = view.hasWriteUp
-    ? extractHeadings(view.body).filter((h) => h.level === 2)
-    : [];
-  const html = view.hasWriteUp
-    ? processMarkdown(view.body, { styled: false })
-    : '';
-  const others = ALL_CASE_STUDIES.filter((entry) => entry.slug !== view.slug);
+  const headings = useMemo(
+    () =>
+      view.hasWriteUp
+        ? extractHeadings(view.body).filter((h) => h.level === 2)
+        : [],
+    [view.hasWriteUp, view.body]
+  );
+  const html = useMemo(
+    () => (view.hasWriteUp ? processMarkdown(view.body, { styled: false }) : ''),
+    [view.hasWriteUp, view.body]
+  );
+  const others = useMemo(
+    () => ALL_CASE_STUDIES.filter((entry) => entry.slug !== view.slug),
+    [view.slug]
+  );
   const backState = view.mapNodeId ? { focusNode: view.mapNodeId } : null;
 
   return (
@@ -258,7 +266,7 @@ export const CaseStudy: React.FC = () => {
   });
 
   useLayoutEffect(() => {
-    window.scrollTo(0, 0);
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   }, [slug]);
 
   return (
