@@ -12,18 +12,19 @@ export const Blog: React.FC = () => {
 
   return (
     <section
-      id="blog"
+      id="writing"
       aria-labelledby="blog-title"
       className="border-b border-line py-20 sm:py-28"
     >
       <Sheet>
         <SectionHeading
-          index="06"
+          index="05"
           label="Writing"
           id="blog-title"
           title="Notes and articles"
         >
-          Thoughts on engineering, infrastructure, and adjacent topics.
+          Long-form notes on the systems on the map and what building them
+          taught me.
         </SectionHeading>
 
         {published.length === 0 && (

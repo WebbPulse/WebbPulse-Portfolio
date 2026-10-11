@@ -1,5 +1,12 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { Home, Privacy, VerifyEmail, ResetPassword, NotFound } from './pages';
+import {
+  CaseStudy,
+  Home,
+  Privacy,
+  VerifyEmail,
+  ResetPassword,
+  NotFound,
+} from './pages';
 import { UnderConstruction } from './pages/UnderConstruction';
 import { ErrorBoundary } from './components/common';
 import { AdminPanel } from './components/admin/AdminPanel';
@@ -26,6 +33,7 @@ function App() {
               <Route path="/" element={<Home />} />
               <Route path="/blog" element={<BlogList />} />
               <Route path="/blog/:slug" element={<BlogPost />} />
+              <Route path="/work/:slug" element={<CaseStudy />} />
             </>
           )}
           <Route path="/admin" element={<AdminPanel />} />

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { PublicShell } from '../layout';
 import { getCategories, getPublishedPosts } from '../../content';
+import { useDocumentMeta } from '../../hooks';
 import { MonoLabel, Sheet } from '../drawing';
 import { PostRow } from './PostRow';
 
@@ -27,6 +28,10 @@ const FilterChip: React.FC<{
 
 /** The full blog index at its own route. */
 export const BlogList: React.FC = () => {
+  useDocumentMeta({
+    title: 'Writing',
+    description: 'Posts by Tyler Webb on the systems he builds and runs.',
+  });
   const blogPosts = getPublishedPosts();
   const categories = getCategories();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);

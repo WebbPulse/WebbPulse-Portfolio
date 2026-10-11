@@ -8,7 +8,7 @@ import type {
 } from '../../content';
 import { MonoLabel, SectionHeading, Sheet } from '../drawing';
 
-/** One role as a row of the revision log: period on the left, notes on the right. */
+/** One role on the timeline: period beside the spine, notes to its right. */
 const ExperienceRow: React.FC<{ item: ExperienceType; index: number }> = ({
   item,
   index,
@@ -20,9 +20,13 @@ const ExperienceRow: React.FC<{ item: ExperienceType; index: number }> = ({
   return (
     <li
       ref={ref}
-      className={`grid gap-4 border-b border-line py-8 md:grid-cols-12 md:gap-8 ${isInView ? 'motion-safe:animate-fade-in-up' : 'motion-safe:opacity-0'}`}
+      className={`grid md:grid-cols-12 ${isInView ? 'motion-safe:animate-fade-in-up' : 'motion-safe:opacity-0'}`}
     >
-      <div className="md:col-span-3">
+      <div className="relative pt-8 md:col-span-3 md:border-r md:border-line-strong md:py-8 md:pr-8">
+        <span
+          className={`absolute -right-[5px] top-[2.35rem] hidden h-[9px] w-[9px] border md:block ${index === 0 ? 'border-accent bg-accent' : 'border-line-strong bg-paper'}`}
+          aria-hidden="true"
+        />
         <div className="flex items-center gap-3 md:block">
           <span className="font-mono text-xs text-accent">
             R{String(index + 1).padStart(2, '0')}
@@ -32,7 +36,7 @@ const ExperienceRow: React.FC<{ item: ExperienceType; index: number }> = ({
         <p className="mt-1 text-sm text-ink-muted">{item.location}</p>
       </div>
 
-      <div className="md:col-span-9">
+      <div className="border-b border-line pb-8 pt-3 md:col-span-9 md:py-8 md:pl-8">
         <h3 className="text-xl font-semibold tracking-tight text-ink">
           {item.title}
         </h3>
@@ -145,20 +149,20 @@ export const Experience: React.FC = () => {
     <section
       id="experience"
       aria-labelledby="experience-title"
-      className="border-b border-line py-20 sm:py-28"
+      className="border-b border-line py-20 sm:py-24"
     >
       <Sheet>
         <SectionHeading
-          index="05"
+          index="03"
           label="Experience"
           id="experience-title"
-          title="Where I've worked"
+          title="Timeline"
         >
-          Roles, schools, and certs that shaped where I am.
+          Roles, schools and certifications, newest first.
         </SectionHeading>
 
         <div className="border-t border-line">
-          <ol>
+          <ol aria-label="Roles">
             {experience.map((item, idx) => (
               <ExperienceRow key={item.id} item={item} index={idx} />
             ))}
