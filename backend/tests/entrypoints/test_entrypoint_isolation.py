@@ -76,18 +76,58 @@ def test_an_entrypoint_reports_its_own_service_name(domain, probes):
 
 @pytest.mark.parametrize("domain", sorted(DOMAIN_NAMES))
 def test_an_entrypoint_exposes_the_runtime_wiring(domain):
-    """`main` is what the image runs, and it wires the three shared helpers."""
+    """`main` is what the image runs, and it comes from the shared `domain_entrypoint`."""
     module = __import__(f"app.domains.{domain}.entrypoint", fromlist=["main"])
     source = Path(module.__file__).read_text()
-    for helper in ("configure_logging", "configure_tracing", "run_uvicorn"):
-        assert helper in source, f"{domain} entrypoint does not call {helper}"
+    assert "domain_entrypoint" in source, f"{domain} entrypoint does not bind domain_entrypoint"
     assert callable(module.main)
     assert callable(module.build_app)
 
 
 @pytest.mark.parametrize("domain", sorted(DOMAIN_NAMES))
-def test_an_entrypoint_leaves_instrumentation_to_create_app(domain):
-    """`create_app` instruments every app it builds, so a second call only warns."""
+def test_main_runs_logging_tracing_and_the_check_before_serving(domain, monkeypatch):
+    """The cold start order: logging, tracing, the secrets check, then the build and serve."""
+    import webbpulse.composition as composition
+
+    from app.common.composition import wiring
+
+    module = __import__(f"app.domains.{domain}.entrypoint", fromlist=["main"])
+    calls = []
+
+    def fake_logging(settings, service=None):
+        """Record the logging call."""
+        calls.append(("logging", service))
+
+    def fake_tracing(resolved, settings):
+        """Record the tracing call."""
+        calls.append(("tracing", resolved.name))
+
+    def fake_check(domains, settings=None):
+        """Record the secrets check."""
+        calls.append(("check", domains[0].name))
+
+    def fake_serve(app):
+        """Record that a built app was served."""
+        calls.append(("serve", len(app.routes) > 0))
+
+    monkeypatch.setattr(composition, "configure_logging", fake_logging)
+    monkeypatch.setattr(composition, "configure_tracing", fake_tracing)
+    monkeypatch.setattr(wiring, "check_required_secrets", fake_check)
+    monkeypatch.setattr("webbpulse.lambda_entry.run_uvicorn", fake_serve)
+
+    module.main()
+
+    assert calls == [
+        ("logging", f"webbpulse-portfolio-{domain}"),
+        ("tracing", domain),
+        ("check", domain),
+        ("serve", True),
+    ]
+
+
+@pytest.mark.parametrize("domain", sorted(DOMAIN_NAMES))
+def test_an_entrypoint_leaves_instrumentation_to_the_builder(domain):
+    """The shared builder instruments every app it builds, so a second call only warns."""
     source = (BACKEND / "app" / "domains" / domain / ENTRYPOINT).read_text()
     assert "instrument_fastapi" not in source, f"{domain} entrypoint instruments an already instrumented app"
 

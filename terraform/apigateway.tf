@@ -59,7 +59,7 @@ locals {
 module "api" {
   source = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/http-api"
 
-  version = "~> 2.9"
+  version = "~> 2.39"
 
   name = "${local.prefix}-api"
 

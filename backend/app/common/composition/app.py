@@ -3,30 +3,46 @@
 What the test suite and a local `uvicorn app.common.composition.app:app` run against.
 Nothing deploys it; the four domain functions serve every route in production.
 
-Both router kinds are mounted, exactly as `build_domain_app` mounts them for one
-domain: the prefixed routers under the domain's prefix and the routers that declare
-their own full paths at the root. The identity package's routes are the second kind,
-so a root that mounted only the first would serve no login at all.
+It goes through the same `wiring.build` as each function, so both router kinds are
+mounted exactly as they are for one domain: the prefixed routers under the domain's
+prefix and the routers that declare their own full paths at the root. The identity
+package's routes are the second kind, so a root that mounted only the first would
+serve no login at all.
 
 In the local environment the gateway's JWT authorizer is stood in for by the shared
-package's `LocalAuthorizerMiddleware`, since without it a valid token reaches every
-admin route carrying no verified claims and each one answers 401.
+`local_authorizer`, since without it a valid token reaches every admin route carrying
+no verified claims and each one answers 401.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Sequence
 
-from webbpulse.http import MONOLITH_DOMAIN, DomainHeaderMiddleware, TrailingSlashMiddleware, create_app
-from webbpulse.identity import LOCAL_ENVIRONMENT, IdentitySettings, LocalAuthorizerMiddleware
+from webbpulse.composition import Domain, local_authorizer
+from webbpulse.http import MONOLITH_DOMAIN
 
-from ..core.middleware import SeedMiddleware
-from ..version import VERSION
 from .settings import Settings, get_settings
-from .wiring import DOMAINS, ERROR_ENVELOPE, check_required_secrets
+from .wiring import DOMAINS, build, check_required_secrets
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from fastapi import FastAPI
+
+
+def _build_identity_settings(_settings: Settings):
+    """The shared identity settings, read from the `IDENTITY_` environment."""
+    from webbpulse.identity import IdentitySettings
+
+    return IdentitySettings()  # pyright: ignore[reportCallIssue]
+
+
+def _local_authorizer(settings: Settings):
+    """A hook standing the gateway's authorizer up in process, on a local stack only."""
+
+    def hook(app: "FastAPI", domains: Sequence[Domain]) -> None:
+        """Add `LocalAuthorizerMiddleware` when this is a local stack with an issuer."""
+        local_authorizer(app, settings, build_identity_settings=_build_identity_settings)
+
+    return hook
 
 
 def build_app(settings: Settings | None = None) -> "FastAPI":
@@ -39,39 +55,17 @@ def build_app(settings: Settings | None = None) -> "FastAPI":
 
     check_required_secrets(DOMAINS.values(), settings=resolved)
 
-    app = create_app(
-        title=resolved.APP_NAME,
-        version=VERSION,
-        service_name="webbpulse-portfolio",
+    return build(
+        list(DOMAINS.values()),
         settings=resolved,
+        domain_header=MONOLITH_DOMAIN,
+        seeds=None,
+        before_routing=[_local_authorizer(resolved)],
+        title=resolved.APP_NAME,
+        service_name="webbpulse-portfolio",
         include_health=False,
         description="Blog API for Portfolio Website",
-        redirect_slashes=False,
-        error_envelope=ERROR_ENVELOPE,
     )
-
-    for domain in DOMAINS.values():
-        for router in domain.load_routers():
-            app.include_router(
-                router,
-                prefix=domain.router_prefix,
-                tags=list(domain.router_tags),
-            )
-        if domain.load_unprefixed_routers is None:
-            continue
-        for router in domain.load_unprefixed_routers(resolved):
-            app.include_router(router)
-
-    app.add_middleware(SeedMiddleware)
-    if resolved.ENVIRONMENT.strip().lower() == LOCAL_ENVIRONMENT and resolved.IDENTITY_ISSUER:
-        app.add_middleware(
-            LocalAuthorizerMiddleware,
-            settings=IdentitySettings(),  # pyright: ignore[reportCallIssue]
-            environment=resolved.ENVIRONMENT,
-        )
-    app.add_middleware(TrailingSlashMiddleware, router=app.router)
-    app.add_middleware(DomainHeaderMiddleware, domain=MONOLITH_DOMAIN)
-    return app
 
 
 app = build_app()
