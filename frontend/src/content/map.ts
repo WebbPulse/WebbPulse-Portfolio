@@ -90,7 +90,7 @@ export const MAP_NODES: MapNode[] = [
   {
     id: 'webbpulse-typescript',
     label: '@webbpulse/*',
-    kind: 'TypeScript packages',
+    kind: 'TS packages',
     tier: 'shared',
     x: 500,
     y: 300,
@@ -101,7 +101,7 @@ export const MAP_NODES: MapNode[] = [
   {
     id: 'platform-modules',
     label: 'platform-modules',
-    kind: 'Terraform modules',
+    kind: 'TF modules',
     tier: 'shared',
     x: 780,
     y: 300,
@@ -122,7 +122,7 @@ export const MAP_NODES: MapNode[] = [
   {
     id: 'aws-org',
     label: 'AWS organisation',
-    kind: 'Accounts and guardrails',
+    kind: 'Accounts, guardrails',
     tier: 'aws',
     x: 700,
     y: 510,
@@ -213,7 +213,7 @@ export function nearestInDirection(
 }
 
 /** Half the width and height of a node box, in map units. */
-export const NODE_HALF = { width: 105, height: 34 } as const;
+export const NODE_HALF = { width: 110, height: 44 } as const;
 
 /** Where an edge is drawn: its path, both endpoints and its midpoint. */
 export interface EdgeGeometry {
