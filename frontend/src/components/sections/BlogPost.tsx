@@ -1,19 +1,66 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Header, Footer } from '../layout';
+import { PublicShell } from '../layout';
 import { getPostBySlug, getSiteContent } from '../../content';
-import type { NavigationItem } from '../../types';
 import { processMarkdown, extractHeadings } from '../../utils/markdown';
+import { MonoLabel, Sheet } from '../drawing';
 
-const NAV: NavigationItem[] = [
-  { label: 'Home', href: '/' },
-  { label: 'About', href: '/#about' },
-  { label: 'Skills', href: '/#skills' },
-  { label: 'Projects', href: '/#projects' },
-  { label: 'Experience', href: '/#experience' },
-  { label: 'Blog', href: '/blog' },
-  { label: 'Contact', href: '/#contact' },
-];
+/** A date in long form. */
+const longDate = (iso: string): string =>
+  new Date(iso).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+
+/** A centred message in place of a post that does not exist. */
+const Placeholder: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <PublicShell>
+    <main
+      id="main"
+      className="flex flex-1 items-center justify-center px-4 py-24"
+      data-testid="page-blog-post"
+    >
+      <div className="max-w-md text-center">{children}</div>
+    </main>
+  </PublicShell>
+);
+
+/** Share and copy link controls for the current page. */
+const ShareControls: React.FC<{ title: string }> = ({ title }) => {
+  const [copied, setCopied] = useState(false);
+  const canShare = typeof navigator !== 'undefined' && 'share' in navigator;
+
+  return (
+    <div className="flex gap-2">
+      {canShare && (
+        <button
+          type="button"
+          onClick={() => {
+            void navigator
+              .share({ title, url: window.location.href })
+              .catch(() => {});
+          }}
+          className="flex-1 border border-line-strong px-3 py-2 text-sm text-ink transition-colors hover:border-ink"
+        >
+          Share
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={() => {
+          void navigator.clipboard
+            ?.writeText(window.location.href)
+            .then(() => setCopied(true))
+            .catch(() => {});
+        }}
+        className="flex-1 border border-line-strong px-3 py-2 text-sm text-ink transition-colors hover:border-ink"
+      >
+        <span aria-live="polite">{copied ? 'Copied' : 'Copy link'}</span>
+      </button>
+    </div>
+  );
+};
 
 /** One blog post, resolved from the slug in the route. */
 export const BlogPost: React.FC = () => {
@@ -25,10 +72,11 @@ export const BlogPost: React.FC = () => {
 
   useEffect(() => {
     const onScroll = () => {
-      const top = window.scrollY;
       const docHeight =
         document.documentElement.scrollHeight - window.innerHeight;
-      setReadingProgress(Math.min((top / docHeight) * 100, 100));
+      setReadingProgress(
+        docHeight > 0 ? Math.min((window.scrollY / docHeight) * 100, 100) : 0
+      );
     };
     window.addEventListener('scroll', onScroll, { passive: true });
     onScroll();
@@ -37,229 +85,176 @@ export const BlogPost: React.FC = () => {
 
   if (!post) {
     return (
-      <div className="min-h-screen">
-        <Header navigationItems={NAV} />
-        <main className="flex items-center justify-center min-h-[60vh]">
-          <div className="text-center max-w-md mx-auto px-6">
-            <h1 className="font-display text-2xl font-bold text-surface-50 mb-4">
-              Post not found
-            </h1>
-            <p className="text-surface-300 mb-6">
-              The post you're looking for doesn't exist (or hasn't been
-              published yet).
-            </p>
-            <Link
-              to="/blog"
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-gradient-accent text-surface-50 shadow-glow-violet"
-              style={{ backgroundSize: '200% 200%' }}
-            >
-              ← Back to blog
-            </Link>
-          </div>
-        </main>
-        <Footer />
-      </div>
+      <Placeholder>
+        <MonoLabel as="p">Not found</MonoLabel>
+        <h1 className="mt-3 text-3xl font-semibold tracking-tight text-ink">
+          Post not found
+        </h1>
+        <p className="mt-4 text-ink-muted">
+          The post you&apos;re looking for doesn&apos;t exist or hasn&apos;t
+          been published yet.
+        </p>
+        <Link to="/blog" className="ink-link mt-8 inline-block text-sm">
+          <span aria-hidden="true">← </span>Back to blog
+        </Link>
+      </Placeholder>
     );
   }
 
   const headings = extractHeadings(post.content);
-  const processed = processMarkdown(post.content);
+  const processed = processMarkdown(post.content, { styled: false });
   const profileImage = site.profile_image_url ?? '/headshot.jpg';
 
   return (
-    <div className="min-h-screen">
+    <PublicShell>
       <div
-        className="fixed top-0 left-0 right-0 h-1 bg-surface-900/80 z-50"
+        className="fixed inset-x-0 top-0 z-[60] h-0.5 bg-transparent"
         aria-hidden="true"
       >
         <div
-          className="h-full bg-gradient-accent transition-all duration-150 ease-out"
-          style={{ width: `${readingProgress}%`, backgroundSize: '200% 200%' }}
+          className="h-full origin-left bg-accent"
+          style={{ transform: `scaleX(${readingProgress / 100})` }}
         />
       </div>
 
-      <Header navigationItems={NAV} />
-      <main
-        className="relative py-20 sm:py-28 overflow-hidden"
-        data-testid="page-blog-post"
-      >
-        <div className="absolute inset-0 bg-mesh-1 opacity-30 pointer-events-none" />
-        <div className="relative z-10 max-w-6xl mx-auto px-6 sm:px-8">
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-10">
-            <article className="lg:col-span-3">
-              <header className="mb-10">
-                <div className="flex flex-wrap items-center gap-3 mb-6">
+      <main id="main" className="flex-1" data-testid="page-blog-post">
+        <Sheet className="py-14 sm:py-20">
+          <div className="grid grid-cols-1 gap-12 lg:grid-cols-12">
+            <article className="min-w-0 lg:col-span-8">
+              <header className="border-b border-line pb-8">
+                <Link to="/blog" className="ink-link text-sm">
+                  <span aria-hidden="true">← </span>All posts
+                </Link>
+                <div className="mt-8 flex flex-wrap items-center gap-3">
                   {post.category && (
-                    <span
-                      className="px-3 py-1 text-xs rounded-full bg-gradient-accent text-surface-50 font-medium"
-                      style={{ backgroundSize: '200% 200%' }}
-                    >
+                    <MonoLabel className="text-accent">
                       {post.category.name}
-                    </span>
+                    </MonoLabel>
                   )}
-                  {post.read_time && (
-                    <span className="text-xs text-surface-400 uppercase tracking-[0.16em]">
-                      {post.read_time}
-                    </span>
+                  {post.category && post.read_time && (
+                    <span
+                      className="h-3 w-px bg-line-strong"
+                      aria-hidden="true"
+                    />
                   )}
+                  {post.read_time && <MonoLabel>{post.read_time}</MonoLabel>}
                 </div>
 
-                <h1 className="font-display text-4xl md:text-5xl lg:text-6xl font-bold text-surface-50 mb-6 leading-[1.1]">
+                <h1 className="mt-4 text-4xl font-semibold leading-[1.08] tracking-[-0.02em] text-ink md:text-5xl">
                   {post.title}
                 </h1>
 
                 {post.excerpt && (
-                  <p className="text-xl text-surface-300 mb-8 leading-relaxed">
+                  <p className="mt-5 text-xl leading-relaxed text-ink-muted">
                     {post.excerpt}
                   </p>
                 )}
 
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 text-sm text-surface-400 border-t border-surface-800 pt-6">
-                  <div className="flex items-center gap-3">
-                    <img
-                      src={profileImage}
-                      alt="Tyler Webb"
-                      className="w-9 h-9 rounded-full object-cover ring-2 ring-accent-violet-500/40"
-                    />
-                    <span className="text-surface-200">Tyler Webb</span>
-                    <span className="text-surface-600">·</span>
-                    <span>
-                      {post.published_at &&
-                        new Date(post.published_at).toLocaleDateString(
-                          'en-US',
-                          {
-                            year: 'numeric',
-                            month: 'long',
-                            day: 'numeric',
-                          }
-                        )}
-                    </span>
-                  </div>
-                  <Link
-                    to="/blog"
-                    className="inline-flex items-center px-4 py-1.5 text-xs rounded-full surface-glass surface-glass-hover text-surface-200"
-                  >
-                    ← Back to blog
-                  </Link>
+                <div className="mt-8 flex items-center gap-3 text-sm">
+                  <img
+                    src={profileImage}
+                    alt=""
+                    className="h-9 w-9 border border-line object-cover"
+                  />
+                  <span className="text-ink">Tyler Webb</span>
+                  {post.published_at && (
+                    <>
+                      <span className="text-ink-faint" aria-hidden="true">
+                        /
+                      </span>
+                      <time
+                        dateTime={post.published_at}
+                        className="font-mono text-xs text-ink-muted"
+                      >
+                        {longDate(post.published_at)}
+                      </time>
+                    </>
+                  )}
                 </div>
               </header>
 
-              <div className="prose prose-lg max-w-none">
-                <div
-                  className="text-surface-200 leading-relaxed"
-                  dangerouslySetInnerHTML={{ __html: processed }}
-                />
-              </div>
+              <div
+                className="prose prose-lg mt-10 max-w-none"
+                dangerouslySetInnerHTML={{ __html: processed }}
+              />
 
-              <footer className="mt-16 pt-8 border-t border-surface-800 flex items-center justify-between">
-                <div className="text-sm text-surface-400">
+              <footer className="mt-16 flex flex-wrap items-center justify-between gap-4 border-t border-line pt-8">
+                <div className="text-sm text-ink-muted">
                   <p>Written by Tyler Webb</p>
                   {post.updated_at && post.updated_at !== post.created_at && (
-                    <p className="text-xs mt-1">
-                      Last updated:{' '}
-                      {new Date(post.updated_at).toLocaleDateString()}
+                    <p className="mt-1 font-mono text-xs">
+                      Last updated {longDate(post.updated_at)}
                     </p>
                   )}
                 </div>
-                <Link
-                  to="/blog"
-                  className="inline-flex items-center px-5 py-2 text-sm rounded-full surface-glass surface-glass-hover text-surface-200"
-                >
-                  All posts →
+                <Link to="/blog" className="ink-link text-sm">
+                  All posts <span aria-hidden="true">→</span>
                 </Link>
               </footer>
             </article>
 
-            <aside className="lg:col-span-1">
-              <div className="sticky top-24 space-y-5">
+            <aside className="lg:col-span-4" aria-label="Post tools">
+              <div className="space-y-6 lg:sticky lg:top-24">
                 {headings.length > 0 && (
-                  <div className="surface-glass rounded-2xl p-5">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-xs uppercase tracking-[0.2em] text-accent-cyan-400 font-medium">
-                        On this page
-                      </h3>
+                  <nav
+                    aria-label="On this page"
+                    className="border border-line bg-paper-raised/70 p-5"
+                  >
+                    <div className="flex items-center justify-between">
+                      <MonoLabel as="h2">On this page</MonoLabel>
                       <button
                         type="button"
                         onClick={() => setShowToc((prev) => !prev)}
-                        className="lg:hidden text-surface-400 hover:text-surface-100"
+                        className="text-ink-muted hover:text-ink lg:hidden"
                         aria-label="Toggle table of contents"
+                        aria-expanded={showToc}
+                        aria-controls="post-toc"
                       >
                         <svg
-                          className="w-4 h-4"
+                          className={`h-4 w-4 transition-transform ${showToc ? 'rotate-180' : ''}`}
                           fill="none"
                           stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          strokeWidth={2}
+                          viewBox="0 0 16 16"
+                          strokeWidth={1.5}
                           aria-hidden="true"
                         >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M19 9l-7 7-7-7"
-                          />
+                          <path d="m4 6 4 4 4-4" />
                         </svg>
                       </button>
                     </div>
-                    <nav className={showToc ? 'block' : 'hidden lg:block'}>
-                      <ul className="space-y-1.5">
-                        {headings.map((h, i) => (
-                          <li key={i}>
-                            <a
-                              href={`#${h.id}`}
-                              className={`block text-sm transition-colors hover:text-accent-cyan-400 ${
-                                h.level === 2
-                                  ? 'text-surface-200 font-medium'
-                                  : 'text-surface-400 ml-3'
-                              }`}
-                            >
-                              {h.text}
-                            </a>
-                          </li>
-                        ))}
-                      </ul>
-                    </nav>
-                  </div>
+                    <ul
+                      id="post-toc"
+                      className={`mt-3 space-y-1.5 border-l border-line ${showToc ? 'block' : 'hidden lg:block'}`}
+                    >
+                      {headings.map((h, i) => (
+                        <li key={i}>
+                          <a
+                            href={`#${h.id}`}
+                            className={`-ml-px block border-l border-transparent py-0.5 text-sm transition-colors hover:border-accent hover:text-accent ${
+                              h.level === 2
+                                ? 'pl-3 text-ink'
+                                : 'pl-6 text-ink-muted'
+                            }`}
+                          >
+                            {h.text}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </nav>
                 )}
 
-                <div className="surface-glass rounded-2xl p-5">
-                  <h3 className="text-xs uppercase tracking-[0.2em] text-accent-violet-400 font-medium mb-3">
+                <div className="border border-line bg-paper-raised/70 p-5">
+                  <MonoLabel as="h2" className="mb-3 block">
                     Share
-                  </h3>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void navigator
-                          .share?.({
-                            title: post.title,
-                            url: window.location.href,
-                          })
-                          .catch(() => {});
-                      }}
-                      className="flex-1 px-3 py-2 text-sm rounded-lg bg-gradient-accent text-surface-50"
-                      style={{ backgroundSize: '200% 200%' }}
-                    >
-                      Share
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void navigator.clipboard
-                          .writeText(window.location.href)
-                          .catch(() => {});
-                      }}
-                      className="flex-1 px-3 py-2 text-sm rounded-lg surface-glass surface-glass-hover text-surface-200"
-                    >
-                      Copy
-                    </button>
-                  </div>
+                  </MonoLabel>
+                  <ShareControls title={post.title} />
                 </div>
               </div>
             </aside>
           </div>
-        </div>
+        </Sheet>
       </main>
-      <Footer />
-    </div>
+    </PublicShell>
   );
 };

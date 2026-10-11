@@ -1,30 +1,25 @@
 /** The holding page shown when the site is switched off. */
 export function UnderConstruction() {
   return (
-    <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center px-6 text-center">
-      <div className="max-w-md w-full space-y-8">
-        <div className="space-y-3">
-          <p className="text-gray-500 text-sm font-mono tracking-widest uppercase">
-            portfolio.webbpulse.com
-          </p>
-          <h1 className="text-4xl font-bold text-white">Under Construction</h1>
-          <p className="text-gray-400 text-lg leading-relaxed">
-            The site is getting a refresh. Check back soon.
-          </p>
-        </div>
-
-        <div className="border-t border-gray-800 pt-8">
-          <p className="text-gray-600 text-sm">
-            In the meantime, reach out at{' '}
-            <a
-              href="mailto:tyler@webbpulse.com"
-              className="text-blue-400 hover:text-blue-300 transition-colors"
-            >
-              tyler@webbpulse.com
-            </a>
-          </p>
-        </div>
+    <main
+      id="main"
+      className="drawing-grid flex min-h-screen flex-col items-center justify-center px-4 text-ink"
+    >
+      <div className="relative w-full max-w-md border border-line bg-paper-raised px-6 py-10 sm:px-10">
+        <p className="mono-label">portfolio.webbpulse.com</p>
+        <h1 className="mt-4 text-4xl font-semibold tracking-[-0.02em] text-ink">
+          Under construction
+        </h1>
+        <p className="mt-4 text-lg leading-relaxed text-ink-muted">
+          The site is getting a refresh. Check back soon.
+        </p>
+        <p className="mt-8 border-t border-line pt-6 text-sm text-ink-muted">
+          In the meantime, reach out at{' '}
+          <a href="mailto:tyler@webbpulse.com" className="ink-link">
+            tyler@webbpulse.com
+          </a>
+        </p>
       </div>
-    </div>
+    </main>
   );
 }

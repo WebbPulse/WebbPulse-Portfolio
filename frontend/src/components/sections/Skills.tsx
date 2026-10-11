@@ -1,10 +1,11 @@
 import React from 'react';
 import * as SimpleIcons from 'react-icons/si';
-import { GradientText } from '../common';
 import { useInViewReveal } from '../../hooks';
 import { getSkills } from '../../content';
 import type { Skill, SkillCategory, SkillTier } from '../../content';
+import { MonoLabel, SectionHeading, Sheet } from '../drawing';
 
+/** A skill's brand mark from Simple Icons, or its emoji fallback. */
 const SkillIcon: React.FC<{ icon?: string | undefined; name: string }> = ({
   icon,
   name,
@@ -20,50 +21,23 @@ const SkillIcon: React.FC<{ icon?: string | undefined; name: string }> = ({
       >
     )[componentName];
     if (Logo) {
-      return <Logo className="w-8 h-8 text-surface-100" aria-label={name} />;
+      return <Logo className="h-5 w-5 shrink-0 text-ink" aria-label={name} />;
     }
   }
   return (
-    <span className="text-3xl" aria-hidden="true">
+    <span className="w-5 shrink-0 text-center text-base" aria-hidden="true">
       {icon ?? '💻'}
     </span>
   );
 };
 
-const CATEGORY_META: Record<
-  SkillCategory,
-  { label: string; accent: string; glow: string }
-> = {
-  frontend: {
-    label: 'Frontend',
-    accent: 'text-accent-cyan-400',
-    glow: 'hover:shadow-glow-cyan',
-  },
-  backend: {
-    label: 'Backend',
-    accent: 'text-accent-violet-400',
-    glow: 'hover:shadow-glow-violet',
-  },
-  devops: {
-    label: 'DevOps & Infrastructure',
-    accent: 'text-accent-fuchsia-400',
-    glow: 'hover:shadow-glow-fuchsia',
-  },
-  cloud: {
-    label: 'Cloud Platforms',
-    accent: 'text-accent-cyan-400',
-    glow: 'hover:shadow-glow-cyan',
-  },
-  networking: {
-    label: 'Networking & IT',
-    accent: 'text-accent-violet-300',
-    glow: 'hover:shadow-glow-violet',
-  },
-  other: {
-    label: 'Other',
-    accent: 'text-surface-200',
-    glow: 'hover:shadow-glow-soft',
-  },
+const CATEGORY_META: Record<SkillCategory, { label: string; code: string }> = {
+  frontend: { label: 'Frontend', code: 'FE' },
+  backend: { label: 'Backend', code: 'BE' },
+  devops: { label: 'DevOps and infrastructure', code: 'OPS' },
+  cloud: { label: 'Cloud platforms', code: 'CLD' },
+  networking: { label: 'Networking and IT', code: 'NET' },
+  other: { label: 'Other', code: 'OTH' },
 };
 
 const CATEGORY_ORDER: SkillCategory[] = [
@@ -75,105 +49,77 @@ const CATEGORY_ORDER: SkillCategory[] = [
   'other',
 ];
 
-const TIER_META: Record<
-  SkillTier,
-  { label: string; description: string; accent: string }
-> = {
-  core: {
-    label: 'Core',
-    description: 'Use daily, deep knowledge',
-    accent: 'text-accent-cyan-400',
-  },
-  working: {
-    label: 'Working',
-    description: 'Ship in it comfortably',
-    accent: 'text-accent-violet-300',
-  },
-  familiar: {
-    label: 'Familiar',
-    description: 'Can read and contribute',
-    accent: 'text-surface-400',
-  },
+const TIER_META: Record<SkillTier, { label: string; description: string }> = {
+  core: { label: 'Core', description: 'Use daily, deep knowledge' },
+  working: { label: 'Working', description: 'Ship in it comfortably' },
+  familiar: { label: 'Familiar', description: 'Can read and contribute' },
 };
 
 const TIER_ORDER: SkillTier[] = ['core', 'working', 'familiar'];
 
+/** The tier mark: filled, half filled or outlined, like a drawing symbol. */
 const TierGlyph: React.FC<{ tier: SkillTier; className?: string }> = ({
   tier,
   className = '',
 }) => {
-  const base = 'inline-block w-3 h-3 rounded-full border';
+  const base = 'inline-block h-2.5 w-2.5 shrink-0 border border-accent';
   if (tier === 'core') {
     return (
-      <span
-        aria-hidden="true"
-        className={`${base} bg-accent-cyan-400 border-accent-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.6)] ${className}`}
-      />
+      <span aria-hidden="true" className={`${base} bg-accent ${className}`} />
     );
   }
   if (tier === 'working') {
     return (
       <span
         aria-hidden="true"
-        className={`${base} relative overflow-hidden border-accent-violet-300 ${className}`}
+        className={`${base} relative overflow-hidden ${className}`}
       >
-        <span className="absolute inset-y-0 left-0 w-1/2 bg-accent-violet-300" />
+        <span className="absolute inset-y-0 left-0 w-1/2 bg-accent" />
       </span>
     );
   }
-  return (
-    <span
-      aria-hidden="true"
-      className={`${base} border-surface-400 ${className}`}
-    />
-  );
+  return <span aria-hidden="true" className={`${base} ${className}`} />;
 };
 
-const SkillCard: React.FC<{ skill: Skill; index: number }> = ({
-  skill,
-  index,
-}) => {
-  const meta = CATEGORY_META[skill.category];
+/** One skill as a cell of the category's spec grid. */
+const SkillCell: React.FC<{ skill: Skill }> = ({ skill }) => {
   const tierMeta = TIER_META[skill.tier];
-  const { ref, isInView } = useInViewReveal<HTMLDivElement>({ threshold: 0.2 });
-
   return (
-    <div
-      ref={ref}
-      style={{ animationDelay: `${(index % 8) * 60}ms` }}
-      className={`group relative surface-glass rounded-2xl p-5 transition-all duration-500 hover:-translate-y-1 ${meta.glow} ${isInView ? 'animate-fade-in-up' : 'opacity-0'}`}
+    <li
+      className="flex min-w-0 items-center gap-3 border-b border-r border-line px-3 py-3 transition-colors hover:bg-accent-soft"
       title={`${tierMeta.label}: ${tierMeta.description}`}
     >
-      <div className="flex items-start justify-between">
-        <SkillIcon icon={skill.icon} name={skill.name} />
-        <span
-          className={`flex items-center gap-1.5 text-[11px] uppercase tracking-[0.14em] font-medium ${tierMeta.accent}`}
-        >
-          <TierGlyph tier={skill.tier} />
-          {tierMeta.label}
-        </span>
-      </div>
-      <h4 className="mt-4 font-display font-semibold text-surface-50 text-base">
+      <SkillIcon icon={skill.icon} name={skill.name} />
+      <span className="min-w-0 flex-1 truncate text-sm text-ink">
         {skill.name}
-      </h4>
-    </div>
+      </span>
+      <TierGlyph tier={skill.tier} />
+      <span className="sr-only">{tierMeta.label}</span>
+    </li>
   );
 };
 
+/** The key to the tier marks. */
 const TierLegend: React.FC = () => (
-  <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-surface-300">
+  <ul
+    className="flex flex-wrap items-center gap-x-6 gap-y-2"
+    aria-label="Tiers"
+  >
     {TIER_ORDER.map((t) => {
       const m = TIER_META[t];
       return (
-        <span key={t} className="flex items-center gap-2">
+        <li key={t} className="flex items-center gap-2 text-sm">
           <TierGlyph tier={t} />
-          <span className={`font-medium ${m.accent}`}>{m.label}</span>
-          <span className="text-surface-500">{m.description}</span>
-        </span>
+          <span className="font-medium text-ink">{m.label}</span>
+          <span className="text-ink-muted">{m.description}</span>
+        </li>
       );
     })}
-  </div>
+  </ul>
 );
+
+const GRID =
+  'grid grid-cols-1 border-l border-t border-line min-[420px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-4';
 
 /** The skills section, grouped by category and tier. */
 export const Skills: React.FC = () => {
@@ -200,58 +146,63 @@ export const Skills: React.FC = () => {
   return (
     <section
       id="skills"
-      className="relative py-24 sm:py-32 overflow-hidden bg-surface-950"
+      aria-labelledby="skills-title"
+      className="border-b border-line py-20 sm:py-28"
     >
-      <div className="absolute inset-0 bg-mesh-1 opacity-40 pointer-events-none" />
-      <div
-        ref={ref}
-        className={`relative z-10 max-w-7xl mx-auto px-6 sm:px-8 ${isInView ? 'animate-fade-in' : 'opacity-0'}`}
-      >
-        <div className="text-center mb-10 max-w-2xl mx-auto">
-          <span className="inline-block text-xs uppercase tracking-[0.2em] text-accent-violet-400 mb-4">
-            Skills
-          </span>
-          <h2 className="font-display text-4xl sm:text-5xl font-bold text-surface-50 mb-4">
-            Tools I <GradientText as="span">work with</GradientText>
-          </h2>
-          <p className="text-surface-300 text-lg">
+      <Sheet>
+        <div
+          ref={ref}
+          className={
+            isInView ? 'motion-safe:animate-fade-in' : 'motion-safe:opacity-0'
+          }
+        >
+          <SectionHeading
+            index="03"
+            label="Skills"
+            id="skills-title"
+            title="Tools I work with"
+          >
             A snapshot of my current toolkit across frontend, backend, infra,
             and the rest.
-          </p>
-        </div>
+          </SectionHeading>
 
-        <div className="mb-12">
-          <TierLegend />
-        </div>
+          <div className="-mt-4 mb-10 border-y border-line py-3">
+            <TierLegend />
+          </div>
 
-        <div className="space-y-14">
-          {CATEGORY_ORDER.map((cat) => {
-            const skills = grouped[cat];
-            if (!skills || skills.length === 0) return null;
-            const meta = CATEGORY_META[cat];
-            return (
-              <div key={cat}>
-                <div className="flex items-center gap-3 mb-6">
-                  <span
-                    className={`text-xs uppercase tracking-[0.2em] font-medium ${meta.accent}`}
-                  >
-                    {meta.label}
-                  </span>
-                  <span className="flex-1 h-px bg-linear-to-r from-surface-700 to-transparent" />
-                  <span className="text-xs text-surface-500">
-                    {skills.length}
-                  </span>
+          <div className="space-y-10">
+            {CATEGORY_ORDER.map((cat) => {
+              const skills = grouped[cat];
+              if (!skills || skills.length === 0) return null;
+              const meta = CATEGORY_META[cat];
+              return (
+                <div key={cat}>
+                  <div className="mb-3 flex items-baseline gap-3">
+                    <span className="font-mono text-xs text-accent">
+                      {meta.code}
+                    </span>
+                    <h3 className="text-base font-semibold text-ink">
+                      {meta.label}
+                    </h3>
+                    <span
+                      className="h-px flex-1 self-center bg-line"
+                      aria-hidden="true"
+                    />
+                    <MonoLabel>
+                      {String(skills.length).padStart(2, '0')} items
+                    </MonoLabel>
+                  </div>
+                  <ul className={GRID}>
+                    {skills.map((skill) => (
+                      <SkillCell key={skill.id} skill={skill} />
+                    ))}
+                  </ul>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                  {skills.map((skill, idx) => (
-                    <SkillCard key={skill.id} skill={skill} index={idx} />
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
-      </div>
+      </Sheet>
     </section>
   );
 };
