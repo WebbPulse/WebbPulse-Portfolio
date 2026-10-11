@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
 import { GradientText, AnimatedOrb } from '../common';
-import { apiService } from '../../services/api';
 import { useInViewReveal } from '../../hooks';
-import type { BlogPost } from '../../services/api';
+import { getPublishedPosts } from '../../content';
+import type { BlogPost } from '../../content';
 
 const formatDate = (iso?: string): string =>
   iso
@@ -124,30 +124,7 @@ const BlogPostCard: React.FC<{ post: BlogPost; index: number }> = ({
 
 /** The recent posts teaser on the single page site. */
 export const Blog: React.FC = () => {
-  const [posts, setPosts] = useState<BlogPost[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      setLoading(true);
-      setError(null);
-      const response = await apiService.getBlogPosts();
-      if (cancelled) return;
-      if (response.error) {
-        setError(response.error);
-      } else {
-        setPosts(response.data || []);
-      }
-      setLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const published = posts.filter((p) => p.published_at);
+  const published = getPublishedPosts();
   const featured = published[0];
   const recent = published.filter((p) => p.id !== featured?.id).slice(0, 6);
 
@@ -171,39 +148,19 @@ export const Blog: React.FC = () => {
           </p>
         </div>
 
-        {loading && (
-          <div className="space-y-12">
-            <div className="h-80 surface-glass rounded-3xl animate-pulse" />
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="h-48 surface-glass rounded-2xl animate-pulse"
-                />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {error && !loading && (
-          <p className="text-center text-surface-400">
-            Couldn't load posts right now.
-          </p>
-        )}
-
-        {!loading && !error && published.length === 0 && (
+        {published.length === 0 && (
           <p className="text-center text-surface-400">
             No posts yet. Check back soon.
           </p>
         )}
 
-        {!loading && !error && featured && (
+        {featured && (
           <div className="mb-16">
             <FeaturedCard post={featured} />
           </div>
         )}
 
-        {!loading && !error && recent.length > 0 && (
+        {recent.length > 0 && (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {recent.map((post, i) => (
               <BlogPostCard key={post.id} post={post} index={i} />
@@ -211,7 +168,7 @@ export const Blog: React.FC = () => {
           </div>
         )}
 
-        {!loading && !error && published.length > 0 && (
+        {published.length > 0 && (
           <div className="text-center mt-12">
             <Link
               to="/blog"

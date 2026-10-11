@@ -1,25 +1,14 @@
 import React from 'react';
 import { AnimatedOrb, GradientText } from '../common';
-import {
-  useSiteContent,
-  useInViewReveal,
-  useScrollParallax,
-} from '../../hooks';
+import { useInViewReveal, useScrollParallax } from '../../hooks';
+import { getSiteContent } from '../../content';
 
-const FALLBACK = {
-  hero_title: "Hi, I'm Tyler Webb",
-  hero_subtitle: 'Software Engineer',
-  hero_description: 'Software engineer building privacy-conscious systems.',
-};
-
-/** The landing hero, over site content with a static fallback. */
+/** The landing hero, over the site content. */
 const Hero: React.FC = () => {
-  const { data, loading } = useSiteContent();
+  const content = getSiteContent();
   const parallaxFast = useScrollParallax(0.35);
   const parallaxSlow = useScrollParallax(0.18);
   const { ref, isInView } = useInViewReveal<HTMLDivElement>({ threshold: 0.1 });
-
-  const content = data ?? FALLBACK;
 
   return (
     <section
@@ -62,7 +51,7 @@ const Hero: React.FC = () => {
       >
         <span className="inline-flex items-center gap-2 px-4 py-1.5 mb-8 text-xs uppercase tracking-[0.18em] font-medium text-surface-300 surface-glass rounded-full">
           <span className="w-1.5 h-1.5 rounded-full bg-accent-cyan-400 animate-pulse" />
-          {loading ? 'Loading…' : content.hero_subtitle}
+          {content.hero_subtitle}
         </span>
 
         <h1 className="font-display text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-bold tracking-tight text-surface-50 leading-[1.05]">

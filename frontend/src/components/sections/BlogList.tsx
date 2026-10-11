@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Header, Footer } from '../layout';
 import { GradientText } from '../common';
-import { apiService } from '../../services/api';
 import { useInViewReveal } from '../../hooks';
-import type { BlogPost } from '../../services/api';
+import { getCategories, getPublishedPosts } from '../../content';
+import type { BlogPost } from '../../content';
 import type { NavigationItem } from '../../types';
 
 const NAV: NavigationItem[] = [
@@ -74,39 +74,13 @@ const BlogPostCard: React.FC<{ post: BlogPost; index: number }> = ({
 
 /** The full blog index at its own route. */
 export const BlogList: React.FC = () => {
-  const [blogPosts, setBlogPosts] = useState<BlogPost[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [categories, setCategories] = useState<
-    { id: number; name: string; slug: string }[]
-  >([]);
+  const blogPosts = getPublishedPosts();
+  const categories = getCategories();
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      setLoading(true);
-      setError(null);
-      const [postsResponse, categoriesResponse] = await Promise.all([
-        apiService.getBlogPosts(),
-        apiService.getCategories(),
-      ]);
-      if (cancelled) return;
-      if (postsResponse.error) setError(postsResponse.error);
-      else setBlogPosts(postsResponse.data || []);
-      if (!categoriesResponse.error)
-        setCategories(categoriesResponse.data || []);
-      setLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const filtered = selectedCategory
+  const published = selectedCategory
     ? blogPosts.filter((p) => p.category?.slug === selectedCategory)
     : blogPosts;
-  const published = filtered.filter((p) => p.published_at);
 
   return (
     <div className="min-h-screen">
@@ -168,29 +142,14 @@ export const BlogList: React.FC = () => {
             </div>
           )}
 
-          {loading && (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="h-48 surface-glass rounded-2xl animate-pulse"
-                />
-              ))}
-            </div>
-          )}
-          {error && !loading && (
-            <p className="text-center text-surface-400">
-              Couldn't load posts right now.
-            </p>
-          )}
-          {!loading && !error && published.length === 0 && (
+          {published.length === 0 && (
             <p className="text-center text-surface-400">
               {selectedCategory
                 ? 'No posts in this category yet.'
                 : 'No posts yet. Check back soon.'}
             </p>
           )}
-          {!loading && !error && published.length > 0 && (
+          {published.length > 0 && (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {published.map((post, i) => (
                 <BlogPostCard key={post.id} post={post} index={i} />

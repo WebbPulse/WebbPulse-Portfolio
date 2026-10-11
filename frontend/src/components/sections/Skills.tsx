@@ -1,8 +1,9 @@
 import React from 'react';
 import * as SimpleIcons from 'react-icons/si';
 import { GradientText } from '../common';
-import { useSkills, useInViewReveal } from '../../hooks';
-import type { Skill, SkillCategory, SkillTier } from '../../services/api';
+import { useInViewReveal } from '../../hooks';
+import { getSkills } from '../../content';
+import type { Skill, SkillCategory, SkillTier } from '../../content';
 
 const SkillIcon: React.FC<{ icon?: string | undefined; name: string }> = ({
   icon,
@@ -159,16 +160,6 @@ const SkillCard: React.FC<{ skill: Skill; index: number }> = ({
   );
 };
 
-const SkillSkeletonCard: React.FC = () => (
-  <div className="surface-glass rounded-2xl p-5 animate-pulse">
-    <div className="flex items-center justify-between">
-      <div className="w-8 h-8 bg-surface-800 rounded-sm" />
-      <div className="w-16 h-3 bg-surface-800 rounded-sm" />
-    </div>
-    <div className="mt-4 h-4 bg-surface-800 rounded-sm w-2/3" />
-  </div>
-);
-
 const TierLegend: React.FC = () => (
   <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-surface-300">
     {TIER_ORDER.map((t) => {
@@ -186,12 +177,12 @@ const TierLegend: React.FC = () => (
 
 /** The skills section, grouped by category and tier. */
 export const Skills: React.FC = () => {
-  const { data, loading, error } = useSkills();
+  const allSkills = getSkills();
   const { ref, isInView } = useInViewReveal<HTMLDivElement>({
     threshold: 0.05,
   });
 
-  const grouped = (data ?? []).reduce<Record<SkillCategory, Skill[]>>(
+  const grouped = allSkills.reduce<Record<SkillCategory, Skill[]>>(
     (acc, skill) => {
       (acc[skill.category] = acc[skill.category] || []).push(skill);
       return acc;
@@ -233,49 +224,33 @@ export const Skills: React.FC = () => {
           <TierLegend />
         </div>
 
-        {loading && (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <SkillSkeletonCard key={i} />
-            ))}
-          </div>
-        )}
-
-        {error && !loading && (
-          <p className="text-center text-surface-400">
-            Couldn't load skills right now.
-          </p>
-        )}
-
-        {!loading && !error && (
-          <div className="space-y-14">
-            {CATEGORY_ORDER.map((cat) => {
-              const skills = grouped[cat];
-              if (!skills || skills.length === 0) return null;
-              const meta = CATEGORY_META[cat];
-              return (
-                <div key={cat}>
-                  <div className="flex items-center gap-3 mb-6">
-                    <span
-                      className={`text-xs uppercase tracking-[0.2em] font-medium ${meta.accent}`}
-                    >
-                      {meta.label}
-                    </span>
-                    <span className="flex-1 h-px bg-linear-to-r from-surface-700 to-transparent" />
-                    <span className="text-xs text-surface-500">
-                      {skills.length}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                    {skills.map((skill, idx) => (
-                      <SkillCard key={skill.id} skill={skill} index={idx} />
-                    ))}
-                  </div>
+        <div className="space-y-14">
+          {CATEGORY_ORDER.map((cat) => {
+            const skills = grouped[cat];
+            if (!skills || skills.length === 0) return null;
+            const meta = CATEGORY_META[cat];
+            return (
+              <div key={cat}>
+                <div className="flex items-center gap-3 mb-6">
+                  <span
+                    className={`text-xs uppercase tracking-[0.2em] font-medium ${meta.accent}`}
+                  >
+                    {meta.label}
+                  </span>
+                  <span className="flex-1 h-px bg-linear-to-r from-surface-700 to-transparent" />
+                  <span className="text-xs text-surface-500">
+                    {skills.length}
+                  </span>
                 </div>
-              );
-            })}
-          </div>
-        )}
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {skills.map((skill, idx) => (
+                    <SkillCard key={skill.id} skill={skill} index={idx} />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </section>
   );

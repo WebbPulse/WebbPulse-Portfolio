@@ -1,16 +1,12 @@
 import React from 'react';
 import { GradientText } from '../common';
-import {
-  useExperience,
-  useEducation,
-  useCertifications,
-  useInViewReveal,
-} from '../../hooks';
+import { useInViewReveal } from '../../hooks';
+import { getCertifications, getEducation, getExperience } from '../../content';
 import type {
   Experience as ExperienceType,
   Education as EducationType,
   Certification as CertificationType,
-} from '../../services/api';
+} from '../../content';
 
 const ExperienceCard: React.FC<{ item: ExperienceType; index: number }> = ({
   item,
@@ -175,23 +171,11 @@ const CertificationCard: React.FC<{
   );
 };
 
-const SkeletonCard: React.FC = () => (
-  <div className="surface-glass rounded-2xl p-6 animate-pulse">
-    <div className="h-3 bg-surface-800 rounded-sm w-1/3 mb-3" />
-    <div className="h-4 bg-surface-800 rounded-sm w-2/3 mb-2" />
-    <div className="h-3 bg-surface-800 rounded-sm w-1/2" />
-  </div>
-);
-
 /** The work history timeline, with education and certifications. */
 export const Experience: React.FC = () => {
-  const {
-    data: experience,
-    loading: expLoading,
-    error: expError,
-  } = useExperience();
-  const { data: education, loading: eduLoading } = useEducation();
-  const { data: certifications, loading: certLoading } = useCertifications();
+  const experience = getExperience();
+  const education = getEducation();
+  const certifications = getCertifications();
 
   return (
     <section
@@ -217,24 +201,11 @@ export const Experience: React.FC = () => {
         <div className="relative">
           <div className="absolute left-4 md:left-1/2 -translate-x-1/2 top-0 bottom-0 w-px bg-linear-to-b from-accent-cyan-500/0 via-accent-violet-500/60 to-accent-fuchsia-500/0" />
 
-          {expLoading && (
-            <div className="space-y-12">
-              <SkeletonCard />
-              <SkeletonCard />
-            </div>
-          )}
-          {expError && (
-            <p className="text-center text-surface-400">
-              Couldn't load experience.
-            </p>
-          )}
-          {!expLoading && !expError && (
-            <div className="space-y-12">
-              {experience?.map((item, idx) => (
-                <ExperienceCard key={item.id} item={item} index={idx} />
-              ))}
-            </div>
-          )}
+          <div className="space-y-12">
+            {experience.map((item, idx) => (
+              <ExperienceCard key={item.id} item={item} index={idx} />
+            ))}
+          </div>
         </div>
 
         <div className="mt-24">
@@ -246,15 +217,9 @@ export const Experience: React.FC = () => {
               Where I learned the basics
             </h3>
           </div>
-          {eduLoading && (
+          {education.length > 0 && (
             <div className="grid md:grid-cols-2 gap-6">
-              <SkeletonCard />
-              <SkeletonCard />
-            </div>
-          )}
-          {!eduLoading && (education?.length ?? 0) > 0 && (
-            <div className="grid md:grid-cols-2 gap-6">
-              {education?.map((e, i) => (
+              {education.map((e, i) => (
                 <EducationCard key={e.id} item={e} index={i} />
               ))}
             </div>
@@ -270,16 +235,9 @@ export const Experience: React.FC = () => {
               Credentials
             </h3>
           </div>
-          {certLoading && (
+          {certifications.length > 0 && (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              <SkeletonCard />
-              <SkeletonCard />
-              <SkeletonCard />
-            </div>
-          )}
-          {!certLoading && (certifications?.length ?? 0) > 0 && (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {certifications?.map((c, i) => (
+              {certifications.map((c, i) => (
                 <CertificationCard key={c.id} item={c} index={i} />
               ))}
             </div>

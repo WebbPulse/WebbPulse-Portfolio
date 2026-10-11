@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Header, Footer } from '../layout';
-import { apiService } from '../../services/api';
-import { useSiteContent } from '../../hooks';
-import type { BlogPost as BlogPostType } from '../../services/api';
+import { getPostBySlug, getSiteContent } from '../../content';
 import type { NavigationItem } from '../../types';
 import { processMarkdown, extractHeadings } from '../../utils/markdown';
 
@@ -20,29 +18,10 @@ const NAV: NavigationItem[] = [
 /** One blog post, resolved from the slug in the route. */
 export const BlogPost: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
-  const [post, setPost] = useState<BlogPostType | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const post = slug ? getPostBySlug(slug) : undefined;
   const [readingProgress, setReadingProgress] = useState(0);
   const [showToc, setShowToc] = useState(false);
-  const { data: site } = useSiteContent();
-
-  useEffect(() => {
-    if (!slug) return;
-    let cancelled = false;
-    void (async () => {
-      setLoading(true);
-      setError(null);
-      const response = await apiService.getBlogPostBySlug(slug);
-      if (cancelled) return;
-      if (response.error) setError(response.error);
-      else setPost(response.data);
-      setLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [slug]);
+  const site = getSiteContent();
 
   useEffect(() => {
     const onScroll = () => {
@@ -56,22 +35,7 @@ export const BlogPost: React.FC = () => {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen">
-        <Header navigationItems={NAV} />
-        <main className="flex items-center justify-center min-h-[60vh]">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-10 w-10 border-2 border-accent-violet-500 border-t-transparent mx-auto mb-4" />
-            <p className="text-surface-300">Loading…</p>
-          </div>
-        </main>
-        <Footer />
-      </div>
-    );
-  }
-
-  if (error || !post) {
+  if (!post) {
     return (
       <div className="min-h-screen">
         <Header navigationItems={NAV} />
@@ -81,8 +45,8 @@ export const BlogPost: React.FC = () => {
               Post not found
             </h1>
             <p className="text-surface-300 mb-6">
-              {error ||
-                "The post you're looking for doesn't exist (or hasn't been published yet)."}
+              The post you're looking for doesn't exist (or hasn't been
+              published yet).
             </p>
             <Link
               to="/blog"
@@ -100,7 +64,7 @@ export const BlogPost: React.FC = () => {
 
   const headings = extractHeadings(post.content);
   const processed = processMarkdown(post.content);
-  const profileImage = site?.profile_image_url ?? '/headshot.jpg';
+  const profileImage = site.profile_image_url ?? '/headshot.jpg';
 
   return (
     <div className="min-h-screen">

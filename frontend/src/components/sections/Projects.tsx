@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { GradientText, GradientPanel } from '../common';
-import { useProjects, useInViewReveal } from '../../hooks';
-import type { Project } from '../../services/api';
+import { useInViewReveal } from '../../hooks';
+import { getProjects } from '../../content';
+import type { Project } from '../../content';
 
 const CATEGORIES: { id: string; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -128,24 +129,12 @@ const ProjectCard: React.FC<{ project: Project; index: number }> = ({
   );
 };
 
-const SkeletonCard: React.FC = () => (
-  <div className="surface-glass rounded-2xl overflow-hidden animate-pulse">
-    <div className="aspect-16/10 bg-surface-800" />
-    <div className="p-6 space-y-3">
-      <div className="h-5 bg-surface-800 rounded-sm w-2/3" />
-      <div className="h-3 bg-surface-800 rounded-sm" />
-      <div className="h-3 bg-surface-800 rounded-sm w-5/6" />
-    </div>
-  </div>
-);
-
 /** The projects grid, ordered by the configured sort mode. */
 export const Projects: React.FC = () => {
-  const { data, loading, error } = useProjects();
+  const projects = getProjects();
   const [filter, setFilter] = useState<string>('all');
   const [showAll, setShowAll] = useState(false);
 
-  const projects = data ?? [];
   const filtered = projects.filter((p) => matchesCategory(p, filter));
   const displayed = showAll ? filtered : filtered.slice(0, 6);
 
@@ -194,24 +183,12 @@ export const Projects: React.FC = () => {
         </div>
 
         {/* Grid */}
-        {loading && (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <SkeletonCard key={i} />
-            ))}
-          </div>
-        )}
-        {error && !loading && (
-          <p className="text-center text-surface-400">
-            Couldn't load projects right now.
-          </p>
-        )}
-        {!loading && !error && filtered.length === 0 && (
+        {filtered.length === 0 && (
           <p className="text-center text-surface-400">
             No projects in this category yet.
           </p>
         )}
-        {!loading && !error && filtered.length > 0 && (
+        {filtered.length > 0 && (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {displayed.map((project, idx) => (
               <ProjectCard key={project.id} project={project} index={idx} />

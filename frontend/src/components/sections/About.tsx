@@ -1,16 +1,11 @@
 import React from 'react';
 import { GradientText } from '../common';
-import {
-  useSiteContent,
-  useExperience,
-  useProjects,
-  useInViewReveal,
-  useCountUp,
-} from '../../hooks';
-import type { Experience } from '../../services/api';
+import { useInViewReveal, useCountUp } from '../../hooks';
+import { getExperience, getProjects, getSiteContent } from '../../content';
+import type { Experience } from '../../content';
 
-const calculateYearsFromExperience = (entries: Experience[] | null): number => {
-  if (!entries || entries.length === 0) return 0;
+const calculateYearsFromExperience = (entries: Experience[]): number => {
+  if (entries.length === 0) return 0;
   const now = new Date();
   let totalYears = 0;
   for (const exp of entries) {
@@ -65,20 +60,20 @@ const ValueCard: React.FC<{
   );
 };
 
-/** The About section, over site content with a static fallback. */
+/** The About section, over the site content. */
 export const About: React.FC = () => {
-  const { data: site } = useSiteContent();
-  const { data: experience } = useExperience();
-  const { data: projects } = useProjects();
+  const site = getSiteContent();
+  const experience = getExperience();
+  const projects = getProjects();
 
   const { ref: sectionRef, isInView: sectionInView } =
     useInViewReveal<HTMLDivElement>({ threshold: 0.1 });
 
   const years = calculateYearsFromExperience(experience);
-  const projectCount = projects?.length ?? 0;
-  const paragraphs = site?.about_paragraphs ?? [];
-  const values = site?.about_values ?? [];
-  const profileImage = site?.profile_image_url ?? '/headshot.jpg';
+  const projectCount = projects.length;
+  const paragraphs = site.about_paragraphs;
+  const values = site.about_values;
+  const profileImage = site.profile_image_url ?? '/headshot.jpg';
 
   return (
     <section id="about" className="relative py-24 sm:py-32 overflow-hidden">
@@ -96,7 +91,7 @@ export const About: React.FC = () => {
             A bit about <GradientText as="span">me</GradientText>
           </h2>
           <p className="text-surface-300 text-lg">
-            {site?.footer_tagline ??
+            {site.footer_tagline ??
               'Software engineer focused on building reliable, privacy-conscious systems.'}
           </p>
         </div>

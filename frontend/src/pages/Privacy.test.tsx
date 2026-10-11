@@ -1,18 +1,8 @@
-import { describe, expect, it, vi, afterEach } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { Privacy } from './Privacy';
-import * as hooks from '../hooks';
-
-/** Stubs `useSiteContent` with the shape the page reads off it. */
-function stubSiteContent(data: { email?: string | null } | null) {
-  vi.spyOn(hooks, 'useSiteContent').mockReturnValue({
-    data,
-    loading: false,
-    error: null,
-    refetch: vi.fn(),
-  } as unknown as ReturnType<typeof hooks.useSiteContent>);
-}
+import { getSiteContent } from '../content';
 
 function renderPage() {
   return render(
@@ -23,12 +13,7 @@ function renderPage() {
 }
 
 describe('Privacy', () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
   it('renders the policy heading and its effective date', () => {
-    stubSiteContent({ email: 'tyler@webbpulse.com' });
     renderPage();
 
     expect(
@@ -37,20 +22,12 @@ describe('Privacy', () => {
     expect(screen.getByText(/September 10, 2026/)).toBeInTheDocument();
   });
 
-  it('uses the contact address from site content', () => {
-    stubSiteContent({ email: 'hello@example.com' });
+  it('uses the contact address from the committed site content', () => {
+    const email = getSiteContent().email ?? 'tyler@webbpulse.com';
     renderPage();
 
-    const links = screen.getAllByRole('link', { name: 'hello@example.com' });
+    const links = screen.getAllByRole('link', { name: email });
     expect(links.length).toBeGreaterThan(0);
-    expect(links[0]).toHaveAttribute('href', 'mailto:hello@example.com');
-  });
-
-  it('falls back to the site address when site content has not loaded', () => {
-    stubSiteContent(null);
-    renderPage();
-
-    const links = screen.getAllByRole('link', { name: 'tyler@webbpulse.com' });
-    expect(links[0]).toHaveAttribute('href', 'mailto:tyler@webbpulse.com');
+    expect(links[0]).toHaveAttribute('href', `mailto:${email}`);
   });
 });

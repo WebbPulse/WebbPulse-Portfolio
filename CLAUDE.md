@@ -71,7 +71,12 @@ ruff format --check app tests
 
 - **Pages**: `/` (portfolio), `/blog`, `/blog/:slug`, `/privacy`,
   `/verify-email`, `/reset-password`, `/admin`
-- **API layer**: All calls go through `src/services/api.ts` (`apiService`). The
+- **Public content**: every public page reads `src/content/`, typed data files
+  plus markdown (`blog/*.md` posts, `work/<slug>.md` case studies) loaded at
+  build time with `import.meta.glob`. Edit content through a PR; public routes
+  make no `/api/v1` content calls, and `SITE_CONTENT_DEFAULTS` parity no longer
+  applies to the frontend
+- **API layer**: Admin and auth calls go through `src/services/api.ts` (`apiService`). The
   transport is `@webbpulse/api-client` and startup configuration is
   `@webbpulse/config`. That client rejects on a non-2xx, so `ApiService` adapts
   it back into the `{ data, error }` envelope every page component reads; the
