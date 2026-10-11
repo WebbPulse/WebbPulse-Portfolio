@@ -3,7 +3,7 @@ module "staging_access_gate" {
 
   source = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/staging-access-gate"
 
-  version = "~> 2.19"
+  version = "~> 2.39"
 
   name           = local.prefix
   cookie_domain  = local.domain

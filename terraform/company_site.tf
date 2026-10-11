@@ -21,7 +21,7 @@ locals {
 
 module "company_site_dns" {
   source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/staging-dns"
-  version = "~> 2.34"
+  version = "~> 2.39"
 
   providers = {
     aws        = aws
@@ -35,7 +35,7 @@ module "company_site_dns" {
 
 module "company_site_certificate" {
   source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/acm-certificate"
-  version = "~> 2.34"
+  version = "~> 2.39"
 
   providers = {
     aws         = aws.us_east_1
@@ -54,7 +54,7 @@ module "company_site_gate" {
   count = local.company_site_gate_count
 
   source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/staging-access-gate"
-  version = "~> 2.34"
+  version = "~> 2.39"
 
   name             = "${local.prefix}-site"
   cookie_domain    = local.company_site_domain
@@ -83,7 +83,7 @@ resource "aws_cloudfront_function" "company_site" {
 
 module "company_site" {
   source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/spa-frontend"
-  version = "~> 2.34"
+  version = "~> 2.39"
 
   name    = "${local.prefix}-site"
   comment = "WebbPulse company site"

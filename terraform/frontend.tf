@@ -1,6 +1,6 @@
 module "frontend" {
   source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/spa-frontend"
-  version = "~> 1.1"
+  version = "~> 2.39"
 
   name = "${local.prefix}-frontend"
 
@@ -12,6 +12,14 @@ module "frontend" {
 
   index_cache_mode     = "policies"
   index_cache_policies = { cache_policy_id = "658327ea-f89d-4fab-a63d-7e88639e58f6" }
+
+  security_headers = {
+    content_security_policy = {
+      connect_src = ["https://${local.api_host}"]
+      style_src   = ["https://fonts.googleapis.com"]
+      font_src    = ["https://fonts.gstatic.com"]
+    }
+  }
 
   access_gate = local.staging_gate_enabled ? {
     key_group_id                                           = module.staging_access_gate[0].key_group_id
