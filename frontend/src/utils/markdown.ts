@@ -6,12 +6,41 @@ marked.setOptions({
   breaks: true,
 });
 
+/** Options for {@link processMarkdown}. */
+export interface ProcessMarkdownOptions {
+  styled?: boolean;
+}
+
+/** The anchor id for a heading, matching {@link extractHeadings}. */
+const headingId = (text: string): string =>
+  text.toLowerCase().replace(/[^\w]+/g, '-');
+
+/** Give each h2 and h3 the id its table of contents entry links to. */
+const addHeadingIds = (html: string): string =>
+  html.replace(
+    /<h([23])>([\s\S]*?)<\/h\1>/g,
+    (_match, level: string, inner: string) => {
+      const text = inner
+        .replace(/<[^>]+>/g, '')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .trim();
+      return `<h${level} id="${headingId(text)}">${inner}</h${level}>`;
+    }
+  );
+
 /**
- * Convert markdown content to HTML with proper styling
- * @param markdown - Raw markdown content
- * @returns Sanitized HTML string
+ * Convert markdown content to sanitized HTML. By default each element carries
+ * Tailwind classes; with `styled: false` the HTML is left bare for a themed
+ * prose container, and h2 and h3 get anchor ids.
  */
-export const processMarkdown = (markdown: string): string => {
+export const processMarkdown = (
+  markdown: string,
+  { styled = true }: ProcessMarkdownOptions = {}
+): string => {
   const html = marked(markdown) as string;
 
   let sanitizedHtml = html;
@@ -62,9 +91,9 @@ export const processMarkdown = (markdown: string): string => {
     });
   }
 
-  const styledHtml = addCustomStyling(sanitizedHtml);
-
-  return styledHtml;
+  return styled
+    ? addCustomStyling(sanitizedHtml)
+    : addHeadingIds(sanitizedHtml);
 };
 
 /**
@@ -183,7 +212,7 @@ export const extractHeadings = (
     if (hashes !== undefined && rawText !== undefined) {
       const level = hashes.length;
       const text = rawText.trim();
-      const id = text.toLowerCase().replace(/[^\w]+/g, '-');
+      const id = headingId(text);
 
       if (level >= 2 && level <= 3) {
         headings.push({ level, text, id });

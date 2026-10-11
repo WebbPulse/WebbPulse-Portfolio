@@ -1,9 +1,15 @@
 import React from 'react';
-import { GradientText } from '../common';
 import { useInViewReveal, useCountUp } from '../../hooks';
 import { getExperience, getProjects, getSiteContent } from '../../content';
 import type { Experience } from '../../content';
+import {
+  MonoLabel,
+  RegistrationMarks,
+  SectionHeading,
+  Sheet,
+} from '../drawing';
 
+/** Whole years of work across every experience entry, open roles running to today. */
 const calculateYearsFromExperience = (entries: Experience[]): number => {
   if (entries.length === 0) return 0;
   const now = new Date();
@@ -17,50 +23,51 @@ const calculateYearsFromExperience = (entries: Experience[]): number => {
   return Math.round(totalYears);
 };
 
-const StatCard: React.FC<{
+/** A counted figure in a title block cell. */
+const Figure: React.FC<{
   value: number;
   label: string;
   trigger: boolean;
 }> = ({ value, label, trigger }) => {
   const display = useCountUp(value, trigger);
   return (
-    <div className="surface-glass surface-glass-hover rounded-2xl p-6 text-center">
-      <div className="font-display text-4xl sm:text-5xl font-bold text-gradient leading-none">
+    <div className="border-b border-r border-line px-4 py-4">
+      <dt className="mono-label">{label}</dt>
+      <dd className="mt-2 font-mono text-3xl font-medium tabular-nums text-ink">
         {display}
-        <span className="text-accent-cyan-400">+</span>
-      </div>
-      <div className="mt-2 text-sm uppercase tracking-[0.16em] text-surface-400">
-        {label}
-      </div>
+        <span className="text-ink-faint">+</span>
+      </dd>
     </div>
   );
 };
 
-const ValueCard: React.FC<{
+/** One principle from site content, numbered like a drawing note. */
+const ValueNote: React.FC<{
   title: string;
   description: string;
-  icon?: string | null | undefined;
   index: number;
-}> = ({ title, description, icon, index }) => {
-  const { ref, isInView } = useInViewReveal<HTMLDivElement>({
+}> = ({ title, description, index }) => {
+  const { ref, isInView } = useInViewReveal<HTMLLIElement>({
     threshold: 0.2,
   });
   return (
-    <div
+    <li
       ref={ref}
-      style={{ animationDelay: `${index * 90}ms` }}
-      className={`group relative surface-glass surface-glass-hover rounded-2xl p-7 transition-shadow duration-500 hover:shadow-glow-soft ${isInView ? 'animate-fade-in-up' : 'opacity-0'}`}
+      style={{ animationDelay: `${index * 80}ms` }}
+      className={`border-b border-r border-line p-6 ${isInView ? 'motion-safe:animate-fade-in-up' : 'motion-safe:opacity-0'}`}
     >
-      <div className="text-3xl mb-4">{icon ?? '✨'}</div>
-      <h4 className="font-display text-xl font-semibold text-surface-50 mb-2">
-        {title}
-      </h4>
-      <p className="text-surface-300 leading-relaxed text-sm">{description}</p>
-    </div>
+      <span className="font-mono text-xs text-accent tabular-nums">
+        N{String(index + 1).padStart(2, '0')}
+      </span>
+      <h4 className="mt-3 text-lg font-semibold text-ink">{title}</h4>
+      <p className="mt-2 text-sm leading-relaxed text-ink-muted">
+        {description}
+      </p>
+    </li>
   );
 };
 
-/** The About section, over the site content. */
+/** The About section, over site content with a static fallback. */
 export const About: React.FC = () => {
   const site = getSiteContent();
   const experience = getExperience();
@@ -76,94 +83,87 @@ export const About: React.FC = () => {
   const profileImage = site.profile_image_url ?? '/headshot.jpg';
 
   return (
-    <section id="about" className="relative py-24 sm:py-32 overflow-hidden">
-      <div className="absolute inset-0 bg-linear-to-b from-surface-950 via-surface-900 to-surface-950 pointer-events-none" />
-
-      <div
-        ref={sectionRef}
-        className="relative z-10 max-w-7xl mx-auto px-6 sm:px-8"
-      >
-        <div className="text-center mb-16 max-w-2xl mx-auto">
-          <span className="inline-block text-xs uppercase tracking-[0.2em] text-accent-cyan-400 mb-4">
-            About
-          </span>
-          <h2 className="font-display text-4xl sm:text-5xl font-bold text-surface-50 mb-4">
-            A bit about <GradientText as="span">me</GradientText>
-          </h2>
-          <p className="text-surface-300 text-lg">
+    <section
+      id="about"
+      aria-labelledby="about-title"
+      className="border-b border-line py-20 sm:py-28"
+    >
+      <Sheet>
+        <div ref={sectionRef}>
+          <SectionHeading
+            index="02"
+            label="About"
+            id="about-title"
+            title="A bit about me"
+          >
             {site.footer_tagline ??
               'Software engineer focused on building reliable, privacy-conscious systems.'}
-          </p>
-        </div>
+          </SectionHeading>
 
-        <div className="grid lg:grid-cols-5 gap-12 items-start">
-          <div className="lg:col-span-2 flex flex-col items-center lg:items-start">
-            <div className="relative">
-              <div className="absolute inset-0 rounded-full bg-gradient-conic from-accent-cyan-500 via-accent-violet-500 via-accent-fuchsia-500 to-accent-cyan-500 animate-slow-spin blur-md opacity-70" />
-              <div className="relative w-64 h-64 sm:w-72 sm:h-72 rounded-full p-[3px] bg-gradient-conic from-accent-cyan-400 via-accent-violet-400 via-accent-fuchsia-400 to-accent-cyan-400">
-                <img
-                  src={profileImage}
-                  alt="Tyler Webb"
-                  className="w-full h-full rounded-full object-cover bg-surface-900"
+          <div className="grid items-start gap-12 lg:grid-cols-12">
+            <div className="lg:col-span-4">
+              <figure className="relative w-full max-w-xs">
+                <RegistrationMarks />
+                <div className="border border-line bg-paper-raised p-2">
+                  <img
+                    src={profileImage}
+                    alt="Tyler Webb"
+                    className="aspect-square w-full object-cover grayscale-[15%]"
+                  />
+                </div>
+                <figcaption className="mt-3 flex items-center justify-between">
+                  <MonoLabel>Tyler Webb</MonoLabel>
+                  <MonoLabel>Fig. 2</MonoLabel>
+                </figcaption>
+              </figure>
+
+              <dl className="mt-8 grid max-w-xs grid-cols-2 border-l border-t border-line">
+                <Figure
+                  value={years}
+                  label="Years"
+                  trigger={sectionInView && years > 0}
                 />
-              </div>
+                <Figure
+                  value={projectCount}
+                  label="Projects"
+                  trigger={sectionInView && projectCount > 0}
+                />
+              </dl>
             </div>
 
-            <div className="mt-10 grid grid-cols-2 gap-4 w-full max-w-sm">
-              <StatCard
-                value={years}
-                label="Years"
-                trigger={sectionInView && years > 0}
-              />
-              <StatCard
-                value={projectCount}
-                label="Projects"
-                trigger={sectionInView && projectCount > 0}
-              />
-            </div>
-          </div>
-
-          <div className="lg:col-span-3 space-y-5">
-            {paragraphs.length > 0 ? (
-              paragraphs.map((p, i) => (
-                <p key={i} className="text-surface-200 text-lg leading-relaxed">
+            <div className="space-y-5 lg:col-span-8">
+              {paragraphs.map((p, i) => (
+                <p
+                  key={i}
+                  className="max-w-2xl text-lg leading-relaxed text-ink-muted first:text-xl first:text-ink"
+                >
                   {p}
                 </p>
-              ))
-            ) : (
-              <div className="space-y-4">
-                <div className="h-4 bg-surface-800 rounded-sm animate-pulse" />
-                <div className="h-4 bg-surface-800 rounded-sm animate-pulse w-11/12" />
-                <div className="h-4 bg-surface-800 rounded-sm animate-pulse w-10/12" />
-              </div>
-            )}
-          </div>
-        </div>
-
-        {values.length > 0 && (
-          <div className="mt-24">
-            <div className="text-center mb-10">
-              <span className="inline-block text-xs uppercase tracking-[0.2em] text-accent-violet-400 mb-3">
-                Principles
-              </span>
-              <h3 className="font-display text-3xl font-bold text-surface-50">
-                What I value
-              </h3>
-            </div>
-            <div className="grid md:grid-cols-3 gap-6">
-              {values.map((v, i) => (
-                <ValueCard
-                  key={`${v.title}-${i}`}
-                  title={v.title}
-                  description={v.description}
-                  icon={v.icon}
-                  index={i}
-                />
               ))}
             </div>
           </div>
-        )}
-      </div>
+
+          {values.length > 0 && (
+            <div className="mt-20">
+              <div className="mb-6 flex items-center gap-3">
+                <MonoLabel>Principles</MonoLabel>
+                <span className="h-px flex-1 bg-line" aria-hidden="true" />
+              </div>
+              <h3 className="sr-only">What I value</h3>
+              <ul className="grid border-l border-t border-line md:grid-cols-3">
+                {values.map((v, i) => (
+                  <ValueNote
+                    key={`${v.title}-${i}`}
+                    title={v.title}
+                    description={v.description}
+                    index={i}
+                  />
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </Sheet>
     </section>
   );
 };

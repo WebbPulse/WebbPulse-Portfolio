@@ -17,6 +17,22 @@ describe('Markdown Utils', () => {
       expect(result).toContain('class=');
     });
 
+    it('leaves unstyled HTML bare and anchors h2 and h3', () => {
+      const result = processMarkdown(
+        '## Getting Started\n\n### Next step\n\ntext',
+        {
+          styled: false,
+        }
+      );
+
+      expect(result).not.toContain('class=');
+      expect(result).toContain('<h2 id="getting-started">');
+      expect(result).toContain('<h3 id="next-step">');
+      expect(extractHeadings('## Getting Started').map((h) => h.id)).toEqual([
+        'getting-started',
+      ]);
+    });
+
     it('should handle empty markdown', () => {
       const result = processMarkdown('');
       expect(result).toBe('');

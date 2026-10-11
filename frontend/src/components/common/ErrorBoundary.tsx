@@ -1,7 +1,5 @@
 import React, { Component } from 'react';
 import { Link } from 'react-router-dom';
-import Button from './Button';
-import GradientText from './GradientText';
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -42,27 +40,31 @@ export class ErrorBoundary extends Component<
     }
 
     return (
-      <div className="min-h-screen flex items-center justify-center relative overflow-hidden px-6">
-        <div className="absolute inset-0 bg-mesh-1 opacity-40 pointer-events-none" />
-
+      <div className="drawing-grid flex min-h-screen items-center justify-center px-4 text-ink">
         <div
           role="alert"
-          className="relative z-10 max-w-lg w-full text-center surface-glass rounded-2xl px-8 py-12"
+          className="relative w-full max-w-lg border border-line bg-paper-raised px-6 py-10 sm:px-10"
         >
-          <h1 className="font-display text-3xl sm:text-4xl font-bold text-surface-50 mb-4">
-            <GradientText as="span">Something went wrong</GradientText>
+          <p className="mono-label">Unexpected error</p>
+          <h1 className="mt-4 text-3xl font-semibold tracking-[-0.02em] text-ink sm:text-4xl">
+            Something went wrong
           </h1>
-          <p className="text-surface-300 leading-relaxed mb-8">
+          <p className="mt-4 leading-relaxed text-ink-muted">
             This page hit an unexpected error. Reloading usually clears it.
           </p>
-          <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <Button variant="primary" onClick={this.handleReload}>
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <button
+              type="button"
+              onClick={this.handleReload}
+              className="inline-flex items-center justify-center border border-ink bg-ink px-5 py-3 text-sm font-medium text-paper transition-colors hover:border-accent hover:bg-accent"
+            >
               Reload the page
-            </Button>
-            <Link to="/">
-              <Button variant="outline" className="w-full sm:w-auto">
-                Back to home
-              </Button>
+            </button>
+            <Link
+              to="/"
+              className="inline-flex items-center justify-center border border-line-strong px-5 py-3 text-sm font-medium text-ink transition-colors hover:border-ink"
+            >
+              Back to home
             </Link>
           </div>
         </div>
