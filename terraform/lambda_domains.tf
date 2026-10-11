@@ -162,20 +162,6 @@ resource "aws_iam_role_policy" "lambda_domain" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = concat(
-      [
-        {
-          Sid      = "WriteOwnLogs"
-          Effect   = "Allow"
-          Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
-          Resource = "${module.lambda_domain[each.key].log_group_arn}:*"
-        },
-        {
-          Sid      = "WriteSpansToTheXRayOTLPEndpoint"
-          Effect   = "Allow"
-          Action   = ["xray:PutSpans", "xray:PutSpansForIndexing"]
-          Resource = "*"
-        },
-      ],
       length(local.lambda_domain_write_arns[each.key]) > 0 ? [
         {
           Sid      = "ReadWriteOwnTables"
@@ -192,7 +178,6 @@ resource "aws_iam_role_policy" "lambda_domain" {
           Resource = local.lambda_domain_read_arns[each.key]
         },
       ] : [],
-      each.value.secrets ? [module.app_secrets.read_policy_statement] : [],
     )
   })
 }
