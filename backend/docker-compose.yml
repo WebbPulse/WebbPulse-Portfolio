@@ -42,7 +42,6 @@ services:
       dockerfile: Dockerfile
       args:
         DOMAIN: content
-        READINESS_PROTOCOL: http
       secrets:
         - codeartifact_token
     ports:
@@ -56,7 +55,6 @@ services:
       dockerfile: Dockerfile
       args:
         DOMAIN: resume
-        READINESS_PROTOCOL: http
       secrets:
         - codeartifact_token
     ports:
@@ -70,7 +68,6 @@ services:
       dockerfile: Dockerfile
       args:
         DOMAIN: identity
-        READINESS_PROTOCOL: http
       secrets:
         - codeartifact_token
     ports:
@@ -84,7 +81,6 @@ services:
       dockerfile: Dockerfile
       args:
         DOMAIN: public
-        READINESS_PROTOCOL: tcp
       secrets:
         - codeartifact_token
     ports:
