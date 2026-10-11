@@ -44,7 +44,7 @@ const ManLine: React.FC<{ left: string; centre: string; right: string }> = ({
   right,
 }) => (
   <div
-    className="flex items-center justify-between gap-4 font-mono text-[0.6875rem] uppercase tracking-[0.08em] text-ink-muted"
+    className="flex items-center justify-between gap-4 font-mono text-xs uppercase tracking-[0.08em] text-ink-muted"
     aria-hidden="true"
   >
     <span>{left}</span>
@@ -138,7 +138,7 @@ const CaseStudyBody: React.FC<{ view: CaseStudyView }> = ({ view }) => {
                     {view.stack.map((item) => (
                       <li
                         key={item}
-                        className="border border-line px-1.5 py-0.5 font-mono text-[0.6875rem] text-ink-muted"
+                        className="border border-line px-1.5 py-0.5 font-mono text-xs text-ink-muted"
                       >
                         {item}
                       </li>

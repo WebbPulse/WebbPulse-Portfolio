@@ -50,7 +50,7 @@ const Hero: React.FC = () => {
           <SystemMap figures={figures} />
           <figcaption className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3">
             <MonoLabel>Fig. 1 / The WebbPulse estate</MonoLabel>
-            <span className="hidden font-mono text-[0.6875rem] text-ink-faint lg:inline">
+            <span className="hidden font-mono text-xs text-ink-faint lg:inline">
               Hover or tab through a node to trace its connections
             </span>
           </figcaption>

@@ -169,7 +169,7 @@ const Header: React.FC<HeaderProps> = ({ navigationItems = SITE_NAV }) => {
               <circle cx="7" cy="7" r="4.5" />
               <path d="m10.5 10.5 3.5 3.5" />
             </svg>
-            <kbd className="hidden font-mono text-[0.6875rem] tracking-wide sm:inline">
+            <kbd className="hidden font-mono text-xs tracking-wide sm:inline">
               {apple ? '⌘K' : 'Ctrl K'}
             </kbd>
           </button>

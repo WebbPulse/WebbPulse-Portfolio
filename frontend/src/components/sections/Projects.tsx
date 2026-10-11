@@ -22,7 +22,7 @@ const WorkRow: React.FC<{ entry: WorkEntry; index: number }> = ({
         <span className="block text-lg font-semibold tracking-tight text-ink">
           {entry.title}
         </span>
-        <span className="block font-mono text-[0.6875rem] text-ink-faint">
+        <span className="block font-mono text-xs text-ink-faint">
           {manName(entry.slug).toLowerCase()}(7)
         </span>
       </span>
