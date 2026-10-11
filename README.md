@@ -2,8 +2,8 @@
 
 A full-stack personal portfolio and blog, served at
 [portfolio.webbpulse.com](https://portfolio.webbpulse.com). Every section, projects, experience,
-skills, blog and site copy, is driven from the API through an admin panel rather
-than hardcoded.
+skills, blog and site copy, lives in typed content files under
+`frontend/src/content/` and changes through a pull request.
 
 **Stack:** FastAPI (Python 3.13) on AWS Lambda, React (TypeScript), DynamoDB,
 Terraform. **License:** [PolyForm Strict License 1.0.0](LICENSE).
@@ -224,8 +224,8 @@ can move to its own repo with moved blocks.
   staging access gate whose cookies are scoped to `staging.webbpulse.com`.
 - The viewer-request handler is
   `terraform/company_site_functions/app_handler.js.tftpl`. It sends `www` to the
-  apex, sends the old portfolio paths (`/blog`, `/privacy`, `/admin`,
-  `/verify-email`, `/reset-password` and anything under them) with a 301 to the
+  apex, sends the old portfolio paths (`/blog`, `/privacy` and anything
+  under them) with a 301 to the
   portfolio host, serves `/` and files with an extension from the bucket, and
   answers any other path with a 404 page.
 - `deploy-site.yml` builds `site/` and syncs it to the bucket named by the

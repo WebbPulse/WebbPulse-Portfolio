@@ -15,7 +15,7 @@ locals {
     canonical_host  = local.company_site_domain
     www_host        = local.company_site_www_host
     portfolio_host  = local.company_site_portfolio
-    portfolio_paths = ["/blog", "/privacy", "/admin", "/verify-email", "/reset-password"]
+    portfolio_paths = ["/blog", "/privacy"]
   })
 }
 

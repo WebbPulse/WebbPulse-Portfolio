@@ -1,15 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import {
-  CaseStudy,
-  Home,
-  Privacy,
-  VerifyEmail,
-  ResetPassword,
-  NotFound,
-} from './pages';
+import { CaseStudy, Home, Privacy, NotFound } from './pages';
 import { UnderConstruction } from './pages/UnderConstruction';
 import { ErrorBoundary } from './components/common';
-import { AdminPanel } from './components/admin/AdminPanel';
 import { BlogList } from './components/sections/BlogList';
 import { BlogPost } from './components/sections/BlogPost';
 import './styles/globals.css';
@@ -36,10 +28,7 @@ function App() {
               <Route path="/work/:slug" element={<CaseStudy />} />
             </>
           )}
-          <Route path="/admin" element={<AdminPanel />} />
           <Route path="/privacy" element={<Privacy />} />
-          <Route path="/verify-email" element={<VerifyEmail />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </ErrorBoundary>
