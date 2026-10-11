@@ -113,7 +113,7 @@ export const projects: Project[] = [
     slug: 'webbpulse-portfolio',
     title: 'WebbPulse Portfolio',
     description:
-      'This site. A full-stack portfolio and blog with an admin panel that drives every section from the API: React and TypeScript on the front, FastAPI on AWS Lambda with DynamoDB behind it, deployed with Terraform.',
+      'This site. A portfolio and blog whose content lives in typed files in the repo and is prerendered at build time, with React and TypeScript on the front, FastAPI on AWS Lambda with DynamoDB behind it, deployed with Terraform.',
     image: '/projects/webbpulse.jpg',
     technologies: [
       'React',

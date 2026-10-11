@@ -1,8 +1,6 @@
 import {
-  ApiError,
   createApiClient,
   createEnvelopeClient,
-  getWebbPulseError,
   type ApiEnvelope,
   type EnvelopeClient,
 } from '@webbpulse/api-client';
@@ -18,26 +16,6 @@ const config = loadAppConfig(import.meta.env, {
 
 /** Base URL of this application's API, from the resolved app config. */
 export const API_BASE_URL = config.apiBaseUrl;
-
-/**
- * Logs a failed request with the fields the backend's error envelope carries.
- *
- * `getWebbPulseError` reads the message, status and request id off the shared
- * envelope, and `errorCode` is logged only when the backend sends one.
- */
-function logApiFailure(error: unknown): void {
-  if (error instanceof ApiError) {
-    const { message, errorCode, requestId, status } = getWebbPulseError(error);
-    console.error('API request failed:', {
-      message,
-      status,
-      ...(errorCode === undefined ? {} : { errorCode }),
-      ...(requestId === undefined ? {} : { requestId }),
-    });
-    return;
-  }
-  console.error('API request failed:', error);
-}
 
 /** A portfolio project as the API returns it. */
 export interface Project {
@@ -171,18 +149,18 @@ export interface SiteContent {
  */
 export type ApiResponse<T> = ApiEnvelope<T>;
 
-/** Typed client for the portfolio API's public, anonymous routes. */
+/**
+ * Typed client for the portfolio API's public, anonymous routes.
+ *
+ * Failures resolve to the `{ data, error }` envelope without logging, so a
+ * missing optional figure never surfaces as a console error.
+ */
 export class ApiService {
   private readonly client: EnvelopeClient;
 
   constructor(baseUrl: string = API_BASE_URL) {
     this.client = createEnvelopeClient(
-      createApiClient({ baseUrl, credentials: 'include' }),
-      {
-        onError: (error) => {
-          logApiFailure(error);
-        },
-      }
+      createApiClient({ baseUrl, credentials: 'include' })
     );
   }
 

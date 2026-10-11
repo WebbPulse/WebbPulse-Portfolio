@@ -27,7 +27,6 @@ describe('ApiService', () => {
   beforeEach(() => {
     fetchMock = vi.fn<typeof fetch>();
     vi.stubGlobal('fetch', fetchMock);
-    vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   afterEach(() => {
@@ -73,8 +72,9 @@ describe('ApiService', () => {
     expect(callArgs().init.credentials).toBe('include');
   });
 
-  it('logs the request id and status from the envelope on a failure', async () => {
+  it('returns the envelope error without logging on a failure', async () => {
     const consoleError = vi.spyOn(console, 'error');
+    const consoleWarn = vi.spyOn(console, 'warn');
     fetchMock.mockImplementation(() =>
       Promise.resolve(
         jsonResponse(
@@ -94,11 +94,8 @@ describe('ApiService', () => {
 
     expect(response.data).toBeNull();
     expect(response.error).toBe('Internal server error.');
-    expect(consoleError).toHaveBeenCalledWith('API request failed:', {
-      message: 'Internal server error.',
-      status: 500,
-      requestId: '0199a1f2-0000-7000-8000-000000000002',
-    });
+    expect(consoleError).not.toHaveBeenCalled();
+    expect(consoleWarn).not.toHaveBeenCalled();
   });
 
   it('converts a network failure into the error field', async () => {
