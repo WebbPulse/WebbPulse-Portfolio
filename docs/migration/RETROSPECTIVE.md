@@ -51,19 +51,13 @@ enforcement rollback still works in full. Step 12 is the close-out checklist.
 
 ### Container image workflow gaps
 
-Five of the seven gaps recorded against the org reusable workflow are closed and
-verified in `.github/workflows/deploy-backend.yml`. Two are not:
-
-- **No existing-tag guard is passed.** The caller sets no `skip-if-tag-exists`,
-  so it relies on the org workflow's default. The four ECR repositories are
-  IMMUTABLE-tagged by the `ecr-repository` module default and the workflow tags
-  only `sha-<full git sha>`, so a rerun of a green commit whose rebuild is not
-  byte-reproducible still fails with `ImageTagAlreadyExistsException` for a
-  reason unrelated to the commit under test.
-- **The build has never run unguarded.** `BACKEND_IMAGE_BUILD_ENABLED` gates
-  `resolve-env` and `BACKEND_IMAGE_DEPLOY_ENABLED` gates `deploy-images`. Both
-  repository variables survive, so the workflow still does not run as a plain
-  consequence of a push.
+All seven gaps recorded against the org reusable workflow are closed (PORT-21).
+`.github/workflows/deploy-backend.yml` is a thin caller of
+`lambda-domains-deploy.yml@v3`, which passes `skip-if-tag-exists`, so a rerun of
+a green commit reuses the existing `sha-<commit>` image on the IMMUTABLE
+repositories. The `BACKEND_IMAGE_BUILD_ENABLED` and `BACKEND_IMAGE_DEPLOY_ENABLED`
+gates and their repository variables are gone; `STAGING_DEPLOY_ENABLED` remains
+because the frontend and site deploys read it too.
 
 Two smaller notes that are correct as built but worth knowing:
 

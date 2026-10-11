@@ -188,8 +188,8 @@ needs an explicit `namespace`.
 
 ## Container images
 
-One `Dockerfile` builds all four images. `DOMAIN` selects the entrypoint and
-`READINESS_PROTOCOL` the adapter check; the `CMD` is
+One `Dockerfile` builds all four images. `DOMAIN` selects the entrypoint and the
+adapter readiness protocol; the `CMD` is
 `python -m app.domains.${DOMAIN}.entrypoint`. There is no Lambda handler and no Mangum:
 the Lambda Web Adapter starts before the application and turns each invoke into
 an HTTP request against `127.0.0.1:8080`, so the same image runs on Lambda and
@@ -210,7 +210,7 @@ scripts/build_image.sh public sha-1a2b3c4
 
 The token reaches pip as a BuildKit secret mount, never as a build arg and never
 as an `ENV`: both persist in `docker history` for anyone who can pull the image.
-The script derives the readiness protocol from the domain, sets the platform to
+The script sets the platform to
 `linux/arm64`, and otherwise passes through to `docker buildx build`. `PUSH=1`
 pushes instead of loading locally. Tokens last 12 hours; a 401 from the index
 usually just needs a fresh one.
@@ -229,10 +229,12 @@ DynamoDB read in front of every `public` cold start. So `public` builds with
 `AWS_LWA_READINESS_CHECK_PROTOCOL=tcp`, and the adapter waits for the port to
 accept a connection instead.
 
-`build_image.sh` derives this, and the Dockerfile rejects the wrong pairing
-rather than trusting the caller, because getting it wrong is a delayed failure:
-the image starts fine and only fails on a cold start that races an unavailable
-table.
+The Dockerfile derives this from `DOMAIN` rather than taking it as a build arg:
+the last stage is `FROM readiness-${DOMAIN}`, and each `readiness-<domain>`
+stage sets the protocol. No caller can get the pairing wrong, which matters
+because getting it wrong is a delayed failure: the image starts fine and only
+fails on a cold start that races an unavailable table. A `DOMAIN` that is not
+one of the four names no stage, so the build fails.
 
 ### Running all four locally
 
@@ -263,28 +265,26 @@ curl localhost:8010/                # 404: that route belongs to public
 
 ## Deploys
 
-A push to `staging` or `main` touching `backend/**` runs `deploy-backend.yml`:
-`resolve-env` picks the GitHub Environment from the branch, a matrix builds the
-four images through the org `container-image.yml@v2`, `image-map` assembles a
-digest-pinned map from the uploaded manifests, `deploy-images` points each
-function at its digest through `lambda-image-deploy.yml@v2`, `smoke-domains`
-invokes each function with a synthesised HTTP API v2 event asserting
-`GET /health` is 200. The e2e suite, which the deploy triggers, verifies that
+A push to `staging` or `main` touching `backend/**` runs `deploy-backend.yml`,
+a thin caller of the org `lambda-domains-deploy.yml@v3`. That workflow picks the
+GitHub Environment from the branch, builds the affected domains' images through
+`container-image.yml@v3`, assembles a digest-pinned function image map, points
+each existing function at its digest through `lambda-image-deploy.yml@v3`, and
+invokes each with a synthesised HTTP API v2 event asserting `GET /health` is 200.
+A rerun whose `sha-<commit>` tag already exists reuses that image rather than
+failing on the IMMUTABLE repository. The e2e suite, which the deploy triggers, verifies that
 each domain's paths are served by that domain's function.
 
-Two repository variables gate it: `BACKEND_IMAGE_BUILD_ENABLED` on `resolve-env`
-and `BACKEND_IMAGE_DEPLOY_ENABLED` on `deploy-images`. They are separate on
-purpose, so the build can run while nothing is updated.
+The only gate is `STAGING_DEPLOY_ENABLED`, which turns staging deploys off and
+never touches production.
 
-`resolve-env` also emits a `dependency-stamp` of the current UTC date, passed as
-the `DEPENDENCY_RESOLUTION` build arg. It sits above the CodeArtifact layer that
-floats `webbpulse` to its newest version, so that layer rebuilds at most once per
-UTC day and otherwise comes from the buildx cache. A change to `pyproject.toml`
-or `uv.lock` still rebuilds it immediately, because those are copied in above it.
-The tradeoff is a `webbpulse` version up to one UTC day stale on a rebuild that
-changes nothing else. To take the newest `webbpulse` before the stamp rolls over,
-dispatch the workflow with `fresh-dependencies=true`, which substitutes the run
-id for the date and so forces the layer to rebuild.
+The shared workflow stamps the newest published `webbpulse` version into the
+`DEPENDENCY_RESOLUTION` build arg. It sits above the CodeArtifact layer that
+floats `webbpulse`, so that layer rebuilds when a new `webbpulse` is published and
+otherwise comes from the buildx cache. A change to `pyproject.toml` or `uv.lock`
+still rebuilds it immediately, because those are copied in above it. Dispatching
+the workflow with `fresh-dependencies=true` substitutes the run id, which forces
+the layer and every domain to rebuild.
 
 ## Scripts
 

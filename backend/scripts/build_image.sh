@@ -44,12 +44,6 @@ if [[ -z "${CODEARTIFACT_AUTH_TOKEN:-}" ]]; then
     usage
 fi
 
-if [[ "${DOMAIN}" == "public" ]]; then
-    READINESS_PROTOCOL="tcp"
-else
-    READINESS_PROTOCOL="http"
-fi
-
 IMAGE="${IMAGE_REPO}:${TAG}"
 
 if [[ "${PUSH:-0}" == "1" ]]; then
@@ -61,7 +55,6 @@ fi
 BUILD_ARGS=(
     --platform "${PLATFORM}"
     --build-arg "DOMAIN=${DOMAIN}"
-    --build-arg "READINESS_PROTOCOL=${READINESS_PROTOCOL}"
     --secret "id=codeartifact_token,env=CODEARTIFACT_AUTH_TOKEN"
     --tag "${IMAGE}"
 )
@@ -70,7 +63,7 @@ if [[ -n "${BASE_IMAGE:-}" ]]; then
     BUILD_ARGS+=(--build-arg "BASE_IMAGE=${BASE_IMAGE}")
 fi
 
-echo "building ${IMAGE} (domain=${DOMAIN}, platform=${PLATFORM}, readiness=${READINESS_PROTOCOL})"
+echo "building ${IMAGE} (domain=${DOMAIN}, platform=${PLATFORM})"
 
 docker buildx build "${BUILD_ARGS[@]}" "${OUTPUT_ARGS[@]}" "${BACKEND_DIR}"
 

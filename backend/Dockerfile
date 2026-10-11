@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
+ARG DOMAIN
 ARG BASE_IMAGE=432410731887.dkr.ecr.us-west-2.amazonaws.com/webbpulse/python-lambda-base@sha256:b5298b4b773ad6c9e311057cf5d43f37ceb98f0367347d714c6817f250a5cef7
 
 FROM ${BASE_IMAGE} AS builder
@@ -38,15 +39,6 @@ RUN find /opt/venv -type d -name "__pycache__" -prune -exec rm -rf {} + \
 FROM ${BASE_IMAGE} AS runtime
 
 ARG DOMAIN
-RUN test -n "${DOMAIN}" || { \
-        echo "DOMAIN build arg is required: one of content, resume, identity, public." >&2; \
-        echo "  docker buildx build --build-arg DOMAIN=content ..." >&2; \
-        exit 1; \
-    }; \
-    case "${DOMAIN}" in \
-        content|resume|identity|public) ;; \
-        *) echo "DOMAIN=${DOMAIN} is not a domain. Expected one of content, resume, identity, public." >&2; exit 1 ;; \
-    esac
 
 COPY --from=builder /opt/venv /opt/venv
 COPY app/ /var/task/app/
@@ -63,25 +55,23 @@ ENV DOMAIN=${DOMAIN} \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     AWS_LWA_PORT=8080 \
-    AWS_LWA_ASYNC_INIT=true
-
-ARG READINESS_PROTOCOL=http
-RUN case "${DOMAIN}:${READINESS_PROTOCOL}" in \
-        public:tcp|content:http|resume:http|identity:http) ;; \
-        public:*) \
-            echo "public must build with READINESS_PROTOCOL=tcp." >&2; \
-            echo "Its only GET /health reads DynamoDB, so an http readiness check would" >&2; \
-            echo "put that read in front of every cold start. Use scripts/build_image.sh," >&2; \
-            echo "which derives this from the domain." >&2; \
-            exit 1 ;; \
-        *) \
-            echo "DOMAIN=${DOMAIN} must build with READINESS_PROTOCOL=http, not ${READINESS_PROTOCOL}." >&2; \
-            exit 1 ;; \
-    esac
-
-ENV AWS_LWA_READINESS_CHECK_PATH=/health \
-    AWS_LWA_READINESS_CHECK_PROTOCOL=${READINESS_PROTOCOL}
+    AWS_LWA_ASYNC_INIT=true \
+    AWS_LWA_READINESS_CHECK_PATH=/health
 
 WORKDIR /var/task
 
 CMD ["sh", "-c", "exec python -m app.domains.${DOMAIN}.entrypoint"]
+
+FROM runtime AS readiness-content
+ENV AWS_LWA_READINESS_CHECK_PROTOCOL=http
+
+FROM runtime AS readiness-resume
+ENV AWS_LWA_READINESS_CHECK_PROTOCOL=http
+
+FROM runtime AS readiness-identity
+ENV AWS_LWA_READINESS_CHECK_PROTOCOL=http
+
+FROM runtime AS readiness-public
+ENV AWS_LWA_READINESS_CHECK_PROTOCOL=tcp
+
+FROM readiness-${DOMAIN}
