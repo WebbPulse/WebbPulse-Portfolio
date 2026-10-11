@@ -45,7 +45,7 @@ const NodeFigure: React.FC<{ figure: PublicFigure | undefined }> = ({
   figure,
 }) =>
   figure ? (
-    <span className="flex items-center gap-1.5 font-mono text-[0.625rem] text-live-ink">
+    <span className="flex items-center gap-1.5 font-mono text-xs text-live-ink">
       <LiveDot className="h-1.5 w-1.5" />
       {figureValue(figure)}
     </span>
@@ -64,7 +64,7 @@ const NodeBody: React.FC<{
     <span className="block truncate text-[0.9375rem] font-semibold tracking-tight text-ink">
       {node.label}
     </span>
-    <span className="block truncate font-mono text-[0.6875rem] text-ink-muted">
+    <span className="block truncate font-mono text-xs text-ink-muted">
       {node.facts.slice(0, 2).join(' · ')}
     </span>
   </>
@@ -228,7 +228,7 @@ export const SystemMap: React.FC<SystemMapProps> = ({ figures }) => {
               return (
                 <span
                   key={`label-${edge.from}-${edge.to}`}
-                  className="map-edge-label pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap bg-paper px-1 font-mono text-[0.625rem] text-accent"
+                  className="map-edge-label pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap bg-paper px-1 font-mono text-xs text-accent"
                   style={{ left: pctX(x), top: pctY(y) }}
                   aria-hidden="true"
                 >
@@ -305,7 +305,7 @@ export const SystemMap: React.FC<SystemMapProps> = ({ figures }) => {
                   <>
                     <NodeBody node={node} figure={figure} />
                     {links.length > 0 && (
-                      <span className="mt-1 block font-mono text-[0.6875rem] text-ink-faint">
+                      <span className="mt-1 block font-mono text-xs text-ink-faint">
                         {links.join(', ')}
                       </span>
                     )}

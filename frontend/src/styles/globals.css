@@ -91,17 +91,17 @@
   --cp-paper-raised: #faf7f0;
   --cp-paper-sunk: #ebe5d8;
   --cp-ink: #14213d;
-  --cp-ink-muted: #46506a;
-  --cp-ink-faint: #5f667b;
-  --cp-line: rgba(20, 33, 61, 0.16);
-  --cp-line-strong: rgba(20, 33, 61, 0.42);
+  --cp-ink-muted: #3a445e;
+  --cp-ink-faint: #4a5269;
+  --cp-line: rgba(20, 33, 61, 0.32);
+  --cp-line-strong: rgba(20, 33, 61, 0.56);
   --cp-grid: rgba(31, 63, 138, 0.055);
   --cp-grid-major: rgba(31, 63, 138, 0.09);
   --cp-accent: #1f3f8a;
   --cp-accent-soft: rgba(31, 63, 138, 0.08);
-  --cp-live: #e08a00;
+  --cp-live: #b86a00;
   --cp-live-ink: #8a4b00;
-  --cp-live-soft: rgba(224, 138, 0, 0.14);
+  --cp-live-soft: rgba(184, 106, 0, 0.14);
   --cp-selection: rgba(31, 63, 138, 0.2);
 }
 
@@ -113,9 +113,9 @@
     --cp-paper-sunk: #07101d;
     --cp-ink: #e4f0f8;
     --cp-ink-muted: #9fb3c8;
-    --cp-ink-faint: #7f95ad;
-    --cp-line: rgba(176, 216, 240, 0.16);
-    --cp-line-strong: rgba(176, 216, 240, 0.42);
+    --cp-ink-faint: #8ea4bb;
+    --cp-line: rgba(176, 216, 240, 0.28);
+    --cp-line-strong: rgba(176, 216, 240, 0.5);
     --cp-grid: rgba(140, 200, 235, 0.045);
     --cp-grid-major: rgba(140, 200, 235, 0.08);
     --cp-accent: #8ccfee;
@@ -134,9 +134,9 @@
   --cp-paper-sunk: #07101d;
   --cp-ink: #e4f0f8;
   --cp-ink-muted: #9fb3c8;
-  --cp-ink-faint: #7f95ad;
-  --cp-line: rgba(176, 216, 240, 0.16);
-  --cp-line-strong: rgba(176, 216, 240, 0.42);
+  --cp-ink-faint: #8ea4bb;
+  --cp-line: rgba(176, 216, 240, 0.28);
+  --cp-line-strong: rgba(176, 216, 240, 0.5);
   --cp-grid: rgba(140, 200, 235, 0.045);
   --cp-grid-major: rgba(140, 200, 235, 0.08);
   --cp-accent: #8ccfee;
@@ -200,10 +200,10 @@
   @keyframes live-pulse {
     0%,
     100% {
-      opacity: 1;
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--cp-live) 40%, transparent);
     }
     50% {
-      opacity: 0.35;
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--cp-live) 40%, transparent);
     }
   }
 }
@@ -230,7 +230,7 @@
 
 @utility mono-label {
   font-family: var(--font-mono);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   line-height: 1rem;
   font-weight: 500;
   letter-spacing: 0.08em;
@@ -504,7 +504,7 @@
 
 [data-state='dim'] > .map-edge,
 [data-state='dim'] > .map-pin {
-  opacity: 0.25;
+  opacity: 0.45;
 }
 
 .map-node {
@@ -530,7 +530,7 @@
 }
 
 .map-node[data-state='dim'] {
-  opacity: 0.4;
+  border-color: var(--cp-line);
 }
 
 .case-study-head {
