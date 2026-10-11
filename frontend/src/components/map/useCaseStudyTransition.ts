@@ -11,7 +11,9 @@ const HEADER_SELECTOR = '[data-case-study-head]';
 
 /** A document that may or may not support view transitions. */
 type TransitionDocument = Document & {
-  startViewTransition?: (update: () => Promise<void>) => unknown;
+  startViewTransition?: (update: () => Promise<void>) => {
+    ready: Promise<void>;
+  };
 };
 
 /** The longest the transition holds the old frame while the route commits. */
@@ -84,13 +86,14 @@ export function useCaseStudyTransition(
         'view-transition-name',
         CASE_STUDY_TRANSITION_NAME
       );
-      doc.startViewTransition(async () => {
+      const transition = doc.startViewTransition(async () => {
         source.style.removeProperty('view-transition-name');
         flushSync(() => {
           void navigate(href);
         });
         await waitForElement(HEADER_SELECTOR, HEADER_TIMEOUT_MS);
       });
+      transition.ready.catch(() => undefined);
     },
     [navigate, reduced]
   );
