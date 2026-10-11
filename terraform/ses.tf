@@ -1,19 +1,36 @@
-resource "aws_sesv2_email_identity" "primary" {
-  count = local.custom_domain_count
+module "ses" {
+  source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/ses-identity"
+  version = "~> 2.39"
+  count   = local.custom_domain_count
 
-  email_identity = local.domain
-
-  dkim_signing_attributes {
-    next_signing_key_length = "RSA_2048_BIT"
-  }
-
-  configuration_set_name = aws_sesv2_configuration_set.identity[0].configuration_set_name
+  configuration_set_name  = local.identity_ses_configuration_set
+  domain                  = local.domain
+  tls_policy              = "REQUIRE"
+  set_feedback_attributes = false
+  verified_recipients     = try(module.config.values.ses_verified_recipients, [])
 
   tags = {
     Name      = "${local.prefix}-identity"
     Component = "identity"
     Milestone = "M3"
   }
+
+  recipient_tags = { Name = "${local.prefix}-ses-recipient" }
+}
+
+moved {
+  from = aws_sesv2_configuration_set.identity[0]
+  to   = module.ses[0].aws_sesv2_configuration_set.this
+}
+
+moved {
+  from = aws_sesv2_email_identity.primary[0]
+  to   = module.ses[0].aws_sesv2_email_identity.domain[0]
+}
+
+moved {
+  from = aws_sesv2_email_identity.recipient
+  to   = module.ses[0].aws_sesv2_email_identity.recipient
 }
 
 locals {
@@ -25,34 +42,10 @@ resource "aws_route53_record" "ses_dkim" {
   provider = aws.dns
 
   zone_id = local.records_zone_id
-  name    = "${aws_sesv2_email_identity.primary[0].dkim_signing_attributes[0].tokens[count.index]}._domainkey.${local.domain}"
+  name    = "${module.ses[0].dkim_tokens[count.index]}._domainkey.${local.domain}"
   type    = "CNAME"
   ttl     = 1800
-  records = ["${aws_sesv2_email_identity.primary[0].dkim_signing_attributes[0].tokens[count.index]}.dkim.amazonses.com"]
-}
-
-resource "aws_sesv2_configuration_set" "identity" {
-  count = local.custom_domain_count
-
-  configuration_set_name = local.identity_ses_configuration_set
-
-  delivery_options {
-    tls_policy = "REQUIRE"
-  }
-
-  reputation_options {
-    reputation_metrics_enabled = true
-  }
-
-  sending_options {
-    sending_enabled = true
-  }
-
-  tags = {
-    Name      = "${local.prefix}-identity"
-    Component = "identity"
-    Milestone = "M3"
-  }
+  records = ["${module.ses[0].dkim_tokens[count.index]}.dkim.amazonses.com"]
 }
 
 resource "aws_iam_role_policy" "identity_ses" {
@@ -69,8 +62,8 @@ resource "aws_iam_role_policy" "identity_ses" {
         Effect = "Allow"
         Action = ["ses:SendEmail"]
         Resource = [
-          aws_sesv2_email_identity.primary[0].arn,
-          aws_sesv2_configuration_set.identity[0].arn,
+          module.ses[0].identity_arn,
+          module.ses[0].configuration_set_arn,
         ]
       },
     ]
@@ -100,13 +93,5 @@ output "identity_ses_configuration_set" {
 
 output "identity_ses_dkim_tokens" {
   description = "Easy DKIM tokens SES issued for the sending domain, each published as a CNAME at <token>._domainkey.<domain>"
-  value       = local.custom_domains_enabled ? aws_sesv2_email_identity.primary[0].dkim_signing_attributes[0].tokens : []
-}
-
-resource "aws_sesv2_email_identity" "recipient" {
-  for_each = toset(try(module.config.values.ses_verified_recipients, []))
-
-  email_identity = each.value
-
-  tags = { Name = "${local.prefix}-ses-recipient" }
+  value       = local.custom_domains_enabled ? module.ses[0].dkim_tokens : []
 }
