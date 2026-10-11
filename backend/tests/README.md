@@ -6,7 +6,7 @@ by moto, so the suite runs anywhere with Python 3.13 and `uv sync` run.
 ```
 tests/
 ├── conftest.py                 moto tables, TestClient, fixture data
-├── fixtures/                   route_contract.json: the 44 routes and 42
+├── fixtures/                   route_contract.json: the 45 routes and 43
 │                               documented operations the API publishes
 ├── common/                     root and health, the migration script, the
 │                               serializer and repository, settings, and the

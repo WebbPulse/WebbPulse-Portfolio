@@ -594,7 +594,27 @@ export class ApiService {
       body: patch,
     });
   }
+
+  /** Live public system figures, cached server side for about 15 minutes. */
+  async getPublicFigures(): Promise<ApiResponse<PublicFiguresResponse>> {
+    return this.request<PublicFiguresResponse>('/public/figures');
+  }
 }
 
 /** Shared ApiService instance used across the application. */
 export const apiService = new ApiService();
+
+/** One live public system figure, such as a latest release or a site status. */
+export interface PublicFigure {
+  id: string;
+  label: string;
+  value: string;
+  as_of: string;
+  source: string;
+  url?: string;
+}
+
+/** The body of `GET /api/v1/public/figures`. */
+export interface PublicFiguresResponse {
+  figures: PublicFigure[];
+}

@@ -41,6 +41,11 @@ RATE_LIMITS = "rate-limits"
 """The rate limiter's own table, keyed and named to match `webbpulse.ratelimit` so
 the id allocator's table is not shared with a hot, high-churn workload."""
 
+PUBLIC_CACHE = "public-cache"
+"""The public domain's own cache table, keyed by a string `pk` with a `ttl`. It holds
+computed public data such as the live system figures and nothing any other domain
+reads or writes."""
+
 CREDENTIALS = CREDENTIALS_TABLE
 """The identity credential table, named by the package's own constant so a rename
 there is a failing test here. Registered in this module because the suite and
@@ -135,6 +140,7 @@ TABLES = {
     "posts": _posts_table(),
     META: _pk_table(META),
     RATE_LIMITS: _pk_table(RATE_LIMITS),
+    PUBLIC_CACHE: _pk_table(PUBLIC_CACHE),
     CREDENTIALS: _identity_table(CREDENTIALS),
     REFRESH_TOKENS: _identity_table(REFRESH_TOKENS),
     LOGIN_ATTEMPTS: _identity_table(LOGIN_ATTEMPTS),
@@ -176,6 +182,7 @@ ALL_TABLES = (
     *((entity, None) for entity in ENTITIES),
     (META, TTL_ATTRIBUTE),
     (RATE_LIMITS, RATE_LIMIT_TTL_ATTRIBUTE),
+    (PUBLIC_CACHE, TTL_ATTRIBUTE),
     *((name, IDENTITY_SPECS[name].ttl_attribute) for name in IDENTITY_ORDER),
 )
 """Every table this backend owns, in creation order, paired with the TTL attribute it

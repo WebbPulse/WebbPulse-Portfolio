@@ -149,10 +149,11 @@ def test_the_terraform_file_is_where_the_test_thinks_it_is():
     assert APIGATEWAY_TF.is_file(), APIGATEWAY_TF
 
 
-def test_public_route_keys_are_the_four_literal_paths():
-    """The public integration is wired to exactly its four literal paths."""
+def test_public_route_keys_are_the_five_literal_paths():
+    """The public integration is wired to exactly its five literal paths."""
     assert gateway_route_keys()["public"] == {
         "GET /health",
+        "GET /api/v1/public/figures",
         "GET /",
         "GET /sitemap.xml",
         "GET /robots.txt",

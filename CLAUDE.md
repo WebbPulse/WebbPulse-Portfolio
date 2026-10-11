@@ -44,7 +44,7 @@ docker compose up -d
 export DYNAMODB_ENDPOINT_URL=http://localhost:8001
 python scripts/create_local_tables.py
 
-# All 44 routes in one process (root A, every domain's routers on one app)
+# All 45 routes in one process (root A, every domain's routers on one app)
 uvicorn app.common.composition.app:app --reload
 
 # One domain, exactly as the image runs it (root B; the Dockerfile CMD is
@@ -166,7 +166,7 @@ ruff format --check app tests
 | `backend/app/common/config.py` | Pydantic Settings and the `APP_SECRETS_ARN` JSON secret |
 | `backend/app/core/identity_claims.py` | Reads authorizer claims in both native and gate shapes |
 | `backend/app/common/db/tables.py` | Canonical table and index definitions |
-| `backend/tests/fixtures/route_contract.json` | The published contract: 44 routes |
+| `backend/tests/fixtures/route_contract.json` | The published contract: 45 routes |
 | `backend/tests/entrypoints/test_gateway_routes.py` | Keeps route keys, served paths and flagged admin routes in agreement |
 | `terraform/dynamodb.tf` | Table map |
 | `terraform/lambda_domains.tf` | The four domain functions, roles, environments |

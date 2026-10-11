@@ -78,6 +78,8 @@ module "api" {
       "GET /"            = { integration = "public" }
       "GET /sitemap.xml" = { integration = "public" }
       "GET /robots.txt"  = { integration = "public" }
+
+      "GET /api/v1/public/figures" = { integration = "public" }
     },
 
     merge([

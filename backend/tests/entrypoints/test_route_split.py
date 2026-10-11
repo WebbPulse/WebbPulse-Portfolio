@@ -54,9 +54,9 @@ def test_the_four_domains_are_the_ones_the_plan_names():
 
 def test_the_recorded_contract_is_the_shape_the_plan_describes():
     """The fixture itself, checked before anything is measured against it."""
-    assert len(CONTRACT_PAIRS) == 44
-    assert len(CONTRACT_OPERATIONS) == 42
-    assert sum(EXPECTED_COUNTS.values()) == 44
+    assert len(CONTRACT_PAIRS) == 45
+    assert len(CONTRACT_OPERATIONS) == 43
+    assert sum(EXPECTED_COUNTS.values()) == 45
     assert {(m, p) for m, p, _, _ in CONTRACT_OPERATIONS} <= CONTRACT_PAIRS
     assert CONTRACT_PAIRS - {(m, p) for m, p, _, _ in CONTRACT_OPERATIONS} == {
         ("GET", "/sitemap.xml"),
@@ -101,7 +101,7 @@ def test_the_union_of_the_four_is_exactly_the_contract():
     for name in DOMAIN_NAMES:
         union |= _domain_pairs(name)
     assert union == CONTRACT_PAIRS
-    assert len(union) == sum(EXPECTED_COUNTS.values()) == 44
+    assert len(union) == sum(EXPECTED_COUNTS.values()) == 45
 
 
 def test_the_union_of_the_documented_operations_is_the_contract_document():

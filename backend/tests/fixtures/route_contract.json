@@ -86,6 +86,10 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/public/figures"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/site-content/"
     },
     {
@@ -500,6 +504,14 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/public/figures",
+      "operationId": "get_figures_api_v1_public_figures_get",
+      "tags": [
+        "public"
+      ]
+    },
+    {
+      "method": "GET",
       "path": "/",
       "operationId": "root__get",
       "tags": []
@@ -515,6 +527,6 @@
     "content": 14,
     "resume": 25,
     "identity": 1,
-    "public": 4
+    "public": 5
   }
 }
