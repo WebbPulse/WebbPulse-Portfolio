@@ -6,12 +6,12 @@ is no admin panel and no sign-in.
 
 ## Routes
 
-| Path                   | What it is                                    |
-| ---------------------- | --------------------------------------------- |
-| `/`                    | The portfolio                                 |
-| `/blog`, `/blog/:slug` | The blog index and a post                     |
-| `/privacy`             | The public privacy policy                     |
-| anything else          | The 404 page, `/admin` included               |
+| Path                   | What it is                      |
+| ---------------------- | ------------------------------- |
+| `/`                    | The portfolio                   |
+| `/blog`, `/blog/:slug` | The blog index and a post       |
+| `/privacy`             | The public privacy policy       |
+| anything else          | The 404 page, `/admin` included |
 
 ## Getting started
 
