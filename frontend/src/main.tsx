@@ -7,6 +7,7 @@ const normalise = (path: string): string =>
   path.length > 1 ? path.replace(/\/+$/, '') || '/' : path;
 
 const container = document.getElementById('root')!;
+const prerendered = container.dataset['prerendered'];
 const app = (
   <StrictMode>
     <App />
@@ -14,9 +15,8 @@ const app = (
 );
 
 if (
-  container.dataset.prerendered !== undefined &&
-  normalise(container.dataset.prerendered) ===
-    normalise(window.location.pathname)
+  prerendered !== undefined &&
+  normalise(prerendered) === normalise(window.location.pathname)
 ) {
   hydrateRoot(container, app);
 } else {
