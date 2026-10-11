@@ -2,6 +2,7 @@ import React from 'react';
 import { PublicShell } from '../components/layout';
 import { MonoLabel, Sheet } from '../components/drawing';
 import { getSiteContent } from '../content';
+import { useDocumentMeta } from '../hooks';
 
 /** The date the current wording took effect, shown at the top of the page. */
 const EFFECTIVE_DATE = 'October 10, 2026';
@@ -30,6 +31,7 @@ const Section: React.FC<{
  * policy URL. Update the wording whenever the data handling changes.
  */
 export const Privacy: React.FC = () => {
+  useDocumentMeta({ title: 'Privacy' });
   const data = getSiteContent();
   const email = data.email ?? 'tyler@webbpulse.com';
 

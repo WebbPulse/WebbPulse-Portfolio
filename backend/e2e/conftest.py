@@ -293,6 +293,11 @@ def pytest_e2e_routes(env: Any) -> list[RouteSpec]:
         RouteSpec(path="/blog", access="public", root_locator="[data-testid=page-blog-list]"),
         RouteSpec(path="/privacy", access="public", root_locator="[data-testid=page-privacy]"),
         RouteSpec(
+            path="/work/standupless",
+            access="public",
+            root_locator="[data-testid=page-case-study]",
+        ),
+        RouteSpec(
             path="/verify-email",
             access="public",
             root_locator="[data-testid=page-verify-email]",

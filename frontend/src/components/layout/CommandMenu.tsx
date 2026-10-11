@@ -1,7 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import type { NavigationItem } from '../../types';
+import { getPublishedPosts, getSiteContent } from '../../content';
+import { listCaseStudies } from '../../content/caseStudies';
+import { loadCaseStudies } from '../../content/loaders';
+import { MAP_NODES } from '../../content/map';
+import { buildCommands, filterCommands, type PaletteCommand } from './commands';
 
 /** Props for {@link CommandMenu}. */
 interface CommandMenuProps {
@@ -11,20 +16,16 @@ interface CommandMenuProps {
   onToggleTheme: () => void;
 }
 
-/** One row of the menu: a place to go or an action to run. */
-interface Command {
-  id: string;
-  label: string;
-  hint: string;
-  run: () => void;
-}
+/** The resume link, falling back to the PDF served with the site. */
+const resumeUrl = (): string => getSiteContent().resume_url || '/Profile.pdf';
 
 /**
- * A minimal jump menu opened by the header button or Cmd+K.
+ * The command menu opened by the header button or Cmd+K.
  *
- * It lists the site sections, the blog, the privacy page and the theme switch,
- * filtered by what the visitor types. Arrow keys move, Enter runs, Escape
- * closes and focus returns to whatever opened it.
+ * It jumps to a node on the system map, a case study, a post, a page, the
+ * resume or the contact section, and switches the theme. Typing filters and
+ * ranks the rows, arrow keys move, Enter runs, Escape closes and focus returns
+ * to whatever opened it.
  */
 export const CommandMenu: React.FC<CommandMenuProps> = ({
   open,
@@ -33,48 +34,51 @@ export const CommandMenu: React.FC<CommandMenuProps> = ({
   onToggleTheme,
 }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
 
-  const commands = useMemo<Command[]>(() => {
-    const go = (href: string) => () => {
-      onClose();
-      if (href.includes('#')) {
-        window.location.assign(href);
-        return;
-      }
-      void navigate(href);
-    };
-    const places: Command[] = items.map((item) => ({
-      id: item.href,
-      label: item.label,
-      hint: 'Go to',
-      run: go(item.href),
-    }));
-    const extras: Command[] = [
-      { id: '/', label: 'Home', hint: 'Go to', run: go('/') },
-      { id: '/privacy', label: 'Privacy', hint: 'Go to', run: go('/privacy') },
-      {
-        id: 'theme',
-        label: 'Switch theme',
-        hint: 'Action',
-        run: () => {
-          onToggleTheme();
-          onClose();
-        },
-      },
-    ];
-    const seen = new Set(places.map((p) => p.label));
-    return [...places, ...extras.filter((e) => !seen.has(e.label))];
-  }, [items, navigate, onClose, onToggleTheme]);
+  const commands = useMemo(
+    () =>
+      buildCommands({
+        nodes: MAP_NODES,
+        caseStudies: listCaseStudies(loadCaseStudies()),
+        posts: getPublishedPosts(),
+        navigation: items,
+        resumeUrl: resumeUrl(),
+      }),
+    [items]
+  );
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return commands;
-    return commands.filter((c) => c.label.toLowerCase().includes(q));
-  }, [commands, query]);
+  const filtered = useMemo(
+    () => filterCommands(commands, query),
+    [commands, query]
+  );
+  const grouped = query.trim() === '';
+
+  const run = (command: PaletteCommand) => {
+    onClose();
+    const { target } = command;
+    if (target.kind === 'theme') {
+      onToggleTheme();
+    } else if (target.kind === 'file') {
+      window.open(target.href, '_blank', 'noopener,noreferrer');
+    } else if (target.kind === 'anchor') {
+      if (location.pathname === '/') {
+        document.getElementById(target.id)?.scrollIntoView();
+        window.history.replaceState(window.history.state, '', `#${target.id}`);
+      } else {
+        window.location.assign(`/#${target.id}`);
+      }
+    } else if (target.focusNode) {
+      void navigate(target.to, { state: { focusNode: target.focusNode } });
+    } else {
+      void navigate(target.to);
+    }
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -84,6 +88,13 @@ export const CommandMenu: React.FC<CommandMenuProps> = ({
     inputRef.current?.focus();
     return () => returnFocus.current?.focus();
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    listRef.current
+      ?.querySelector(`#cmd-${active}`)
+      ?.scrollIntoView?.({ block: 'nearest' });
+  }, [active, open]);
 
   if (!open) return null;
 
@@ -101,7 +112,8 @@ export const CommandMenu: React.FC<CommandMenuProps> = ({
       );
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      filtered[active]?.run();
+      const command = filtered[active];
+      if (command) run(command);
     } else if (e.key === 'Tab') {
       e.preventDefault();
     }
@@ -113,7 +125,7 @@ export const CommandMenu: React.FC<CommandMenuProps> = ({
       onKeyDown={onKeyDown}
     >
       <div
-        className="absolute inset-0 bg-paper/70 backdrop-blur-[2px]"
+        className="absolute inset-0 bg-paper/80"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -135,11 +147,11 @@ export const CommandMenu: React.FC<CommandMenuProps> = ({
               setQuery(e.target.value);
               setActive(0);
             }}
-            placeholder="Type a section or page"
+            placeholder="Jump to a system, case study, post or page"
             aria-label="Search the site"
             aria-controls="command-menu-list"
             aria-activedescendant={
-              filtered[active] ? `cmd-${filtered[active].id}` : undefined
+              filtered[active] ? `cmd-${active}` : undefined
             }
             role="combobox"
             aria-expanded="true"
@@ -148,30 +160,53 @@ export const CommandMenu: React.FC<CommandMenuProps> = ({
           <kbd className="mono-label border border-line px-1.5 py-0.5">Esc</kbd>
         </div>
         <ul
+          ref={listRef}
           id="command-menu-list"
           role="listbox"
           aria-label="Destinations"
-          className="max-h-80 overflow-y-auto py-1.5 scrollbar-thin"
+          className="max-h-96 overflow-y-auto py-1.5 scrollbar-thin"
         >
           {filtered.length === 0 && (
-            <li className="px-4 py-3 text-sm text-ink-muted">No matches</li>
-          )}
-          {filtered.map((cmd, i) => (
             <li
-              key={cmd.id}
-              id={`cmd-${cmd.id}`}
-              role="option"
-              aria-selected={i === active}
-              onMouseEnter={() => setActive(i)}
-              onClick={cmd.run}
-              className={`mx-1.5 flex cursor-pointer items-center justify-between px-3 py-2 text-sm ${
-                i === active ? 'bg-accent-soft text-ink' : 'text-ink-muted'
-              }`}
+              role="presentation"
+              className="px-4 py-3 text-sm text-ink-muted"
             >
-              <span>{cmd.label}</span>
-              <span className="mono-label">{cmd.hint}</span>
+              No matches
             </li>
-          ))}
+          )}
+          {filtered.map((cmd, i) => {
+            const heading =
+              grouped && cmd.group !== filtered[i - 1]?.group
+                ? cmd.group
+                : null;
+            return (
+              <React.Fragment key={cmd.id}>
+                {heading && (
+                  <li
+                    role="presentation"
+                    className="mono-label px-4 pb-1 pt-3 first:pt-1.5"
+                  >
+                    {heading}
+                  </li>
+                )}
+                <li
+                  id={`cmd-${i}`}
+                  role="option"
+                  aria-selected={i === active}
+                  onMouseMove={() => setActive(i)}
+                  onClick={() => run(cmd)}
+                  className={`mx-1.5 flex cursor-pointer items-center justify-between gap-4 px-3 py-2 text-sm ${
+                    i === active ? 'bg-accent-soft text-ink' : 'text-ink-muted'
+                  }`}
+                >
+                  <span className="truncate">{cmd.label}</span>
+                  <span className="mono-label shrink-0">
+                    {grouped ? cmd.hint : cmd.group}
+                  </span>
+                </li>
+              </React.Fragment>
+            );
+          })}
         </ul>
         <div className="flex items-center justify-between border-t border-line px-4 py-2">
           <span className="mono-label">Up and down to move, Enter to go</span>

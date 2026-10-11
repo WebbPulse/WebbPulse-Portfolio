@@ -6,3 +6,4 @@ export { useReducedMotion } from './useReducedMotion';
 export { useCountUp } from './useCountUp';
 export { useTheme } from './useTheme';
 export type { Theme } from './useTheme';
+export { useDocumentMeta, documentTitle } from './useDocumentMeta';

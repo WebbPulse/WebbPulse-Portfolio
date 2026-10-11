@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { PublicShell } from '../layout';
 import { getPostBySlug, getSiteContent } from '../../content';
+import { useDocumentMeta } from '../../hooks';
 import { processMarkdown, extractHeadings } from '../../utils/markdown';
 import { MonoLabel, Sheet } from '../drawing';
 
@@ -69,6 +70,10 @@ export const BlogPost: React.FC = () => {
   const [readingProgress, setReadingProgress] = useState(0);
   const [showToc, setShowToc] = useState(false);
   const site = getSiteContent();
+  useDocumentMeta({
+    title: post ? post.title : 'Post not found',
+    description: post?.excerpt || undefined,
+  });
 
   useEffect(() => {
     const onScroll = () => {

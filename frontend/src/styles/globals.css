@@ -474,6 +474,117 @@
   margin: 2rem 0;
 }
 
+.system-map {
+  aspect-ratio: 1000 / 600;
+  view-timeline: --system-map block;
+}
+
+.map-tier line {
+  stroke: var(--cp-line);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+  vector-effect: non-scaling-stroke;
+}
+
+.map-boundary {
+  fill: none;
+  stroke: var(--cp-line-strong);
+  stroke-width: 1;
+  stroke-dasharray: 6 4;
+  vector-effect: non-scaling-stroke;
+}
+
+.map-edge {
+  fill: none;
+  stroke: var(--cp-line-strong);
+  stroke-width: 1;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  vector-effect: non-scaling-stroke;
+  transition:
+    stroke 150ms ease,
+    opacity 150ms ease;
+}
+
+.map-pin {
+  fill: var(--cp-paper);
+  stroke: var(--cp-line-strong);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  transition: opacity 150ms ease;
+}
+
+[data-state='active'] > .map-edge {
+  stroke: var(--cp-accent);
+  stroke-width: 1.5;
+}
+
+[data-state='active'] > .map-pin {
+  stroke: var(--cp-accent);
+}
+
+[data-state='dim'] > .map-edge,
+[data-state='dim'] > .map-pin {
+  opacity: 0.25;
+}
+
+.map-node {
+  border-color: var(--cp-line-strong);
+  transition:
+    border-color 150ms ease,
+    opacity 150ms ease,
+    background-color 150ms ease;
+}
+
+.map-node:focus-visible {
+  outline: 2px solid var(--cp-accent);
+  outline-offset: 3px;
+}
+
+.map-node[data-state='active'] {
+  border-color: var(--cp-accent);
+  background-color: var(--cp-paper);
+}
+
+.map-node[data-state='linked'] {
+  border-color: var(--cp-accent);
+}
+
+.map-node[data-state='dim'] {
+  opacity: 0.4;
+}
+
+.case-study-head {
+  view-transition-name: case-study-head;
+}
+
+@keyframes map-edge-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .system-map .map-edge {
+      animation: map-edge-draw linear both;
+      animation-timeline: --system-map;
+      animation-range: entry 0% cover 45%;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
