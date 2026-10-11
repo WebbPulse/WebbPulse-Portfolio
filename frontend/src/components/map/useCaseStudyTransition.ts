@@ -14,21 +14,36 @@ type TransitionDocument = Document & {
   startViewTransition?: (update: () => Promise<void>) => unknown;
 };
 
-/** Resolves once `selector` matches, or after `timeoutMs` either way. */
-function waitForElement(selector: string, timeoutMs: number): Promise<void> {
+/** The longest the transition holds the old frame while the route commits. */
+const HEADER_TIMEOUT_MS = 200;
+
+/**
+ * Resolves once `selector` matches, or after `timeoutMs` either way.
+ *
+ * It watches with a MutationObserver and a timer, never requestAnimationFrame,
+ * because Chrome pauses frames until a view transition's update callback
+ * settles, so a frame-based wait stalls until the 4 s transition timeout.
+ */
+export function waitForElement(
+  selector: string,
+  timeoutMs: number
+): Promise<void> {
   return new Promise((resolve) => {
-    const started = performance.now();
-    const check = () => {
-      if (
-        document.querySelector(selector) ||
-        performance.now() - started > timeoutMs
-      ) {
-        resolve();
-        return;
-      }
-      requestAnimationFrame(check);
+    if (document.querySelector(selector)) {
+      resolve();
+      return;
+    }
+    let observer: MutationObserver | null = null;
+    const finish = () => {
+      observer?.disconnect();
+      window.clearTimeout(timer);
+      resolve();
     };
-    check();
+    const timer = window.setTimeout(finish, timeoutMs);
+    observer = new MutationObserver(() => {
+      if (document.querySelector(selector)) finish();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
   });
 }
 
@@ -74,7 +89,7 @@ export function useCaseStudyTransition(
         flushSync(() => {
           void navigate(href);
         });
-        await waitForElement(HEADER_SELECTOR, 500);
+        await waitForElement(HEADER_SELECTOR, HEADER_TIMEOUT_MS);
       });
     },
     [navigate, reduced]
