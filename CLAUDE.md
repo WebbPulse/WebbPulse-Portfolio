@@ -162,7 +162,7 @@ ruff format --check app tests
 | `backend/app/common/composition/app.py` | Root A: every domain's routers on one app. Nothing deploys it |
 | `backend/app/domains/identity/package_glue.py` | Builds the `/api/auth` router from `webbpulse.identity` |
 | `backend/app/domains/<domain>/entrypoint.py` | Root B: one module per deployed function |
-| `backend/Dockerfile` | Builds all four images; `DOMAIN` selects the entrypoint, `READINESS_PROTOCOL` the adapter check |
+| `backend/Dockerfile` | Builds all four images; `DOMAIN` selects the entrypoint and, through a per-domain final stage, the adapter readiness protocol |
 | `backend/app/common/config.py` | Pydantic Settings and the `APP_SECRETS_ARN` JSON secret |
 | `backend/app/core/identity_claims.py` | Reads authorizer claims in both native and gate shapes |
 | `backend/app/common/db/tables.py` | Canonical table and index definitions |
@@ -190,7 +190,7 @@ ruff format --check app tests
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `.github/workflows/ci.yml` | PR to `main`/`staging` | `dorny/paths-filter` gates a `Backend` job on the org `python-ci.yml@v3` (uv sync, pytest on moto per test domain, ruff, pyright, bandit, pip-audit) and a `Frontend` job on `typescript-ci.yml@v2` (lint, format check, Vitest with coverage, build). An `affected` job narrows the pytest shards to the domains the diff touches. `all-checks-passed` is the aggregating gate job |
-| `.github/workflows/deploy-backend.yml` | push to `main`/`staging`, paths `backend/**` minus tests, e2e, scripts and docs | An `affected` job picks the domains to rebuild, then `container-image.yml@v3` builds those images, a digest-pinned `function-image-map` is assembled, `lambda-image-deploy.yml@v3` points the functions at them, and each function is invoke-smoke-tested on `GET /health`; the e2e suite verifies the live gateway |
+| `.github/workflows/deploy-backend.yml` | push to `main`/`staging`, paths `backend/**` minus tests, e2e, scripts and docs | A thin caller of the org `lambda-domains-deploy.yml@v3`: it picks the affected domains, builds those images through `container-image.yml@v3` (an existing tag is reused, not rebuilt), points each function at its digest through `lambda-image-deploy.yml@v3`, and invoke-smoke-tests each on `GET /health`; the e2e suite verifies the live gateway |
 | `.github/workflows/deploy-frontend.yml` | push to `main`/`staging`, paths `frontend/**` | Resolves the environment, then calls the org `spa-deploy.yml@v3`: CodeArtifact login, `npm run build`, `s3 sync --delete`, CloudFront invalidation |
 
 There is no `test-backend.yml` or `test-frontend.yml`; CI is one `ci.yml`.
@@ -232,9 +232,9 @@ Environment-scoped inputs each GitHub Environment must define:
 Deploys on `staging` are gated by the repository variable
 `STAGING_DEPLOY_ENABLED`. It has to be repository-scoped because a job-level
 `if` is evaluated before the job's Environment is selected, so Environment
-variables are invisible there. `BACKEND_IMAGE_BUILD_ENABLED` and
-`BACKEND_IMAGE_DEPLOY_ENABLED` separately gate the image build and the function
-update.
+variables are invisible there. `deploy-backend.yml` passes it to the shared
+workflow as `staging-enabled-variable`; the backend build and deploy have no
+other gate.
 
 ## Branching and deploys
 
