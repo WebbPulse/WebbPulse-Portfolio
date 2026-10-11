@@ -26,7 +26,7 @@ function unquote(value: string): string {
  * A file without a leading `---` fence is all body.
  */
 export function parseFrontmatter(raw: string): ParsedMarkdown {
-  const text = raw.replace(/^﻿/, '').replace(/\r\n/g, '\n');
+  const text = raw.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
   const lines = text.split('\n');
   if (lines[0]?.trim() !== FENCE) {
     return { data: {}, body: text };

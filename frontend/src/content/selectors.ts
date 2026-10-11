@@ -26,7 +26,9 @@ function compareValues(a: unknown, b: unknown, direction: Direction): number {
       ? a - b
       : typeof a === 'boolean' && typeof b === 'boolean'
         ? Number(a) - Number(b)
-        : String(a).localeCompare(String(b));
+        : typeof a === 'string' && typeof b === 'string'
+          ? a.localeCompare(b)
+          : 0;
   return direction === 'asc' ? order : -order;
 }
 
