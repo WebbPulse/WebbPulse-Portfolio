@@ -5,6 +5,15 @@ export const projects: Project[] = [
   {
     id: 6,
     slug: 'standupless',
+    summary:
+      'A multi-tenant issue tracker in the shape of Linear, with GitHub pull requests that move issues on their own, a 151-tool MCP server, a CLI, Slack and Discord apps, and a desktop client.',
+    facts: [
+      { label: 'Backend', value: '9 Lambda domains, 294 routes' },
+      { label: 'Storage', value: '22 DynamoDB tables' },
+      { label: 'MCP tools', value: '151' },
+      { label: 'Clients', value: 'Web, CLI, MCP, Slack, Discord, desktop' },
+    ],
+    map_node: 'standupless',
     title: 'Standupless',
     description:
       'Issue tracker that replaces the daily standup: status comes from the work itself, not from a meeting. Teams, projects, cycles and releases, with a GitHub App that links pull requests and moves issues as they merge, an MCP server and CLI so AI agents can file and update work, and Slack, Discord and desktop apps. Live at standupless.dev.',
@@ -32,6 +41,15 @@ export const projects: Project[] = [
   {
     id: 7,
     slug: 'webbpulse-terraform',
+    summary:
+      'A serverless Terraform control plane that replaced HCP Terraform for every WebbPulse workspace, with HCP-compatible runs, a private registry and a Go provider.',
+    facts: [
+      { label: 'Workspaces migrated', value: '11, state copied byte for byte' },
+      { label: 'Run engine', value: 'Step Functions, 22 states' },
+      { label: 'Provider', value: '7 resources, 7 data sources' },
+      { label: 'Concurrency', value: '25 Fargate runners' },
+    ],
+    map_node: 'control-plane',
     title: 'WebbPulse Terraform',
     description:
       'Serverless Terraform control plane that replaced HCP Terraform for every WebbPulse workspace. Workspaces hold variables, state and configuration versions, and each run plans and applies in a Fargate task that Step Functions drives one phase at a time. A React UI sits in front, and a custom Go provider manages the plane itself as code.',
@@ -57,6 +75,15 @@ export const projects: Project[] = [
   {
     id: 2,
     slug: 'carmodpicker',
+    summary:
+      'A car modification tracker with a one-click Chrome extension, moved from App Runner and PostgreSQL to Lambda and DynamoDB without changing the public API or forcing a password reset.',
+    facts: [
+      { label: 'Backend', value: '9 Lambda domains, 150 routes' },
+      { label: 'Storage', value: '27 DynamoDB tables, 45 GSIs' },
+      { label: 'Cutover', value: 'Production on 6 September 2026' },
+      { label: 'Extension', value: 'Manifest V3, one click per part' },
+    ],
+    map_node: 'carmodpicker',
     title: 'CarModPicker',
     description:
       'Web app for tracking car modifications: users manage cars and build lists, attach parts to phased builds, and log progress in forum-style threads. A companion Chrome extension pulls part data from retailer pages. Serverless on AWS Lambda and DynamoDB. Live at carmodpicker.com.',
