@@ -58,7 +58,6 @@ Custom React hooks for reusable logic:
 Utility functions for common operations:
 
 - `validation.ts` - Form validation utilities
-- `formatting.ts` - Data formatting utilities
 
 ## Types (`types/`)
 
@@ -86,7 +85,7 @@ import { Hero } from './components/sections';
 import { useScrollPosition, useLocalStorage } from './hooks';
 
 // Import utilities
-import { validateEmail, formatDate } from './utils';
+import { validateEmail } from './utils';
 
 // Import types
 import { ButtonProps, Project } from './types';
