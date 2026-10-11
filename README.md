@@ -30,7 +30,7 @@ docker compose up -d                        # DynamoDB Local on :8001
 export DYNAMODB_ENDPOINT_URL=http://localhost:8001
 python scripts/create_local_tables.py
 
-uvicorn app.common.composition.app:app --reload    # all 44 routes on :8000, docs at /docs
+uvicorn app.common.composition.app:app --reload    # all 45 routes on :8000, docs at /docs
 PORT=8010 python -m app.domains.content.entrypoint # one domain, the way its image runs it
 
 pytest tests/                               # moto-backed, no AWS or database

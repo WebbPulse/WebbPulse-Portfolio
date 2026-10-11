@@ -114,7 +114,7 @@ export SECRET_KEY=dev-secret ADMIN_USERNAME=admin ADMIN_PASSWORD=admin ADMIN_EMA
 uv run python scripts/create_local_tables.py
 ```
 
-**All 44 routes in one process.** `app.common.composition.app` is root A, built from
+**All 45 routes in one process.** `app.common.composition.app` is root A, built from
 the same `wiring.DOMAINS` list the four entrypoints read. Nothing deploys it.
 
 ```bash

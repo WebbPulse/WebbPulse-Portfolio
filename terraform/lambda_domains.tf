@@ -21,7 +21,7 @@ locals {
     public = {
       secrets     = false
       memory      = 256
-      tables      = []
+      tables      = ["public-cache"]
       read_tables = ["posts", "site-content"]
     }
   }

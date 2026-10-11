@@ -39,6 +39,12 @@ locals {
         ttl_attribute          = "expires_at"
         point_in_time_recovery = false
       }
+      "public-cache" = {
+        hash_key               = "pk"
+        attributes             = [{ name = "pk", type = "S" }]
+        ttl_attribute          = "ttl"
+        point_in_time_recovery = false
+      }
 
     },
   )
