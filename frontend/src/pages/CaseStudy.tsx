@@ -81,7 +81,8 @@ const CaseStudyBody: React.FC<{ view: CaseStudyView }> = ({ view }) => {
     [view.hasWriteUp, view.body]
   );
   const html = useMemo(
-    () => (view.hasWriteUp ? processMarkdown(view.body, { styled: false }) : ''),
+    () =>
+      view.hasWriteUp ? processMarkdown(view.body, { styled: false }) : '',
     [view.hasWriteUp, view.body]
   );
   const others = useMemo(
