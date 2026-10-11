@@ -1,6 +1,7 @@
 import React from 'react';
 import { GradientText, AnimatedOrb, GradientPanel } from '../common';
-import { useSiteContent, useInViewReveal } from '../../hooks';
+import { useInViewReveal } from '../../hooks';
+import { getSiteContent } from '../../content';
 import { SocialIcon } from '../../utils';
 
 const ContactTile: React.FC<{
@@ -36,13 +37,13 @@ const ContactTile: React.FC<{
 
 /** The Contact section, with the links from site content. */
 export const Contact: React.FC = () => {
-  const { data } = useSiteContent();
+  const data = getSiteContent();
   const { ref, isInView } = useInViewReveal<HTMLDivElement>({ threshold: 0.1 });
 
-  const email = data?.email ?? 'tyler@webbpulse.com';
-  const github = data?.github_url ?? 'https://github.com/Tylert2610';
+  const email = data.email ?? 'tyler@webbpulse.com';
+  const github = data.github_url ?? 'https://github.com/Tylert2610';
   const linkedin =
-    data?.linkedin_url ?? 'https://www.linkedin.com/in/tylert2610/';
+    data.linkedin_url ?? 'https://www.linkedin.com/in/tylert2610/';
 
   return (
     <section

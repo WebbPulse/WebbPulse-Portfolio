@@ -1,7 +1,7 @@
 import React from 'react';
 import { Header, Footer } from '../components/layout';
 import { GradientText } from '../components/common';
-import { useSiteContent } from '../hooks';
+import { getSiteContent } from '../content';
 import type { NavigationItem } from '../types';
 
 const NAV: NavigationItem[] = [
@@ -36,8 +36,8 @@ const Section: React.FC<{ title: string; children: React.ReactNode }> = ({
  * policy URL. Update the wording whenever the data handling changes.
  */
 export const Privacy: React.FC = () => {
-  const { data } = useSiteContent();
-  const email = data?.email ?? 'tyler@webbpulse.com';
+  const data = getSiteContent();
+  const email = data.email ?? 'tyler@webbpulse.com';
 
   return (
     <div className="min-h-screen">

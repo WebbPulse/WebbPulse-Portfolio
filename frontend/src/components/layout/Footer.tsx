@@ -1,19 +1,19 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { SocialIcon } from '../../utils';
-import { useSiteContent } from '../../hooks';
+import { getSiteContent } from '../../content';
 
 /** The site footer, with the social links and tagline from site content. */
 const Footer: React.FC = () => {
-  const { data } = useSiteContent();
+  const data = getSiteContent();
   const currentYear = new Date().getFullYear();
 
   const tagline =
-    data?.footer_tagline ??
+    data.footer_tagline ??
     'Software engineer focused on building reliable, privacy-conscious systems.';
-  const email = data?.email;
-  const github = data?.github_url;
-  const linkedin = data?.linkedin_url;
+  const email = data.email;
+  const github = data.github_url;
+  const linkedin = data.linkedin_url;
 
   const links: { platform: string; url: string; label: string }[] = [];
   if (github) links.push({ platform: 'github', url: github, label: 'GitHub' });
