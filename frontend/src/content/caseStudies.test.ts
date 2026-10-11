@@ -42,6 +42,7 @@ describe('resolveCaseStudy', () => {
           role: 'Owner',
           stack: 'Terraform, AWS ',
           period: '2026',
+          map_node: 'aws-org',
         },
         '## Problem\n\nText.'
       ),
