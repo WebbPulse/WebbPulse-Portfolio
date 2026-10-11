@@ -81,7 +81,7 @@ describe('edgeGeometry', () => {
     const a = findNode('standupless');
     const b = findNode('carmodpicker');
     if (!from || !to || !a || !b) throw new Error('missing node');
-    expect(edgeGeometry(a, b).path).toBe('M 235 90 L 285 90');
+    expect(edgeGeometry(a, b).path).toBe('M 245 90 L 275 90');
     expect(edgeGeometry(from, to).path).toContain(' C ');
   });
 });
