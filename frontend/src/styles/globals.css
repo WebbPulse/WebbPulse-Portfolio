@@ -455,7 +455,6 @@
 
 .system-map {
   aspect-ratio: 1000 / 600;
-  view-timeline: --system-map block;
 }
 
 .map-tier line {
@@ -477,8 +476,6 @@
   fill: none;
   stroke: var(--cp-line-strong);
   stroke-width: 1;
-  stroke-dasharray: 1;
-  stroke-dashoffset: 0;
   vector-effect: non-scaling-stroke;
   transition:
     stroke 150ms ease,
@@ -539,20 +536,18 @@
 
 @keyframes map-edge-draw {
   from {
+    stroke-dasharray: 1;
     stroke-dashoffset: 1;
   }
   to {
+    stroke-dasharray: 1;
     stroke-dashoffset: 0;
   }
 }
 
-@supports (animation-timeline: view()) {
-  @media (prefers-reduced-motion: no-preference) {
-    .system-map .map-edge {
-      animation: map-edge-draw linear both;
-      animation-timeline: --system-map;
-      animation-range: entry 0% cover 45%;
-    }
+@media (prefers-reduced-motion: no-preference) {
+  .system-map .map-edge {
+    animation: map-edge-draw 0.9s ease-out 0.15s backwards;
   }
 }
 

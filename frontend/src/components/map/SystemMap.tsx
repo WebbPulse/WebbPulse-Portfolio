@@ -45,27 +45,35 @@ const NodeFigure: React.FC<{ figure: PublicFigure | undefined }> = ({
   figure,
 }) =>
   figure ? (
-    <span className="flex items-center gap-1.5 font-mono text-xs text-live-ink">
+    <span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap font-mono text-xs text-live-ink">
       <LiveDot className="h-1.5 w-1.5" />
       {figureValue(figure)}
     </span>
   ) : null;
 
-/** The lines a node shows: kind, label and facts. */
+/**
+ * The lines a node shows: kind, label and facts. Nothing truncates; facts
+ * wrap between items, so a long pair takes a second line.
+ */
 const NodeBody: React.FC<{
   node: MapNode;
   figure: PublicFigure | undefined;
 }> = ({ node, figure }) => (
   <>
     <span className="flex items-center justify-between gap-2">
-      <span className="mono-label truncate">{node.kind}</span>
+      <span className="mono-label min-w-0">{node.kind}</span>
       <NodeFigure figure={figure} />
     </span>
-    <span className="block truncate text-[0.9375rem] font-semibold tracking-tight text-ink">
+    <span className="block text-[0.9375rem] font-semibold leading-snug tracking-tight text-ink">
       {node.label}
     </span>
-    <span className="block truncate font-mono text-xs text-ink-muted">
-      {node.facts.slice(0, 2).join(' · ')}
+    <span className="block font-mono text-xs text-ink-muted">
+      {node.facts.slice(0, 2).map((fact, index) => (
+        <React.Fragment key={fact}>
+          {index > 0 && ' · '}
+          <span className="whitespace-nowrap">{fact}</span>
+        </React.Fragment>
+      ))}
     </span>
   </>
 );
@@ -251,7 +259,7 @@ export const SystemMap: React.FC<SystemMapProps> = ({ figures }) => {
             'data-state': state,
             'data-node': node.id,
             className:
-              'map-node absolute flex flex-col justify-center gap-0.5 border bg-paper-raised px-3 text-left',
+              'map-node absolute flex flex-col justify-center gap-0.5 border bg-paper-raised px-2.5 text-left',
             style: {
               left: pctX(node.x - NODE_HALF.width),
               top: pctY(node.y - NODE_HALF.height),
