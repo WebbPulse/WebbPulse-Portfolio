@@ -7,9 +7,9 @@ module "registry" {
   keep_last_tagged_images = 3
 
   repositories = {
-    content  = {}
-    resume   = {}
-    identity = {}
+    content  = { force_delete = true }
+    resume   = { force_delete = true }
+    identity = { force_delete = true }
     public   = {}
   }
 }
