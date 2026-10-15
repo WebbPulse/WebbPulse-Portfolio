@@ -13,6 +13,8 @@ module "api" {
     for name in local.routed_lambda_domains : name => {
       lambda_function_name = module.lambda_domain[name].function_name
       lambda_invoke_arn    = module.lambda_domain[name].invoke_arn
+
+      lambda_permission_statement_id = "AllowAPIGatewayInvoke-${name}"
     }
   }
 
