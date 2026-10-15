@@ -2,7 +2,7 @@ import { parseFrontmatter } from './frontmatter';
 import type { BlogPost, CaseStudy, Category } from './types';
 
 const blogFiles = import.meta.glob<string>('./blog/*.md', {
-  query: '?raw',
+  query: '?raw&frontmatter',
   import: 'default',
   eager: true,
 });
@@ -91,7 +91,11 @@ export function buildCaseStudies(files: Record<string, string>): CaseStudy[] {
     });
 }
 
-/** Every blog post file under `content/blog`, parsed against `categories`. */
+/**
+ * Every blog post file under `content/blog`, parsed against `categories`,
+ * frontmatter only. The bodies stay out of the main bundle; `blogBodies`
+ * loads them for the post page.
+ */
 export function loadPosts(categories: Category[]): BlogPost[] {
   return buildPosts(blogFiles, categories);
 }

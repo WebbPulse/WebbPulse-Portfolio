@@ -4,7 +4,15 @@ import { StaticRouter } from 'react-router-dom';
 import { AppRoutes } from './App';
 import { getProjects, getPublishedPosts } from './content';
 import { loadCaseStudies } from './content/loaders';
-import { LAZY_PAGES } from './routing/pages';
+import {
+  BlogListPage,
+  BlogPostPage,
+  CaseStudyPage,
+  LAZY_PAGES,
+  PrivacyPage,
+  lazyPageFor,
+} from './routing/pages';
+import type { LazyPage } from './routing/lazyPage';
 import {
   DocumentMetaSink,
   SITE_ORIGIN,
@@ -13,6 +21,25 @@ import {
 } from './hooks';
 
 export { SITE_ORIGIN };
+
+const PAGE_SOURCES = new Map<LazyPage, string>([
+  [BlogListPage, 'src/components/sections/BlogList.tsx'],
+  [BlogPostPage, 'src/components/sections/BlogPost.tsx'],
+  [CaseStudyPage, 'src/pages/CaseStudy.tsx'],
+  [PrivacyPage, 'src/pages/Privacy.tsx'],
+]);
+
+/**
+ * The source module, from the frontend root, of the split page a path renders,
+ * so the prerender can find its chunk in the Vite manifest.
+ */
+export function pageSourceFor(path: string): string | undefined {
+  const page = lazyPageFor(path);
+  if (!page) return undefined;
+  const source = PAGE_SOURCES.get(page);
+  if (!source) throw new Error(`No source module is mapped for ${path}`);
+  return source;
+}
 
 /** The path the not found page is prerendered at. */
 export const NOT_FOUND_PATH = '/404';
