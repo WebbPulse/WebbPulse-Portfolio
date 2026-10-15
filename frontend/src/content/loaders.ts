@@ -8,7 +8,7 @@ const blogFiles = import.meta.glob<string>('./blog/*.md', {
 });
 
 const workFiles = import.meta.glob<string>('./work/*.md', {
-  query: '?raw',
+  query: '?raw&frontmatter',
   import: 'default',
   eager: true,
 });
@@ -96,7 +96,11 @@ export function loadPosts(categories: Category[]): BlogPost[] {
   return buildPosts(blogFiles, categories);
 }
 
-/** Every case study file under `content/work`. */
+/**
+ * Every case study file under `content/work`, frontmatter only. The bodies
+ * stay out of the main bundle; `has_write_up` says whether one exists, and
+ * `caseStudyBodies` loads them for the case study page.
+ */
 export function loadCaseStudies(): CaseStudy[] {
   return buildCaseStudies(workFiles);
 }

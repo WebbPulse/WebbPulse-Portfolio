@@ -1,9 +1,15 @@
+import { Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { CaseStudy, Home, Privacy, NotFound } from './pages';
+import Home from './pages/Home';
+import { NotFound } from './pages/NotFound';
 import { UnderConstruction } from './pages/UnderConstruction';
 import { ErrorBoundary } from './components/common';
-import { BlogList } from './components/sections/BlogList';
-import { BlogPost } from './components/sections/BlogPost';
+import {
+  BlogListPage,
+  BlogPostPage,
+  CaseStudyPage,
+  PrivacyPage,
+} from './routing/pages';
 import './styles/globals.css';
 
 const UNDER_CONSTRUCTION = false;
@@ -15,24 +21,26 @@ const UNDER_CONSTRUCTION = false;
 export function AppRoutes() {
   return (
     <ErrorBoundary>
-      <Routes>
-        {UNDER_CONSTRUCTION ? (
-          <>
-            <Route path="/" element={<UnderConstruction />} />
-            <Route path="/blog" element={<UnderConstruction />} />
-            <Route path="/blog/:slug" element={<UnderConstruction />} />
-          </>
-        ) : (
-          <>
-            <Route path="/" element={<Home />} />
-            <Route path="/blog" element={<BlogList />} />
-            <Route path="/blog/:slug" element={<BlogPost />} />
-            <Route path="/work/:slug" element={<CaseStudy />} />
-          </>
-        )}
-        <Route path="/privacy" element={<Privacy />} />
-        <Route path="*" element={<NotFound />} />
-      </Routes>
+      <Suspense fallback={null}>
+        <Routes>
+          {UNDER_CONSTRUCTION ? (
+            <>
+              <Route path="/" element={<UnderConstruction />} />
+              <Route path="/blog" element={<UnderConstruction />} />
+              <Route path="/blog/:slug" element={<UnderConstruction />} />
+            </>
+          ) : (
+            <>
+              <Route path="/" element={<Home />} />
+              <Route path="/blog" element={<BlogListPage />} />
+              <Route path="/blog/:slug" element={<BlogPostPage />} />
+              <Route path="/work/:slug" element={<CaseStudyPage />} />
+            </>
+          )}
+          <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </Suspense>
     </ErrorBoundary>
   );
 }

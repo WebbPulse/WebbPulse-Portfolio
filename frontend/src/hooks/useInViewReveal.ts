@@ -4,54 +4,63 @@ import { useReducedMotion } from './useReducedMotion';
 interface Options {
   threshold?: number;
   rootMargin?: string;
-  /** Re-fire on every entry/exit instead of single-shot. */
-  repeat?: boolean;
 }
 
+/** Where a revealing element is: as rendered, waiting below the fold, or revealed. */
+type RevealState = 'static' | 'hidden' | 'revealed';
+
+const REVEAL_CLASS: Record<RevealState, string> = {
+  static: '',
+  hidden: 'motion-safe:opacity-0',
+  revealed: 'motion-safe:animate-fade-in-up',
+};
+
 /**
- * IntersectionObserver reveal hook.
+ * Scroll reveal for an element below the fold.
  *
- * Returns a ref to attach and a flag that flips once the element scrolls into
- * view. Single-fire by default, and immediately true under reduced motion.
+ * The prerendered markup and the hydrating render leave the element visible,
+ * so it shows without JS. After hydration, and only when motion is allowed,
+ * an element that starts below the viewport is hidden and fades in once it
+ * scrolls into view. Anything already on screen stays as it is.
  */
 export function useInViewReveal<T extends HTMLElement = HTMLDivElement>({
   threshold = 0.15,
   rootMargin = '0px 0px -10% 0px',
-  repeat = false,
 }: Options = {}) {
   const ref = useRef<T | null>(null);
   const reducedMotion = useReducedMotion();
-  const [isInView, setIsInView] = useState<boolean>(reducedMotion);
+  const [state, setState] = useState<RevealState>('static');
 
   useEffect(() => {
-    if (reducedMotion) {
-      setIsInView(true);
-      return;
-    }
     const node = ref.current;
-    if (!node) return;
-    if (typeof IntersectionObserver === 'undefined') {
-      setIsInView(true);
+    if (reducedMotion || !node || typeof IntersectionObserver === 'undefined') {
       return;
     }
 
+    let first = true;
     const observer = new IntersectionObserver(
       (entries) => {
-        entries.forEach((entry) => {
+        for (const entry of entries) {
+          const below = entry.boundingClientRect.top >= window.innerHeight;
           if (entry.isIntersecting) {
-            setIsInView(true);
-            if (!repeat) observer.unobserve(entry.target);
-          } else if (repeat) {
-            setIsInView(false);
+            setState((current) =>
+              current === 'hidden' ? 'revealed' : current
+            );
+            observer.disconnect();
+          } else if (first && !below) {
+            observer.disconnect();
+          } else if (first) {
+            setState('hidden');
           }
-        });
+          first = false;
+        }
       },
       { threshold, rootMargin }
     );
 
     observer.observe(node);
     return () => observer.disconnect();
-  }, [threshold, rootMargin, repeat, reducedMotion]);
+  }, [threshold, rootMargin, reducedMotion]);
 
-  return { ref, isInView };
+  return { ref, revealClass: reducedMotion ? '' : REVEAL_CLASS[state] };
 }

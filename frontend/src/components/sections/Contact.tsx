@@ -1,7 +1,7 @@
 import React from 'react';
 import { useInViewReveal } from '../../hooks';
 import { getSiteContent } from '../../content';
-import { SocialIcon } from '../../utils';
+import { SocialIcon } from '../../utils/socialIcons';
 import { RegistrationMarks, SectionHeading, Sheet } from '../drawing';
 
 /** One contact channel as a row of the contact table. */
@@ -66,7 +66,9 @@ const ContactRow: React.FC<{
 /** The Contact section, with the links from site content. */
 export const Contact: React.FC = () => {
   const data = getSiteContent();
-  const { ref, isInView } = useInViewReveal<HTMLDivElement>({ threshold: 0.1 });
+  const { ref, revealClass } = useInViewReveal<HTMLDivElement>({
+    threshold: 0.1,
+  });
 
   const email = data.email ?? 'tyler@webbpulse.com';
   const github = data.github_url ?? 'https://github.com/Tylert2610';
@@ -81,14 +83,7 @@ export const Contact: React.FC = () => {
       className="py-20 sm:py-28"
     >
       <Sheet>
-        <div
-          ref={ref}
-          className={
-            isInView
-              ? 'motion-safe:animate-fade-in-up'
-              : 'motion-safe:opacity-0'
-          }
-        >
+        <div ref={ref} className={revealClass}>
           <SectionHeading
             index="06"
             label="Contact"

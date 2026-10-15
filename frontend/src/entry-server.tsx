@@ -4,6 +4,7 @@ import { StaticRouter } from 'react-router-dom';
 import { AppRoutes } from './App';
 import { getProjects, getPublishedPosts } from './content';
 import { loadCaseStudies } from './content/loaders';
+import { LAZY_PAGES } from './routing/pages';
 import {
   DocumentMetaSink,
   SITE_ORIGIN,
@@ -37,6 +38,11 @@ export function prerenderRoutes(): string[] {
     ...getPublishedPosts().map((post) => `/blog/${post.slug}`),
     NOT_FOUND_PATH,
   ];
+}
+
+/** Loads every split page so each one renders synchronously. */
+export async function preloadPages(): Promise<void> {
+  await Promise.all(LAZY_PAGES.map((page) => page.preload()));
 }
 
 /** Renders one path to HTML with the metadata its page set. */

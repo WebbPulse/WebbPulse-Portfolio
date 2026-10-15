@@ -4,7 +4,8 @@
  * Each route gets its own index.html with the page markup in the root and its
  * own title, description, canonical, Open Graph and Twitter tags in the head.
  * The client bundle stays, and main.tsx hydrates the markup. The not found
- * page goes to dist/404.html and a sitemap.xml lists the rest.
+ * page goes to dist/404.html, a sitemap.xml lists the rest and robots.txt
+ * points at the sitemap.
  */
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
@@ -18,7 +19,9 @@ const placeholder = '<div id="root"></div>';
 const headRegion = /<!-- page-meta -->[\s\S]*?<!-- \/page-meta -->/;
 
 const entry = await import(`${ssrDir}/entry-server.js`);
-const { render, prerenderRoutes, NOT_FOUND_PATH, SITE_ORIGIN } = entry;
+const { render, preloadPages, prerenderRoutes, NOT_FOUND_PATH, SITE_ORIGIN } =
+  entry;
+await preloadPages();
 const template = await readFile(indexPath, 'utf8');
 
 if (!template.includes(placeholder)) {
@@ -92,5 +95,11 @@ const sitemap = [
   '',
 ].join('\n');
 await writeFile(`${dist}/sitemap.xml`, sitemap);
+await writeFile(
+  `${dist}/robots.txt`,
+  `User-agent: *\nAllow: /\nSitemap: ${urlFor('/sitemap.xml')}\n`
+);
 await rm(ssrDir, { recursive: true, force: true });
-console.log(`Wrote dist/sitemap.xml with ${indexed.length} URLs`);
+console.log(
+  `Wrote dist/sitemap.xml with ${indexed.length} URLs and dist/robots.txt`
+);

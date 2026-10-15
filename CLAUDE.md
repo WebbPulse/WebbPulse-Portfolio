@@ -80,13 +80,24 @@ ruff format --check app tests
 - **Prerender**: `npm run build` also builds `src/entry-server.tsx` for SSR and
   runs `scripts/prerender.js`, which writes `dist/<route>/index.html` for `/`,
   `/blog`, `/privacy`, every `/work/<slug>` and published post, plus
-  `dist/404.html` and `dist/sitemap.xml`, each with head tags from
+  `dist/404.html`, `dist/sitemap.xml` and `dist/robots.txt` (CloudFront does
+  not route `/robots.txt` to the backend), each with head tags from
   `useDocumentMeta`. The client bundle stays: `main.tsx` hydrates when the
   root's `data-prerendered` path matches the URL and renders fresh otherwise.
   Browser-only values (theme, reduced motion, platform) go through
   `useSyncExternalStore` with a server snapshot so hydration matches. The
   `spa-frontend` `viewer_request_function` maps `/work/x` to
   `/work/x/index.html`; with the staging gate it runs inside the gate's function
+- **Code splitting**: the home page is the main chunk. The blog, case study and
+  privacy pages are `lazyPage` chunks in `src/routing/pages.ts`; `main.tsx`
+  preloads the current route's chunk before hydrating and the prerender loads
+  them all first. The command menu loads on first open. Case study bodies sit
+  in the case study chunk (`content/caseStudyBodies.ts`); the main bundle reads
+  `?raw&frontmatter` imports, which `build/markdownFrontmatter.ts` cuts to the
+  frontmatter plus `has_write_up`
+- **Scroll reveal**: `useInViewReveal` leaves content visible in the
+  prerendered HTML and only hides below-the-fold elements after hydration when
+  motion is allowed
 - **API layer**: `src/services/api.ts` (`apiService`) holds only the anonymous
   `getPublicFigures()` read. The transport is `@webbpulse/api-client` and
   startup configuration is `@webbpulse/config`. That client rejects on a
