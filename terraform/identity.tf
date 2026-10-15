@@ -104,7 +104,7 @@ module "identity" {
   name_tag = true
 
   point_in_time_recovery = true
-  deletion_protection    = var.environment == "production"
+  deletion_protection    = false
 
   table_policy_actions = local.dynamodb_write_actions
 
