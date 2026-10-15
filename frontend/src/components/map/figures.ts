@@ -12,6 +12,20 @@ export const asOfTime = (iso: string): string => {
   });
 };
 
+/** The newest `as_of` among the figures, which is when they were last read, or nothing. */
+export const latestAsOf = (figures: PublicFigure[]): string => {
+  let latest = '';
+  let latestTime = Number.NEGATIVE_INFINITY;
+  for (const figure of figures) {
+    const time = Date.parse(figure.as_of);
+    if (!Number.isNaN(time) && time > latestTime) {
+      latest = figure.as_of;
+      latestTime = time;
+    }
+  }
+  return latest;
+};
+
 /** The value a figure shows, with site statuses spelled out. */
 export const figureValue = (figure: PublicFigure): string =>
   figure.id.startsWith('status-')
