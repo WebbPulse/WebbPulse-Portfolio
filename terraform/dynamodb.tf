@@ -44,6 +44,7 @@ locals {
         attributes             = [{ name = "pk", type = "S" }]
         ttl_attribute          = "ttl"
         point_in_time_recovery = false
+        deletion_protection    = var.environment == "production"
       }
 
     },
@@ -58,5 +59,5 @@ module "dynamodb" {
   tables      = local.dynamodb_tables
 
   point_in_time_recovery = true
-  deletion_protection    = var.environment == "production"
+  deletion_protection    = false
 }
