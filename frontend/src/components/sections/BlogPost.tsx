@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { PublicShell } from '../layout';
 import { getPostBySlug, getSiteContent } from '../../content';
+import { findPostContent } from '../../content/blogBodies';
 import { useClientValue, useDocumentMeta } from '../../hooks';
 import { processMarkdown, extractHeadings } from '../../utils/markdown';
 import { MonoLabel, Sheet } from '../drawing';
@@ -112,8 +113,9 @@ export const BlogPost: React.FC = () => {
     );
   }
 
-  const headings = extractHeadings(post.content);
-  const processed = processMarkdown(post.content, { styled: false });
+  const body = findPostContent(post.slug) ?? '';
+  const headings = extractHeadings(body);
+  const processed = processMarkdown(body, { styled: false });
   const profileImage = site.profile_image_url ?? '/headshot.jpg';
 
   return (

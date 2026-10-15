@@ -270,8 +270,7 @@ Each value lives in exactly one place.
 | --- | --- |
 | `terraform/env/<environment>.tfvars`, committed | Non-secret config: `bootstrap_image_tag` and `manage_spans_log_group`. WebbPulse-Platform loads the file on every plan through the workspace's `TF_CLI_ARGS_plan` env var. |
 | HCP workspace variables pushed by WebbPulse-Platform | `environment`, `staging_profile`, `route53_zone_id`, `route53_write_role_arn`, `route53_read_role_arn` (assumed instead of the writer when the control plane exports `webbpulse_run_phase=plan`), the staging gate variables and the cloud identity env vars. Never repeat these in a tfvars file. |
-| `webbpulse-<env>/app` Secrets Manager JSON secret | Only the Terraform-generated `SECRET_KEY` and `mfa_master_key`, which nothing reads now. Operator keys go in with `webbpulse-config --prefix webbpulse-<env> secret set <KEY>` (`json_preserve_unmanaged`). |
-| `/webbpulse-<env>/config` SSM String parameter | Private non-secret config as a JSON object, owned by an operator and read through `operator-config`. Nothing reads a key from it now. |
+| `webbpulse-<env>/app` Secrets Manager JSON secret | Empty, and nothing reads it now. Terraform generates no keys in it. Operator keys go in with `webbpulse-config --secret-id webbpulse-<env>/app secret set <KEY>` (`json_preserve_unmanaged`). |
 
 ## Gotchas
 
