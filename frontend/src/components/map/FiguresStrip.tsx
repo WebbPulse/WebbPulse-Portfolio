@@ -1,7 +1,7 @@
 import React from 'react';
 import type { PublicFigure } from '../../services/api';
 import { LiveDot } from '../drawing';
-import { asOfTime, figureValue } from './figures';
+import { asOfTime, figureValue, latestAsOf } from './figures';
 
 /**
  * The strip of live figures under the map: latest releases and site status.
@@ -14,7 +14,7 @@ export const FiguresStrip: React.FC<{ figures: Map<string, PublicFigure> }> = ({
 }) => {
   if (figures.size === 0) return null;
   const list = [...figures.values()];
-  const stamp = asOfTime(list[0]?.as_of ?? '');
+  const stamp = asOfTime(latestAsOf(list));
   return (
     <section
       aria-label="Live figures"

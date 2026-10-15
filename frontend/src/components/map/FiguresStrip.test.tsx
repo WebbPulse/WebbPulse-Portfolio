@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import type { PublicFigure } from '../../services/api';
 import { FiguresStrip } from './FiguresStrip';
-import { asOfTime, figureValue } from './figures';
+import { asOfTime, figureValue, latestAsOf } from './figures';
 
 const figure: PublicFigure = {
   id: 'status-standupless',
@@ -23,7 +23,7 @@ describe('FiguresStrip', () => {
       id: 'release-webbpulse-python',
       label: 'webbpulse',
       value: '0.89.0',
-      as_of: figure.as_of,
+      as_of: '2026-10-09T22:44:00Z',
       source: 'CodeArtifact',
       url: 'https://example.com/release',
     };
@@ -31,8 +31,8 @@ describe('FiguresStrip', () => {
       <FiguresStrip
         figures={
           new Map([
-            [figure.id, figure],
             [release.id, release],
+            [figure.id, figure],
           ])
         }
       />
@@ -52,5 +52,16 @@ describe('figure helpers', () => {
     );
     expect(asOfTime('2026-10-10T23:59:00Z')).toBe('23:59');
     expect(asOfTime('not a date')).toBe('');
+  });
+
+  it('takes the newest read time across figures', () => {
+    expect(
+      latestAsOf([
+        { ...figure, as_of: '2026-10-09T22:44:00Z' },
+        { ...figure, as_of: 'not a date' },
+        { ...figure, as_of: '2026-10-10T09:05:00Z' },
+      ])
+    ).toBe('2026-10-10T09:05:00Z');
+    expect(latestAsOf([])).toBe('');
   });
 });
