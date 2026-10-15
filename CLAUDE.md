@@ -5,8 +5,8 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
 ## Project Overview
 
 WebbPulse is a personal portfolio website with a blog. It is a
-monorepo with a React/TypeScript frontend and four per-domain FastAPI/Python
-Lambdas.
+monorepo with a React/TypeScript frontend and one FastAPI/Python Lambda that
+serves the live public figures.
 
 ## Commands
 
@@ -44,16 +44,16 @@ docker compose up -d
 export DYNAMODB_ENDPOINT_URL=http://localhost:8001
 python scripts/create_local_tables.py
 
-# All 45 routes in one process (root A, every domain's routers on one app)
+# Every route in one process (root A)
 uvicorn app.common.composition.app:app --reload
 
-# One domain, exactly as the image runs it (root B; the Dockerfile CMD is
+# The public domain exactly as the image runs it (root B; the Dockerfile CMD is
 # `python -m app.domains.${DOMAIN}.entrypoint`). run_uvicorn binds AWS_LWA_PORT,
 # then PORT, then 8080
-PORT=8010 python -m app.domains.content.entrypoint
+PORT=8013 python -m app.domains.public.entrypoint
 
-# All four as the real images, under the Lambda Web Adapter. Needs a
-# CodeArtifact token; see backend/README.md
+# The real image under the Lambda Web Adapter. Needs a CodeArtifact token; see
+# backend/README.md
 docker compose --profile domains up --build
 
 # Tests (moto-backed, no AWS or database needed)
@@ -113,59 +113,36 @@ ruff format --check app tests
 
 ### Backend
 
-- **Runtime**: four FastAPI apps, one per domain (`content`, `resume`,
-  `identity`, `public`), each its own Lambda (`webbpulse-<env>-<domain>`, Python
-  3.13, arm64) built as a container image from one `backend/Dockerfile`. There is
-  no Lambda handler and no Mangum: the Lambda Web Adapter runs ahead of the
-  process and turns each invoke into an HTTP request against `127.0.0.1:8080`,
-  so the same image runs on Lambda and under `docker run`. API Gateway routes
-  with explicit route keys and no `$default`: an unmatched path is a gateway
-  404, not a fall-through. `tests/entrypoints/test_gateway_routes.py` keeps the
-  key set and the served paths in agreement, in both directions. **CORS is owned
-  by API Gateway, not by the functions**: with only explicit method keys and no
-  `$default`, an `OPTIONS` preflight matches no route and gets a gateway 404
-  with no CORS headers, so `module "api"` sets `cors_configuration` from
-  `local.cors_origins`. The gateway answers preflight without invoking an
-  integration and attaches CORS headers to every response it produces,
-  authorizer 401s included, which no in-process middleware can reach. The
-  functions' own `CORSMiddleware` still runs and is configured to match
-- **REST API**: All routes under `/api/v1/`. OpenAPI docs at `/docs`. Ids stay
-  integers and list endpoints keep `skip`/`limit`, so the frontend contract is
-  unchanged. The `/api/auth` surface comes from `webbpulse.identity` through
-  `app/domains/identity/package_glue.py`, not from repo code
-- **Auth**: the legacy bearer path is JWT HS256 and bcrypt from
-  `webbpulse.security`; `app/common/core/security.py` is a thin adapter that keeps
-  `verify_token`'s `sub`-or-`None` contract, so an expired and a forged token
-  are the same 401 to a caller. `get_current_user` tries that token first and
-  falls back to authorizer claims read by `app/core/identity_claims.py`. **The
-  application never verifies the identity signature and has no KMS access**: the
-  gateway is the verifier and claims arrive in `x-amzn-request-context`, which
-  the Web Adapter writes from the invoke event. A route only receives claims if
-  its route key is flagged, which is why the Terraform half is not optional
-- **Database**: DynamoDB, one table per entity (`webbpulse-<env>-<entity>`).
-  Integer ids come from counter items in `meta`; uniqueness (username, email,
-  slug) is enforced with lookup items inside `TransactWriteItems`. `posts` has
-  `published-index` and `category-index` GSIs. The login limiter uses the
-  `rate-limits` table
-- **Config**: `DYNAMODB_TABLE_PREFIX`, `APP_SECRETS_ARN` (signing key and admin
-  credentials in one JSON secret, `webbpulse-<env>/app`), `ENVIRONMENT`,
-  `CORS_ORIGINS`, `SITE_URL`, `LOG_LEVEL`; `DYNAMODB_ENDPOINT_URL` points at a
-  local DynamoDB
-- **Secrets resolve lazily and are checked once at startup.** Importing
-  `app.common.config` reads nothing and constructing `Settings` makes no Secrets
-  Manager call, so every entrypoint is importable with no credentials. An env var
-  wins per field; otherwise the blob is fetched on first read and cached for the
-  life of the execution environment. Each domain declares what it needs in
-  `Domain.requires_secrets`, and `check_required_secrets` raises on `staging`
-  and `production` and warns elsewhere. `identity` needs all four, `content` and
-  `resume` need `SECRET_KEY`, `public` needs none
-- **Rate limiting**: API Gateway stage throttling (burst 200, rate 100), plus
-  the login limiter. There is no general in-process limiter. Staging is never
-  rate limited: every limiter follows `settings.rate_limiting_enabled`, the
-  shared `webbpulse` convention that is False on `staging` and True elsewhere
+- **Runtime**: one FastAPI app, the `public` domain, as the Lambda
+  `webbpulse-<env>-public` (Python 3.13, arm64) built as a container image from
+  `backend/Dockerfile`. There is no Lambda handler and no Mangum: the Lambda Web
+  Adapter runs ahead of the process and turns each invoke into an HTTP request
+  against `127.0.0.1:8080`, so the same image runs on Lambda and under `docker
+  run`. The domain registry in `wiring.py` keeps the shared
+  `webbpulse.composition` shape, so another domain would be one more row and
+  entrypoint
+- **Routes**: `GET /`, `GET /health` (reads the cache table, 503 on failure)
+  and `GET /api/v1/public/figures`. API Gateway routes with explicit route keys
+  and no `$default`: an unmatched path is a gateway 404, not a fall-through.
+  `tests/entrypoints/test_gateway_routes.py` keeps the key set and the served
+  paths in agreement, in both directions. **CORS is owned by API Gateway, not by
+  the function**: with only explicit method keys and no `$default`, an `OPTIONS`
+  preflight matches no route and gets a gateway 404 with no CORS headers, so
+  `module "api"` sets `cors_configuration` from `local.cors_origins`. The
+  function's own `CORSMiddleware` still runs and is configured to match
+- **No sign in**: there are no auth routes, no admin, no users and no tokens.
+  The function reads no secret and has no Secrets Manager grant
+- **Database**: one DynamoDB table, `webbpulse-<env>-public-cache` (string `pk`,
+  TTL `ttl`), holding the computed figures and their refresh lease
+- **Config**: `DYNAMODB_TABLE_PREFIX`, `ENVIRONMENT`, `CORS_ORIGINS`,
+  `LOG_LEVEL`; `DYNAMODB_ENDPOINT_URL` points at a local DynamoDB
+- **Sitemap and robots**: the frontend prerender writes both; the backend
+  serves neither
+- **Rate limiting**: API Gateway stage throttling (burst 200, rate 100). There
+  is no in-process limiter
 - **Observability**: OpenTelemetry through `webbpulse.otel`, X-Ray active
   tracing, and 7-day CloudWatch log groups. Logging is `webbpulse.logging`'s
-  JSON formatter with `request_id` and `user_id` merged onto every line from
+  JSON formatter with `request_id` merged onto every line from
   `webbpulse.log_context`. aws-lambda-powertools is gone: its correlation is a
   handler decorator and there is no handler under the Web Adapter. No custom
   metrics yet
@@ -174,20 +151,17 @@ ruff format --check app tests
 
 | File | Purpose |
 |---|---|
-| `backend/app/common/composition/wiring.py` | The four domains and `build_domain_app` |
-| `backend/app/common/composition/app.py` | Root A: every domain's routers on one app. Nothing deploys it |
-| `backend/app/domains/identity/package_glue.py` | Builds the `/api/auth` router from `webbpulse.identity` |
-| `backend/app/domains/<domain>/entrypoint.py` | Root B: one module per deployed function |
-| `backend/Dockerfile` | Builds all four images; `DOMAIN` selects the entrypoint and, through a per-domain final stage, the adapter readiness protocol |
-| `backend/app/common/config.py` | Pydantic Settings and the `APP_SECRETS_ARN` JSON secret |
-| `backend/app/core/identity_claims.py` | Reads authorizer claims in both native and gate shapes |
-| `backend/app/common/db/tables.py` | Canonical table and index definitions |
-| `backend/tests/fixtures/route_contract.json` | The published contract: 45 routes |
-| `backend/tests/entrypoints/test_gateway_routes.py` | Keeps route keys, served paths and flagged admin routes in agreement |
+| `backend/app/common/composition/wiring.py` | The domain registry and `build_domain_app` |
+| `backend/app/common/composition/app.py` | Root A: every router on one app. Nothing deploys it |
+| `backend/app/domains/public/entrypoint.py` | Root B: the module the deployed function runs |
+| `backend/app/domains/public/figures.py` | The figure sources, the cache and the refresh lease |
+| `backend/Dockerfile` | Builds the image; `DOMAIN` selects the entrypoint and, through a per-domain final stage, the adapter readiness protocol |
+| `backend/app/common/db/tables.py` | Canonical table definitions |
+| `backend/tests/fixtures/route_contract.json` | The published contract: 3 routes |
+| `backend/tests/entrypoints/test_gateway_routes.py` | Keeps route keys and served paths in agreement |
 | `terraform/dynamodb.tf` | Table map |
-| `terraform/lambda_domains.tf` | The four domain functions, roles, environments |
-| `terraform/apigateway.tf` | HTTP API, routes, the 24 flagged admin keys |
-| `terraform/identity.tf` | The identity platform module |
+| `terraform/lambda_domains.tf` | The public function, role and environment |
+| `terraform/apigateway.tf` | HTTP API and routes |
 | `frontend/src/services/api.ts` | Centralized API client |
 
 ### Deployment
@@ -206,7 +180,7 @@ ruff format --check app tests
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `.github/workflows/ci.yml` | PR to `main`/`staging` | `dorny/paths-filter` gates a `Backend` job on the org `python-ci.yml@v3` (uv sync, pytest on moto per test domain, ruff, pyright, bandit, pip-audit) and a `Frontend` job on `typescript-ci.yml@v2` (lint, format check, Vitest with coverage, build). An `affected` job narrows the pytest shards to the domains the diff touches. `all-checks-passed` is the aggregating gate job |
-| `.github/workflows/deploy-backend.yml` | push to `main`/`staging`, paths `backend/**` minus tests, e2e, scripts and docs | A thin caller of the org `lambda-domains-deploy.yml@v3`: it picks the affected domains, builds those images through `container-image.yml@v3` (an existing tag is reused, not rebuilt), points each function at its digest through `lambda-image-deploy.yml@v3`, and invoke-smoke-tests each on `GET /health`; the e2e suite verifies the live gateway |
+| `.github/workflows/deploy-backend.yml` | push to `main`/`staging`, paths `backend/**` minus tests, e2e, scripts and docs | A thin caller of the org `lambda-domains-deploy.yml@v3`: it builds the image through `container-image.yml@v3` (an existing tag is reused, not rebuilt), points the function at its digest through `lambda-image-deploy.yml@v3`, and invoke-smoke-tests it on `GET /health`; the e2e suite verifies the live gateway |
 | `.github/workflows/deploy-frontend.yml` | push to `main`/`staging`, paths `frontend/**` | Resolves the environment, then calls the org `spa-deploy.yml@v3`: CodeArtifact login, `npm run build`, `s3 sync --delete`, CloudFront invalidation |
 
 There is no `test-backend.yml` or `test-frontend.yml`; CI is one `ci.yml`.
@@ -294,10 +268,10 @@ Each value lives in exactly one place.
 
 | Where | What |
 | --- | --- |
-| `terraform/env/<environment>.tfvars`, committed | Non-secret config: `bootstrap_image_tag`, `identity_jwt_mode`, `domain_jwt_enforced`, the OAuth client ids, `manage_spans_log_group`, and in production the passkey flags. WebbPulse-Platform loads the file on every plan through the workspace's `TF_CLI_ARGS_plan` env var. |
+| `terraform/env/<environment>.tfvars`, committed | Non-secret config: `bootstrap_image_tag` and `manage_spans_log_group`. WebbPulse-Platform loads the file on every plan through the workspace's `TF_CLI_ARGS_plan` env var. |
 | HCP workspace variables pushed by WebbPulse-Platform | `environment`, `staging_profile`, `route53_zone_id`, `route53_write_role_arn`, `route53_read_role_arn` (assumed instead of the writer when the control plane exports `webbpulse_run_phase=plan`), the staging gate variables and the cloud identity env vars. Never repeat these in a tfvars file. |
-| `webbpulse-<env>/app` Secrets Manager JSON secret | `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ADMIN_EMAIL`, `OAUTH_GOOGLE_CLIENT_SECRET`, `OAUTH_GITHUB_CLIENT_SECRET`, set by an operator with `webbpulse-config --prefix webbpulse-<env> secret set <KEY>`. Terraform declares only the generated `SECRET_KEY` and `mfa_master_key` and keeps every other live key (`json_preserve_unmanaged`). |
-| `/webbpulse-<env>/config` SSM String parameter | Private non-secret config as a JSON object, owned by an operator and read through `operator-config`: `ses_verified_recipients`. Change it with `aws ssm put-parameter --overwrite` carrying the whole object; the next plan follows it. |
+| `webbpulse-<env>/app` Secrets Manager JSON secret | Only the Terraform-generated `SECRET_KEY` and `mfa_master_key`, which nothing reads now. Operator keys go in with `webbpulse-config --prefix webbpulse-<env> secret set <KEY>` (`json_preserve_unmanaged`). |
+| `/webbpulse-<env>/config` SSM String parameter | Private non-secret config as a JSON object, owned by an operator and read through `operator-config`. Nothing reads a key from it now. |
 
 ## Gotchas
 
@@ -310,16 +284,6 @@ Each value lives in exactly one place.
 - **`aws/spans` is a reserved log group.** Terraform cannot pre-create it. Let
   X-Ray create it on the first span, then set `manage_spans_log_group` to import
   it for retention.
-- **Identity claims arrive as strings**, `exp` included, and the Web Adapter
-  header is plain JSON, not base64.
-- **`IDENTITY_RP_ID` is immutable per credential.** A passkey enrolled under a
-  wrong RP id has to be re-enrolled, not fixed by a variable change.
-- **Rotating a signing key is two applies** against `signing_key_count` and
-  `active_signing_key`. Rotating material behind one key id strands every issued
-  token, because `kid` derives from the material.
-- **`var.domain_jwt_enforced` defaults to `false` in code** but is `true` in
-  both `terraform/env/*.tfvars`. The repository default is not evidence
-  enforcement is off; read the tfvars file.
 - **HCP plan JSON carries sensitive variable values in plaintext.** Fetch it
   only through a jq filter, never save the raw output.
 
@@ -330,13 +294,10 @@ Each value lives in exactly one place.
 - **No em dashes** in AWS resource names, descriptions or site copy.
 - **No code comments** unless explicitly asked. Docstrings are required
   everywhere and should be concise.
-- **Test markers** (`pytest.ini`): `unit`, `api`, `integration`, `auth`,
-  `admin`. Run a category with `-m unit`.
+- **Test markers** (`pytest.ini`): `unit`, `api`, `integration`. Run a
+  category with `-m unit`.
 
 ## Documentation
 
-- `docs/identity-cutover.md`: current identity state, the two pending steps
-  (clear the legacy column, then close out), and the MFA, OAuth and passkey
-  reference.
 - `docs/migration/RETROSPECTIVE.md`: what the migrations changed, when they
   landed, and what is still open.

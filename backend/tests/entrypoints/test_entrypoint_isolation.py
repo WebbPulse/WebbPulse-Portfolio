@@ -64,7 +64,7 @@ def test_an_entrypoint_builds_with_no_credentials_and_no_environment(domain, pro
 
 @pytest.mark.parametrize("domain", sorted(DOMAIN_NAMES))
 def test_an_entrypoint_imports_only_its_own_domain(domain, probes):
-    """The claim that makes four images smaller than four copies of one image."""
+    """An image carries only the domain it serves."""
     assert probes[domain]["domains"] == [domain]
 
 
@@ -89,8 +89,6 @@ def test_main_runs_logging_tracing_and_the_check_before_serving(domain, monkeypa
     """The cold start order: logging, tracing, the secrets check, then the build and serve."""
     import webbpulse.composition as composition
 
-    from app.common.composition import wiring
-
     module = __import__(f"app.domains.{domain}.entrypoint", fromlist=["main"])
     calls = []
 
@@ -112,7 +110,7 @@ def test_main_runs_logging_tracing_and_the_check_before_serving(domain, monkeypa
 
     monkeypatch.setattr(composition, "configure_logging", fake_logging)
     monkeypatch.setattr(composition, "configure_tracing", fake_tracing)
-    monkeypatch.setattr(wiring, "check_required_secrets", fake_check)
+    monkeypatch.setattr(composition, "check_secrets", fake_check)
     monkeypatch.setattr("webbpulse.lambda_entry.run_uvicorn", fake_serve)
 
     module.main()
@@ -133,7 +131,7 @@ def test_an_entrypoint_leaves_instrumentation_to_the_builder(domain):
 
 
 def test_no_entrypoint_imports_a_whole_surface_root():
-    """A deployed entrypoint builds one domain, never all four."""
+    """A deployed entrypoint builds one domain, never the whole surface."""
     for domain in DOMAIN_NAMES:
         source = (BACKEND / "app" / "domains" / domain / ENTRYPOINT).read_text()
         for forbidden in ("app.main", "from ..main", "composition.app", "from .app"):

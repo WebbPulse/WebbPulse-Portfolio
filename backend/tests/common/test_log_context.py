@@ -5,13 +5,11 @@ import logging
 import uuid
 
 import pytest
-from fastapi import Depends
 from webbpulse.http import REQUEST_ID_HEADER
 from webbpulse.log_context import UNSET, request_id_var, user_id_var
 from webbpulse.logging import JsonFormatter
 
 from app.common.core.logging import logger
-from app.common.core.security import CurrentUser
 
 
 @pytest.fixture
@@ -101,25 +99,6 @@ def test_the_context_does_not_leak_between_requests(client):
 
     client.get("/health", headers={REQUEST_ID_HEADER: "second"})
     assert request_id_var.get() == UNSET
-
-
-def test_an_authenticated_request_logs_the_user_id(client, json_lines, admin_auth_headers, test_admin_user):
-    """`CurrentUser` binds `user_id`, and it lands on the log line."""
-
-    @client.app.get("/_test/authenticated")
-    def _log_something(current_user: dict = Depends(CurrentUser)) -> dict:
-        """Route that logs one line as an authenticated caller."""
-        logger.info("authenticated request")
-        return {"ok": True}
-
-    response = client.get("/_test/authenticated", headers=admin_auth_headers)
-    assert response.status_code == 200
-
-    request_id = response.headers[REQUEST_ID_HEADER]
-    logged = [line for line in json_lines if line["message"] == "authenticated request"]
-    assert len(logged) == 1
-    assert logged[0]["request_id"] == request_id
-    assert logged[0]["user_id"] == str(test_admin_user["id"])
 
 
 def test_an_unauthenticated_request_has_no_user_id(client, json_lines):

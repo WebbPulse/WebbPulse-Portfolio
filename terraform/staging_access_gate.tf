@@ -13,12 +13,5 @@ module "staging_access_gate" {
   http_api_id      = module.api.api_id
   invite_login_url = "https://${local.domain}/"
 
-  identity_jwt = local.identity_jwt_gate_enforced ? {
-    issuer   = local.identity_issuer
-    audience = local.identity_audience
-  } : null
-
-  identity_jwt_route_keys = local.identity_jwt_gate_enforced ? module.api.identity_jwt_route_keys : []
-
   viewer_request_handler_js = module.frontend.viewer_request_handler_js
 }

@@ -25,5 +25,4 @@ jobs:
       install-command: uv lock --upgrade-package webbpulse && uv sync --locked --group e2e
       pytest-args: ${{ (github.event.workflow_run.head_branch || github.ref_name) == 'main' && '-o addopts=' || '-o addopts= -n auto --dist loadgroup' }}
       codeartifact-domain: webbpulse
-    secrets:
-      E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
+      read-only-environments: "production,staging"

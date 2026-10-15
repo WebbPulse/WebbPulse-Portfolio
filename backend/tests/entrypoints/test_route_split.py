@@ -47,21 +47,17 @@ def _domain_pairs(name):
     return pairs if name == "public" else pairs - {("GET", "/health")}
 
 
-def test_the_four_domains_are_the_ones_the_plan_names():
-    """The wired domains are exactly content, identity, public and resume."""
-    assert sorted(DOMAIN_NAMES) == ["content", "identity", "public", "resume"]
+def test_public_is_the_only_wired_domain():
+    """The site serves only public data, so public is the only wired domain."""
+    assert sorted(DOMAIN_NAMES) == ["public"]
 
 
 def test_the_recorded_contract_is_the_shape_the_plan_describes():
     """The fixture itself, checked before anything is measured against it."""
-    assert len(CONTRACT_PAIRS) == 45
-    assert len(CONTRACT_OPERATIONS) == 43
-    assert sum(EXPECTED_COUNTS.values()) == 45
-    assert {(m, p) for m, p, _, _ in CONTRACT_OPERATIONS} <= CONTRACT_PAIRS
-    assert CONTRACT_PAIRS - {(m, p) for m, p, _, _ in CONTRACT_OPERATIONS} == {
-        ("GET", "/sitemap.xml"),
-        ("GET", "/robots.txt"),
-    }
+    assert len(CONTRACT_PAIRS) == 3
+    assert len(CONTRACT_OPERATIONS) == 3
+    assert sum(EXPECTED_COUNTS.values()) == 3
+    assert {(m, p) for m, p, _, _ in CONTRACT_OPERATIONS} == CONTRACT_PAIRS
 
 
 @pytest.mark.parametrize("name", sorted(DOMAIN_NAMES))
@@ -95,24 +91,24 @@ def test_no_two_domains_serve_the_same_route():
     assert collisions == []
 
 
-def test_the_union_of_the_four_is_exactly_the_contract():
-    """The four domains together serve exactly the contract."""
+def test_the_union_of_the_domains_is_exactly_the_contract():
+    """The domains together serve exactly the contract."""
     union = set()
     for name in DOMAIN_NAMES:
         union |= _domain_pairs(name)
     assert union == CONTRACT_PAIRS
-    assert len(union) == sum(EXPECTED_COUNTS.values()) == 45
+    assert len(union) == sum(EXPECTED_COUNTS.values()) == 3
 
 
 def test_the_union_of_the_documented_operations_is_the_contract_document():
-    """The documented operations across the four are exactly the contract's."""
+    """The documented operations across the domains are exactly the contract's."""
     union = set()
     for name in DOMAIN_NAMES:
         union |= _operations(build_domain_app(name))
     assert union == CONTRACT_OPERATIONS
 
 
-def test_root_a_serves_the_same_surface_as_the_four_together():
+def test_root_a_serves_the_same_surface_as_the_domains_together():
     """Root A and root B, still two views of one list."""
     from app.common.composition.app import build_app
 
@@ -128,11 +124,9 @@ def test_every_domain_answers_the_adapter_readiness_path(name):
     assert ("GET", "/health") in _route_pairs(build_domain_app(name))
 
 
-def test_only_public_serves_the_database_reporting_health():
-    """The other three get the liveness-only route, which does no I/O."""
+def test_public_serves_the_database_reporting_health():
+    """The public function's own `/health` reads DynamoDB and is documented."""
     assert "/health" in build_domain_app("public").openapi()["paths"]
-    for name in ("content", "resume", "identity"):
-        assert "/health" not in build_domain_app(name).openapi()["paths"]
 
 
 def test_public_reads_no_secret():
@@ -143,8 +137,5 @@ def test_public_reads_no_secret():
 def test_service_names_match_what_terraform_sets():
     """Each domain's service name is the one Terraform sets."""
     assert {name: DOMAINS[name].service_name for name in DOMAIN_NAMES} == {
-        "content": "webbpulse-portfolio-content",
-        "resume": "webbpulse-portfolio-resume",
-        "identity": "webbpulse-portfolio-identity",
         "public": "webbpulse-portfolio-public",
     }

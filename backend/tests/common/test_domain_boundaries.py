@@ -43,9 +43,9 @@ def _imported_modules(path):
     return modules
 
 
-def test_domains_are_the_four_the_plan_names():
-    """The domain packages are exactly content, identity, public and resume."""
-    assert DOMAINS == ["content", "identity", "public", "resume"]
+def test_public_is_the_only_domain():
+    """The site serves only public data, so public is the only domain package."""
+    assert DOMAINS == ["public"]
 
 
 @pytest.mark.parametrize("domain", DOMAINS)
@@ -81,7 +81,7 @@ def test_domains_do_not_import_the_composition_root(domain):
 
 
 def test_only_the_composition_root_assembles_more_than_one_domain():
-    """Only the composition root, and the recorded exception, touches two domains."""
+    """Only the composition root touches more than one domain."""
     offenders = []
     for path in APP.rglob("*.py"):
         if path in COMPOSITION_ROOT or DOMAINS_DIR in path.parents:
@@ -95,7 +95,7 @@ def test_only_the_composition_root_assembles_more_than_one_domain():
         }
         if len(touched) > 1:
             offenders.append((str(path.relative_to(APP.parent)), sorted(touched)))
-    assert offenders == [("app/common/core/middleware.py", ["content", "identity"])]
+    assert offenders == []
 
 
 @pytest.mark.parametrize("domain", DOMAINS)
@@ -104,16 +104,7 @@ def test_only_router_modules_import_fastapi(domain):
     allowed = {
         "entrypoint.py",
         "package_glue.py",
-        "certifications.py",
-        "crud_router.py",
-        "education.py",
-        "experience.py",
-        "posts.py",
-        "projects.py",
         "router.py",
-        "seo.py",
-        "site_content.py",
-        "skills.py",
     }
     offences = [
         str(path.relative_to(APP.parent))
@@ -126,10 +117,9 @@ def test_only_router_modules_import_fastapi(domain):
 
 LAZY_DOMAIN_HOSTS = {
     COMMON_DIR / "composition" / "wiring.py": "the per-domain router loaders",
-    COMMON_DIR / "core" / "middleware.py": "the per-domain seeders",
 }
 """The only files under `app/common` allowed to name a domain, and why. Each
-imports one domain inside a function body, so importing the module itself still
+imports the domain inside a function body, so importing the module itself still
 imports no domain package."""
 
 

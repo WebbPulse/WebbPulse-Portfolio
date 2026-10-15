@@ -125,7 +125,6 @@ export interface AboutValue {
 /** The singleton record backing the public site's copy. */
 export interface SiteContent {
   id: number;
-  hero_title: string;
   hero_subtitle: string;
   hero_description: string;
   about_paragraphs: string[];

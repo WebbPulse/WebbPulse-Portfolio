@@ -62,15 +62,6 @@ WORKDIR /var/task
 
 CMD ["sh", "-c", "exec python -m app.domains.${DOMAIN}.entrypoint"]
 
-FROM runtime AS readiness-content
-ENV AWS_LWA_READINESS_CHECK_PROTOCOL=http
-
-FROM runtime AS readiness-resume
-ENV AWS_LWA_READINESS_CHECK_PROTOCOL=http
-
-FROM runtime AS readiness-identity
-ENV AWS_LWA_READINESS_CHECK_PROTOCOL=http
-
 FROM runtime AS readiness-public
 ENV AWS_LWA_READINESS_CHECK_PROTOCOL=tcp
 

@@ -15,8 +15,6 @@ locals {
   domain   = var.environment == "production" ? "portfolio.webbpulse.com" : "staging.portfolio.webbpulse.com"
   api_host = "api.${local.domain}"
 
-  support_email = "support@webbpulse.com"
-
   workload_dns_role_arn = var.environment == "production" ? var.route53_write_role_arn : ""
   records_zone_id       = var.environment == "production" ? var.route53_zone_id : module.staging_dns.zone_id
 
@@ -28,7 +26,4 @@ locals {
   staging_gate_count   = local.staging_gate_enabled ? 1 : 0
 
   frontend_api_url = local.api_url
-
-  identity_jwt_gate_enforced   = var.identity_jwt_mode == "gate" && local.staging_gate_enabled
-  identity_jwt_native_enforced = var.identity_jwt_mode == "native"
 }
