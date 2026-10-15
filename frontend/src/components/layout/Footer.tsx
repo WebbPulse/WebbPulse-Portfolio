@@ -30,7 +30,7 @@ const Footer: React.FC = () => {
     <footer className="mt-auto border-t border-line bg-paper">
       <Sheet className="py-10 sm:py-14">
         <div className="grid grid-cols-1 border-l border-t border-line md:grid-cols-12">
-          <div className={`${cell} md:col-span-6`}>
+          <div className={`${cell} md:col-span-12 lg:col-span-6`}>
             <MonoLabel as="p">Drawn by</MonoLabel>
             <Link
               to="/"
@@ -43,7 +43,7 @@ const Footer: React.FC = () => {
             </p>
           </div>
 
-          <div className={`${cell} md:col-span-3`}>
+          <div className={`${cell} md:col-span-6 lg:col-span-3`}>
             <MonoLabel as="p">Contact</MonoLabel>
             <ul className="mt-2 space-y-1.5">
               {email && (
@@ -88,9 +88,9 @@ const Footer: React.FC = () => {
             </ul>
           </div>
 
-          <div className={`${cell} md:col-span-3`}>
+          <div className={`${cell} md:col-span-6 lg:col-span-3`}>
             <MonoLabel as="p">Sheet</MonoLabel>
-            <p className="mt-1 font-mono text-sm text-ink">
+            <p className="mt-1 break-words font-mono text-sm text-ink">
               portfolio.webbpulse.com
             </p>
             <p className="mt-2 font-mono text-xs text-ink-muted">

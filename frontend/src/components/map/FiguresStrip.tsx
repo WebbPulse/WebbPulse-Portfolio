@@ -34,8 +34,8 @@ export const FiguresStrip: React.FC<{ figures: Map<string, PublicFigure> }> = ({
               key={figure.id}
               className="min-w-0 border-b border-r border-line px-3 py-2.5"
             >
-              <dt className="mono-label truncate">{figure.label}</dt>
-              <dd className="mt-1 truncate font-mono text-sm text-ink">
+              <dt className="mono-label break-words">{figure.label}</dt>
+              <dd className="mt-1 break-words font-mono text-sm text-ink">
                 {figure.url ? (
                   <a
                     href={figure.url}
