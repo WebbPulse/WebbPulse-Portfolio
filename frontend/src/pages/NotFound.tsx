@@ -1,49 +1,41 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Header, Footer } from '../components/layout';
-import { Button, GradientText } from '../components/common';
-import type { NavigationItem } from '../types';
-
-const NAV: NavigationItem[] = [
-  { label: 'Home', href: '/' },
-  { label: 'About', href: '/#about' },
-  { label: 'Skills', href: '/#skills' },
-  { label: 'Projects', href: '/#projects' },
-  { label: 'Experience', href: '/#experience' },
-  { label: 'Blog', href: '/blog' },
-  { label: 'Contact', href: '/#contact' },
-];
+import { PublicShell } from '../components/layout';
+import { MonoLabel, RegistrationMarks, Sheet } from '../components/drawing';
+import { useDocumentMeta } from '../hooks';
 
 /** The catch-all page for a URL that matches no route. */
-export const NotFound: React.FC = () => (
-  <div className="min-h-screen">
-    <Header navigationItems={NAV} />
-    <main
-      className="relative py-20 sm:py-28 overflow-hidden"
-      data-testid="page-not-found"
-    >
-      <div className="absolute inset-0 bg-mesh-1 opacity-40 pointer-events-none" />
-
-      <div className="relative z-10 max-w-3xl mx-auto px-6 sm:px-8 text-center">
-        <p className="font-display text-sm uppercase tracking-[0.2em] text-surface-400 mb-4">
-          Error 404
-        </p>
-        <h1 className="font-display text-4xl sm:text-5xl font-bold text-surface-50 mb-6">
-          <GradientText as="span">Page not found</GradientText>
-        </h1>
-        <p className="text-surface-300 leading-relaxed mb-10">
-          The page you asked for does not exist, or it has moved somewhere else
-          on this site.
-        </p>
-        <Link to="/">
-          <Button variant="primary" size="lg">
-            Back to home
-          </Button>
-        </Link>
-      </div>
-    </main>
-    <Footer />
-  </div>
-);
+export const NotFound: React.FC = () => {
+  useDocumentMeta({ title: 'Page not found', noindex: true });
+  return (
+    <PublicShell>
+      <main id="main" className="flex-1" data-testid="page-not-found">
+        <Sheet className="py-20 sm:py-28">
+          <div className="relative mx-auto max-w-2xl border border-line bg-paper-raised/70 px-6 py-12 sm:px-12">
+            <RegistrationMarks />
+            <div className="flex items-center gap-3">
+              <span className="font-mono text-xs text-accent">404</span>
+              <span className="h-3 w-px bg-line-strong" aria-hidden="true" />
+              <MonoLabel>Sheet missing</MonoLabel>
+            </div>
+            <h1 className="mt-5 text-4xl font-semibold tracking-[-0.02em] text-ink sm:text-5xl">
+              Page not found
+            </h1>
+            <p className="mt-5 leading-relaxed text-ink-muted">
+              The page you asked for does not exist, or it has moved somewhere
+              else on this site.
+            </p>
+            <Link
+              to="/"
+              className="mt-10 inline-flex items-center gap-2 border border-ink bg-ink px-5 py-3 text-sm font-medium text-paper transition-colors hover:border-accent hover:bg-accent"
+            >
+              <span aria-hidden="true">←</span> Back to home
+            </Link>
+          </div>
+        </Sheet>
+      </main>
+    </PublicShell>
+  );
+};
 
 export default NotFound;

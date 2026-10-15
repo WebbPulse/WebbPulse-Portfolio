@@ -1,41 +1,29 @@
 import React from 'react';
-import { Header, Footer } from '../components/layout';
+import { PublicShell, HOME_NAV } from '../components/layout';
 import {
   Hero,
-  About,
   Skills,
   Projects,
   Experience,
   Blog,
   Contact,
 } from '../components/sections';
-import type { NavigationItem } from '../types';
+import { useDocumentMeta } from '../hooks';
 
-/** The public single page site, section by section. */
+/** The public home page: the system map, then the rest section by section. */
 const Home: React.FC = () => {
-  const navigationItems: NavigationItem[] = [
-    { label: 'About', href: '#about' },
-    { label: 'Skills', href: '#skills' },
-    { label: 'Projects', href: '#projects' },
-    { label: 'Experience', href: '#experience' },
-    { label: 'Blog', href: '#blog' },
-    { label: 'Contact', href: '#contact' },
-  ];
-
+  useDocumentMeta({});
   return (
-    <div className="min-h-screen">
-      <Header navigationItems={navigationItems} />
-      <main data-testid="page-home">
+    <PublicShell navigationItems={HOME_NAV}>
+      <main id="main" className="flex-1" data-testid="page-home">
         <Hero />
-        <About />
-        <Skills />
         <Projects />
         <Experience />
+        <Skills />
         <Blog />
         <Contact />
       </main>
-      <Footer />
-    </div>
+    </PublicShell>
   );
 };
 

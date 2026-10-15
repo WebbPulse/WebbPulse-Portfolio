@@ -1,9 +1,10 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 import tailwindcss from '@tailwindcss/vite';
+import { markdownFrontmatter } from './build/markdownFrontmatter.ts';
 
 export default defineConfig(({ mode }) => ({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), markdownFrontmatter()],
   server: {
     port: 5173,
     host: true,

@@ -1,92 +1,121 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { SocialIcon } from '../../utils';
-import { useSiteContent } from '../../hooks';
+import { SocialIcon } from '../../utils/socialIcons';
+import { getSiteContent } from '../../content';
+import { MonoLabel, Sheet } from '../drawing';
 
-/** The site footer, with the social links and tagline from site content. */
+/**
+ * The site footer, drawn as the title block of the sheet: who drew it, the
+ * contact links from site content, and the privacy page.
+ */
 const Footer: React.FC = () => {
-  const { data } = useSiteContent();
+  const data = getSiteContent();
   const currentYear = new Date().getFullYear();
 
   const tagline =
-    data?.footer_tagline ??
+    data.footer_tagline ??
     'Software engineer focused on building reliable, privacy-conscious systems.';
-  const email = data?.email;
-  const github = data?.github_url;
-  const linkedin = data?.linkedin_url;
+  const email = data.email;
+  const github = data.github_url;
+  const linkedin = data.linkedin_url;
 
   const links: { platform: string; url: string; label: string }[] = [];
   if (github) links.push({ platform: 'github', url: github, label: 'GitHub' });
   if (linkedin)
     links.push({ platform: 'linkedin', url: linkedin, label: 'LinkedIn' });
 
-  return (
-    <footer className="relative bg-surface-950 border-t border-surface-800">
-      <div className="absolute top-0 left-0 right-0 h-px bg-linear-to-r from-transparent via-accent-violet-500/60 to-transparent" />
+  const cell = 'border-b border-r border-line px-4 py-3 min-w-0';
 
-      <div className="max-w-7xl mx-auto px-6 sm:px-8 py-12">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-8">
-          <div className="space-y-2 max-w-md">
+  return (
+    <footer className="mt-auto border-t border-line bg-paper">
+      <Sheet className="py-10 sm:py-14">
+        <div className="grid grid-cols-1 border-l border-t border-line md:grid-cols-12">
+          <div className={`${cell} md:col-span-12 lg:col-span-6`}>
+            <MonoLabel as="p">Drawn by</MonoLabel>
             <Link
               to="/"
-              className="font-display text-xl font-bold text-surface-50 inline-block"
+              className="mt-1 inline-block text-lg font-semibold tracking-tight text-ink hover:text-accent transition-colors"
             >
-              Tyler <span className="text-gradient">Webb</span>
+              Tyler Webb
             </Link>
-            <p className="text-surface-400 text-sm leading-relaxed">
+            <p className="mt-1 max-w-md text-sm leading-relaxed text-ink-muted">
               {tagline}
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
-            {email && (
-              <a
-                href={`mailto:${email}`}
-                aria-label="Email"
-                className="w-10 h-10 inline-flex items-center justify-center rounded-full surface-glass surface-glass-hover text-surface-200 hover:text-surface-50 transition-colors"
-              >
-                <svg
-                  className="w-4 h-4"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  aria-hidden="true"
-                >
-                  <path d="M3 8l9 6 9-6M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                </svg>
-              </a>
-            )}
-            {links.map((link) => (
-              <a
-                key={link.platform}
-                href={link.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={link.label}
-                className="w-10 h-10 inline-flex items-center justify-center rounded-full surface-glass surface-glass-hover text-surface-200 hover:text-surface-50 transition-colors"
-              >
-                <SocialIcon platform={link.platform} className="w-4 h-4" />
-              </a>
-            ))}
+          <div className={`${cell} md:col-span-6 lg:col-span-3`}>
+            <MonoLabel as="p">Contact</MonoLabel>
+            <ul className="mt-2 space-y-1.5">
+              {email && (
+                <li>
+                  <a
+                    href={`mailto:${email}`}
+                    className="inline-flex items-center gap-2 text-sm text-ink-muted hover:text-ink transition-colors"
+                  >
+                    <svg
+                      className="h-3.5 w-3.5"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.75"
+                      aria-hidden="true"
+                    >
+                      <path d="M3 7l9 6 9-6M4 5h16v14H4z" />
+                    </svg>
+                    Email
+                  </a>
+                </li>
+              )}
+              {links.map((link) => (
+                <li key={link.platform}>
+                  <a
+                    href={link.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 text-sm text-ink-muted hover:text-ink transition-colors"
+                  >
+                    <SocialIcon
+                      platform={link.platform}
+                      className="h-3.5 w-3.5"
+                    />
+                    {link.label}
+                  </a>
+                </li>
+              ))}
+              {!email && links.length === 0 && (
+                <li className="text-sm text-ink-faint">Not listed</li>
+              )}
+            </ul>
           </div>
-        </div>
 
-        <div className="mt-10 pt-6 border-t border-surface-800 flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between text-xs text-surface-500">
-          <div className="flex items-center gap-4">
-            <p>© {currentYear} Tyler Webb</p>
+          <div className={`${cell} md:col-span-6 lg:col-span-3`}>
+            <MonoLabel as="p">Sheet</MonoLabel>
+            <p className="mt-1 break-words font-mono text-sm text-ink">
+              portfolio.webbpulse.com
+            </p>
+            <p className="mt-2 font-mono text-xs text-ink-muted">
+              React, FastAPI, AWS Lambda
+            </p>
+          </div>
+
+          <div
+            className={`${cell} flex flex-wrap items-center justify-between gap-3 md:col-span-12`}
+          >
+            <p
+              className="font-mono text-xs text-ink-muted"
+              suppressHydrationWarning
+            >
+              © {currentYear} Tyler Webb
+            </p>
             <Link
               to="/privacy"
-              className="text-surface-500 hover:text-surface-300 transition-colors"
+              className="font-mono text-xs text-ink-muted hover:text-ink underline decoration-line-strong underline-offset-4 transition-colors"
             >
               Privacy
             </Link>
           </div>
-          <p className="text-surface-600">
-            Built with React, FastAPI, and a lot of caffeine.
-          </p>
         </div>
-      </div>
+      </Sheet>
     </footer>
   );
 };

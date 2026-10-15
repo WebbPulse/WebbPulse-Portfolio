@@ -4,7 +4,7 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
 
 ## Project Overview
 
-WebbPulse is a personal portfolio website with a blog and admin panel. It is a
+WebbPulse is a personal portfolio website with a blog. It is a
 monorepo with a React/TypeScript frontend and four per-domain FastAPI/Python
 Lambdas.
 
@@ -44,7 +44,7 @@ docker compose up -d
 export DYNAMODB_ENDPOINT_URL=http://localhost:8001
 python scripts/create_local_tables.py
 
-# All 44 routes in one process (root A, every domain's routers on one app)
+# All 45 routes in one process (root A, every domain's routers on one app)
 uvicorn app.common.composition.app:app --reload
 
 # One domain, exactly as the image runs it (root B; the Dockerfile CMD is
@@ -69,28 +69,44 @@ ruff format --check app tests
 
 ### Frontend
 
-- **Pages**: `/` (portfolio), `/blog`, `/blog/:slug`, `/privacy`,
-  `/verify-email`, `/reset-password`, `/admin`
-- **API layer**: All calls go through `src/services/api.ts` (`apiService`). The
-  transport is `@webbpulse/api-client` and startup configuration is
-  `@webbpulse/config`. That client rejects on a non-2xx, so `ApiService` adapts
-  it back into the `{ data, error }` envelope every page component reads; the
-  envelope is Portfolio's own and is unchanged
-- **Shared packages**: `@webbpulse/api-client`, `auth`, `config`, `discovery`,
-  `qrcode`, `tsconfig` and `eslint-config` resolve from CodeArtifact through
-  `frontend/.npmrc`, all pinned to `^0.10.2`. Run `aws codeartifact login`
-  before installing; see `frontend/README.md`
-- **Auth**: identity only, with no build time switch. `AuthClient` from
-  `@webbpulse/auth` holds a short-lived access token in memory and refreshes it
-  from an httpOnly cookie, and `ApiService` always constructs one. The mode was
-  once chosen by `VITE_AUTH_MODE`, which defaulted to `bearer`; the deploy
-  stopped forwarding it in `ce34362` and silently shipped bearer bundles against
-  the 24 JWT enforced admin route keys. The switch was removed rather than
-  repaired, so `authMode.ts` and `bearerTokenStore.ts` no longer exist and
-  `getAuthClient`/`getIdentityClient` never return null. A unit test
-  (`built auth mode` in `src/services/api.test.ts`) and a `deploy-frontend.yml`
-  step both fail if `VITE_AUTH_MODE` or `POST /api/v1/admin/login` comes back.
-  The backend's legacy login route stays mounted and unused until a later PR
+- **Pages**: `/` (portfolio), `/blog`, `/blog/:slug`, `/privacy`. Any other
+  path, `/admin` included, renders the 404 page. There is no admin panel and no
+  sign-in in the frontend
+- **Public content**: every public page reads `src/content/`, typed data files
+  plus markdown (`blog/*.md` posts, `work/<slug>.md` case studies) loaded at
+  build time with `import.meta.glob`. Edit content through a PR; public routes
+  make no `/api/v1` content calls, and `SITE_CONTENT_DEFAULTS` parity no longer
+  applies to the frontend
+- **Prerender**: `npm run build` also builds `src/entry-server.tsx` for SSR and
+  runs `scripts/prerender.js`, which writes `dist/<route>/index.html` for `/`,
+  `/blog`, `/privacy`, every `/work/<slug>` and published post, plus
+  `dist/404.html`, `dist/sitemap.xml` and `dist/robots.txt` (CloudFront does
+  not route `/robots.txt` to the backend), each with head tags from
+  `useDocumentMeta`. The client bundle stays: `main.tsx` hydrates when the
+  root's `data-prerendered` path matches the URL and renders fresh otherwise.
+  Browser-only values (theme, reduced motion, platform) go through
+  `useSyncExternalStore` with a server snapshot so hydration matches. The
+  `spa-frontend` `viewer_request_function` maps `/work/x` to
+  `/work/x/index.html`; with the staging gate it runs inside the gate's function
+- **Code splitting**: the home page is the main chunk. The blog, case study and
+  privacy pages are `lazyPage` chunks in `src/routing/pages.ts`; `main.tsx`
+  preloads the current route's chunk before hydrating and the prerender loads
+  them all first. The command menu loads on first open. Case study bodies sit
+  in the case study chunk (`content/caseStudyBodies.ts`); the main bundle reads
+  `?raw&frontmatter` imports, which `build/markdownFrontmatter.ts` cuts to the
+  frontmatter plus `has_write_up`
+- **Scroll reveal**: `useInViewReveal` leaves content visible in the
+  prerendered HTML and only hides below-the-fold elements after hydration when
+  motion is allowed
+- **API layer**: `src/services/api.ts` (`apiService`) holds only the anonymous
+  `getPublicFigures()` read. The transport is `@webbpulse/api-client` and
+  startup configuration is `@webbpulse/config`. That client rejects on a
+  non-2xx, so `ApiService` adapts it back into Portfolio's own `{ data, error }`
+  envelope. The content types stay in `api.ts` because `src/content/types.ts`
+  imports them
+- **Shared packages**: `@webbpulse/api-client`, `config`, `tsconfig` and
+  `eslint-config` resolve from CodeArtifact through `frontend/.npmrc`. Run
+  `aws codeartifact login` before installing; see `frontend/README.md`
 - **Dev proxy**: Vite proxies `/api/*` to `http://localhost:8000` in local dev; a
   production build reads `VITE_API_BASE_URL` and falls back to
   `https://api.portfolio.webbpulse.com/api/v1`
@@ -166,7 +182,7 @@ ruff format --check app tests
 | `backend/app/common/config.py` | Pydantic Settings and the `APP_SECRETS_ARN` JSON secret |
 | `backend/app/core/identity_claims.py` | Reads authorizer claims in both native and gate shapes |
 | `backend/app/common/db/tables.py` | Canonical table and index definitions |
-| `backend/tests/fixtures/route_contract.json` | The published contract: 44 routes |
+| `backend/tests/fixtures/route_contract.json` | The published contract: 45 routes |
 | `backend/tests/entrypoints/test_gateway_routes.py` | Keeps route keys, served paths and flagged admin routes in agreement |
 | `terraform/dynamodb.tf` | Table map |
 | `terraform/lambda_domains.tf` | The four domain functions, roles, environments |

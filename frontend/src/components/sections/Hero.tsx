@@ -1,132 +1,62 @@
 import React from 'react';
-import { AnimatedOrb, GradientText } from '../common';
-import {
-  useSiteContent,
-  useInViewReveal,
-  useScrollParallax,
-} from '../../hooks';
+import { getExperience } from '../../content';
+import { useLiveFigures } from '../../hooks/useLiveFigures';
+import { MonoLabel, Sheet } from '../drawing';
+import { FiguresStrip, SystemMap } from '../map';
 
-const FALLBACK = {
-  hero_title: "Hi, I'm Tyler Webb",
-  hero_subtitle: 'Software Engineer',
-  hero_description: 'Software engineer building privacy-conscious systems.',
+/** The current role as one line, such as `Software Engineer, WebbPulse`. */
+const currentRole = (): string => {
+  const latest = getExperience().find((entry) => !entry.end_date);
+  return latest ? `${latest.title}, ${latest.company}` : 'Software Engineer';
 };
 
-/** The landing hero, over site content with a static fallback. */
+/**
+ * The landing sheet: name, current role and the live system map of the
+ * WebbPulse estate, with the live figures strip when the API answers.
+ */
 const Hero: React.FC = () => {
-  const { data, loading } = useSiteContent();
-  const parallaxFast = useScrollParallax(0.35);
-  const parallaxSlow = useScrollParallax(0.18);
-  const { ref, isInView } = useInViewReveal<HTMLDivElement>({ threshold: 0.1 });
-
-  const content = data ?? FALLBACK;
+  const figures = useLiveFigures();
 
   return (
     <section
-      id="hero"
-      className="relative min-h-svh flex items-center justify-center overflow-hidden bg-surface-950"
+      id="map"
+      aria-labelledby="hero-title"
+      className="relative border-b border-line"
     >
-      <div
-        className="absolute inset-0 bg-mesh-1 pointer-events-none"
-        aria-hidden="true"
-      />
-
-      <AnimatedOrb
-        gradient="from-accent-cyan-500 to-accent-cyan-400"
-        size="w-lg h-128"
-        position="-top-32 -left-32"
-        variant={1}
-        parallaxY={-parallaxSlow}
-        opacity="opacity-40"
-      />
-      <AnimatedOrb
-        gradient="from-accent-violet-500 to-accent-fuchsia-500"
-        size="w-xl h-144"
-        position="-bottom-40 -right-32"
-        variant={2}
-        parallaxY={parallaxFast}
-        opacity="opacity-35"
-      />
-      <AnimatedOrb
-        gradient="from-accent-fuchsia-400 to-accent-violet-500"
-        size="w-[24rem] h-96"
-        position="top-1/3 left-1/2"
-        variant={3}
-        parallaxY={-parallaxFast * 0.5}
-        opacity="opacity-20"
-      />
-
-      <div
-        ref={ref}
-        className={`relative z-10 max-w-5xl mx-auto px-6 sm:px-8 text-center ${isInView ? 'animate-fade-in-up' : 'opacity-0'}`}
-      >
-        <span className="inline-flex items-center gap-2 px-4 py-1.5 mb-8 text-xs uppercase tracking-[0.18em] font-medium text-surface-300 surface-glass rounded-full">
-          <span className="w-1.5 h-1.5 rounded-full bg-accent-cyan-400 animate-pulse" />
-          {loading ? 'Loading…' : content.hero_subtitle}
-        </span>
-
-        <h1 className="font-display text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-bold tracking-tight text-surface-50 leading-[1.05]">
-          {content.hero_title.split(' ').map((word, i, arr) => {
-            const isLast = i === arr.length - 1;
-            return isLast ? (
-              <GradientText key={i} as="span" animated>
-                {word}
-              </GradientText>
-            ) : (
-              <span key={i}>{word} </span>
-            );
-          })}
-        </h1>
-
-        <p className="mt-8 text-lg sm:text-xl text-surface-300 max-w-2xl mx-auto leading-relaxed">
-          {content.hero_description}
-        </p>
-
-        <div className="mt-12 flex flex-col sm:flex-row gap-4 justify-center items-center">
-          <a
-            href="#projects"
-            onClick={(e) => {
-              e.preventDefault();
-              document
-                .querySelector('#projects')
-                ?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="group relative inline-flex items-center justify-center px-8 py-3.5 rounded-full font-medium text-surface-50 bg-gradient-accent shadow-glow-violet hover:shadow-glow-fuchsia transition-shadow duration-500 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-fuchsia-400 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950"
-            style={{ backgroundSize: '200% 200%' }}
-          >
-            <span className="relative z-10">View My Work</span>
-            <span className="ml-2 transition-transform duration-300 group-hover:translate-x-1">
-              →
-            </span>
-          </a>
-          <a
-            href="#contact"
-            onClick={(e) => {
-              e.preventDefault();
-              document
-                .querySelector('#contact')
-                ?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="inline-flex items-center justify-center px-8 py-3.5 rounded-full font-medium text-surface-100 surface-glass surface-glass-hover focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950"
-          >
-            Get In Touch
-          </a>
+      <Sheet className="py-12 sm:py-16 lg:py-20">
+        <div className="max-w-3xl">
+          <div>
+            <div className="flex items-center gap-3">
+              <span className="font-mono text-xs text-accent">01</span>
+              <span className="h-3 w-px bg-line-strong" aria-hidden="true" />
+              <MonoLabel>{currentRole()}</MonoLabel>
+            </div>
+            <h1
+              id="hero-title"
+              className="mt-5 text-5xl font-semibold leading-[1.02] tracking-[-0.03em] text-ink sm:text-6xl"
+            >
+              Tyler Webb
+            </h1>
+            <p className="mt-5 max-w-2xl text-lg leading-relaxed text-ink-muted">
+              I build and run four products on shared Python, TypeScript and
+              Terraform packages, deployed into one AWS organisation by a
+              Terraform control plane I wrote. This is the map of how they
+              connect.
+            </p>
+          </div>
         </div>
-      </div>
 
-      <button
-        type="button"
-        onClick={() =>
-          document
-            .querySelector('#about')
-            ?.scrollIntoView({ behavior: 'smooth' })
-        }
-        aria-label="Scroll to next section"
-        className="absolute bottom-8 left-1/2 -translate-x-1/2 z-10 flex flex-col items-center gap-2 text-surface-400 hover:text-surface-200 transition-colors group focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950 rounded-full p-2"
-      >
-        <span className="text-xs uppercase tracking-[0.2em]">Scroll</span>
-        <span className="w-px h-10 bg-linear-to-b from-surface-400 to-transparent group-hover:from-accent-cyan-400" />
-      </button>
+        <figure className="mt-12">
+          <SystemMap figures={figures} />
+          <figcaption className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3">
+            <MonoLabel>Fig. 1 / The WebbPulse estate</MonoLabel>
+            <span className="hidden font-mono text-xs text-ink-faint lg:inline">
+              Hover or tab through a node to trace its connections
+            </span>
+          </figcaption>
+        </figure>
+        <FiguresStrip figures={figures} />
+      </Sheet>
     </section>
   );
 };

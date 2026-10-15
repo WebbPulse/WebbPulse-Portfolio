@@ -186,6 +186,12 @@ EXPECTED_OPERATIONS = [
         "update_site_content_api_v1_site_content__put",
         ["site-content"],
     ),
+    (
+        "GET",
+        "/api/v1/public/figures",
+        "get_figures_api_v1_public_figures_get",
+        ["public"],
+    ),
     ("GET", "/", "root__get", []),
     ("GET", "/health", "health_check_health_get", []),
 ]
@@ -204,13 +210,13 @@ def _documented_operations():
 
 
 def test_openapi_operations_are_unchanged():
-    """Same 42 operations, same ids, same tags. Order is asserted separately."""
+    """Same 43 operations, same ids, same tags. Order is asserted separately."""
     documented = _documented_operations()
     hashable = {(method, path, operation_id, tuple(tags)) for method, path, operation_id, tags in documented}
     assert hashable == {
         (method, path, operation_id, tuple(tags)) for method, path, operation_id, tags in EXPECTED_OPERATIONS
     }
-    assert len(documented) == len(hashable) == len(EXPECTED_OPERATIONS) == 42
+    assert len(documented) == len(hashable) == len(EXPECTED_OPERATIONS) == 43
 
 
 def test_the_whole_surface_orders_paths_by_domain():
@@ -224,6 +230,8 @@ def test_the_whole_surface_orders_paths_by_domain():
         """The domain that owns a path, by prefix."""
         if path.startswith("/api/v1/admin"):
             return "identity"
+        if path.startswith("/api/v1/public"):
+            return "public"
         if path.startswith(("/api/v1/posts", "/api/v1/site-content")):
             return "content"
         if path.startswith("/api/v1/"):
@@ -255,7 +263,7 @@ def test_undocumented_routes_are_still_served():
 
 
 def test_route_count_matches_the_domain_map():
-    """44 application routes: 14 content, 25 resume, 1 identity, 4 public."""
+    """45 application routes: 14 content, 25 resume, 1 identity, 5 public."""
     pairs = method_path_pairs(app, skip_documentation=False)
     documentation = {
         (method, path)
@@ -264,7 +272,7 @@ def test_route_count_matches_the_domain_map():
     }
     assert len(documentation) == 4
     application = pairs - documentation
-    assert len(application) == 44
+    assert len(application) == 45
 
     content = {p for _, p in application if p.startswith(("/api/v1/posts", "/api/v1/site-content"))}
     resume_prefixes = (
@@ -278,9 +286,9 @@ def test_route_count_matches_the_domain_map():
         "content": len([1 for _, p in application if p.startswith(("/api/v1/posts", "/api/v1/site-content"))]),
         "resume": len([1 for _, p in application if p.startswith(resume_prefixes)]),
         "identity": len([1 for _, p in application if p.startswith("/api/v1/admin")]),
-        "public": len([1 for _, p in application if not p.startswith("/api/v1/")]),
+        "public": len([1 for _, p in application if p.startswith("/api/v1/public") or not p.startswith("/api/v1/")]),
     }
-    assert counts == {"content": 14, "resume": 25, "identity": 1, "public": 4}
+    assert counts == {"content": 14, "resume": 25, "identity": 1, "public": 5}
     assert content
 
 

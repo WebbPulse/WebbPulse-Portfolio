@@ -1,19 +1,27 @@
+import { Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { Home, Privacy, VerifyEmail, ResetPassword, NotFound } from './pages';
+import Home from './pages/Home';
+import { NotFound } from './pages/NotFound';
 import { UnderConstruction } from './pages/UnderConstruction';
 import { ErrorBoundary } from './components/common';
-import { AdminPanel } from './components/admin/AdminPanel';
-import { BlogList } from './components/sections/BlogList';
-import { BlogPost } from './components/sections/BlogPost';
+import {
+  BlogListPage,
+  BlogPostPage,
+  CaseStudyPage,
+  PrivacyPage,
+} from './routing/pages';
 import './styles/globals.css';
 
 const UNDER_CONSTRUCTION = false;
 
-/** Routes the application, or the holding page when the site is switched off. */
-function App() {
+/**
+ * The route table, or the holding page when the site is switched off. Shared
+ * by the browser router and the build-time prerender.
+ */
+export function AppRoutes() {
   return (
-    <Router>
-      <ErrorBoundary>
+    <ErrorBoundary>
+      <Suspense fallback={null}>
         <Routes>
           {UNDER_CONSTRUCTION ? (
             <>
@@ -24,17 +32,24 @@ function App() {
           ) : (
             <>
               <Route path="/" element={<Home />} />
-              <Route path="/blog" element={<BlogList />} />
-              <Route path="/blog/:slug" element={<BlogPost />} />
+              <Route path="/blog" element={<BlogListPage />} />
+              <Route path="/blog/:slug" element={<BlogPostPage />} />
+              <Route path="/work/:slug" element={<CaseStudyPage />} />
             </>
           )}
-          <Route path="/admin" element={<AdminPanel />} />
-          <Route path="/privacy" element={<Privacy />} />
-          <Route path="/verify-email" element={<VerifyEmail />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
-      </ErrorBoundary>
+      </Suspense>
+    </ErrorBoundary>
+  );
+}
+
+/** The application in the browser router. */
+function App() {
+  return (
+    <Router>
+      <AppRoutes />
     </Router>
   );
 }

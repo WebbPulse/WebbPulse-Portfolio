@@ -12,17 +12,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 import pytest
-from webbpulse.e2e import (
-    Click,
-    ExpectText,
-    ExpectVisible,
-    Fill,
-    Goto,
-    Journey,
-    LoginForm,
-    Record,
-    RouteSpec,
-)
+from webbpulse.e2e import ExpectVisible, Goto, Journey, RouteSpec
 
 from e2e.resources import CREATED_CATEGORY, CREATED_CERTIFICATION, CREATED_POST
 
@@ -171,37 +161,11 @@ def _sweep_stale(api: Any, prefix: str) -> list[str]:
     return [item for item in leftovers if item]
 
 
-def _resolve_named(api: Any, name: str) -> list[tuple[str, Any]]:
-    """Every resource whose name or slug is `name`, as the handles `_delete_created` takes.
-
-    A browser journey records the name it typed, because the id the API assigned is never
-    shown to the page. Resolving it here keeps that asymmetry inside the cleanup hook
-    rather than asking a journey to know an id it cannot see.
-    """
-    handles: list[tuple[str, Any]] = []
-
-    categories = api.get("/api/v1/posts/categories")
-    if categories.status_code == 200:
-        for row in categories.json():
-            if name in (row.get("name"), row.get("slug")):
-                handles.append((CREATED_CATEGORY, row["id"]))
-
-    certifications = api.get("/api/v1/certifications")
-    if certifications.status_code == 200:
-        for row in certifications.json():
-            if row.get("name") == name:
-                handles.append((CREATED_CERTIFICATION, row["id"]))
-
-    return handles
-
-
 def _delete_created(api: Any, created: Sequence[Any]) -> list[str]:
     """Delete everything this run appended, posts before the categories they reference.
 
     A category the content domain still has a post against refuses to delete, so the
-    order here is the dependency order rather than the order things were created. A
-    handle recorded as a bare string is a name a browser journey typed, so it is resolved
-    to its id first.
+    order here is the dependency order rather than the order things were created.
     """
     order = {CREATED_POST: 0, CREATED_CATEGORY: 1, CREATED_CERTIFICATION: 2}
     paths = {
@@ -210,9 +174,6 @@ def _delete_created(api: Any, created: Sequence[Any]) -> list[str]:
         CREATED_CERTIFICATION: "/api/v1/certifications/{id}",
     }
     handles = [item for item in created if isinstance(item, tuple) and len(item) == 2]
-    for item in created:
-        if isinstance(item, str) and item:
-            handles.extend(_resolve_named(api, item))
 
     leftovers: list[str | None] = []
     for kind, identifier in sorted(handles, key=lambda item: order.get(item[0], 99)):
@@ -261,28 +222,14 @@ def pytest_e2e_cleanup(env: Any, phase: str, created: Sequence[Any]) -> Any:
         client.close()
 
 
-def pytest_e2e_login_form(env: Any) -> LoginForm:
-    """Where the admin signs in, and which elements prove the session changed.
-
-    The panel has no separate login route: `/admin` renders the sign-in form while
-    anonymous and the panel itself once a token is held, so the login path and the
-    protected path are the same one. That makes `protected_redirect` `/admin` as well,
-    which is what the anonymous guard case asserts against.
-
-    The four locators are the plugin's own defaults, since the form now carries the
-    convention's `data-testid` attributes rather than restating them here.
-    """
-    return LoginForm(path="/admin", protected_redirect="/admin", guest_redirect="/admin")
-
-
 def pytest_e2e_routes(env: Any) -> list[RouteSpec]:
-    """Every route `App.tsx` declares, and who is allowed to see it.
+    """Every route `App.tsx` declares, all of them public.
 
-    `/admin` is the only protected route, and it is protected in place rather than by a
-    redirect. Everything else is public: this is a portfolio site, and the identity
-    pages are reachable from an emailed link that carries no session, so none of them is
-    guest-only. The catch-all is declared too, because a router with no catch-all answers
-    200 with an empty root and no server side probe can see it.
+    The site has no sign-in, so no route is protected or guest-only and the plugin's
+    browser sign-in cases skip, as no `pytest_e2e_login_form` hook is implemented. The
+    catch-all is declared because a router with no catch-all answers 200 with an empty
+    root and no server side probe can see it, and `/admin` is declared against the 404
+    marker so the removed panel cannot quietly come back.
 
     Each `root_locator` names the page's own marker rather than the shared `main`, so a
     route that renders a different page than the one asked for fails here instead of
@@ -293,19 +240,15 @@ def pytest_e2e_routes(env: Any) -> list[RouteSpec]:
         RouteSpec(path="/blog", access="public", root_locator="[data-testid=page-blog-list]"),
         RouteSpec(path="/privacy", access="public", root_locator="[data-testid=page-privacy]"),
         RouteSpec(
-            path="/verify-email",
+            path="/work/standupless",
             access="public",
-            root_locator="[data-testid=page-verify-email]",
-        ),
-        RouteSpec(
-            path="/reset-password",
-            access="public",
-            root_locator="[data-testid=page-reset-password]",
+            root_locator="[data-testid=page-case-study]",
         ),
         RouteSpec(
             path="/admin",
-            access="protected",
-            root_locator="[data-testid=signed-in]",
+            access="public",
+            root_locator="[data-testid=page-not-found]",
+            name="public:removed-admin",
         ),
         RouteSpec(
             path="/does-not-exist",
@@ -317,16 +260,10 @@ def pytest_e2e_routes(env: Any) -> list[RouteSpec]:
 
 
 def pytest_e2e_journeys(env: Any) -> list[Journey]:
-    """Short flows through the real UI, one anonymous and one that writes.
+    """The one flow a reader takes through the real UI.
 
-    The visitor journey is the one a reader takes: the public blog index has to paint its
-    own list rather than the shell alone, which is the failure a 200 hides.
-
-    The admin journey creates a blog category through the panel, which is the shortest
-    write the UI offers that needs no other row to reference. The `Record` carries a bare
-    string rather than the `(kind, id)` tuple the API flows record, because the plugin
-    expands `{run_id}` only in a string and the browser never learns the new row's id.
-    `_delete_created` resolves such a string back to an id by name before deleting it.
+    The public blog index has to paint its own list rather than the shell alone, which
+    is the failure a 200 hides.
     """
     return [
         Journey(
@@ -336,21 +273,6 @@ def pytest_e2e_journeys(env: Any) -> list[Journey]:
                 Goto("/blog"),
                 ExpectVisible("[data-testid=page-blog-list]"),
             ],
-        ),
-        Journey(
-            name="an admin creates a blog category",
-            steps=[
-                Goto("/admin"),
-                ExpectVisible("[data-testid=signed-in]"),
-                Click("[data-testid=tab-categories]"),
-                Click("[data-testid=category-add]"),
-                Fill("[data-testid=category-name]", "e2e-{run_id}-category"),
-                Fill("[data-testid=category-slug]", "e2e-{run_id}-category"),
-                Record("e2e-{run_id}-category"),
-                Click("[data-testid=category-save]"),
-                ExpectText("[data-testid=category-list]", "e2e-{run_id}-category"),
-            ],
-            mutates=True,
         ),
     ]
 

@@ -13,6 +13,11 @@ module "frontend" {
   index_cache_mode     = "policies"
   index_cache_policies = { cache_policy_id = "658327ea-f89d-4fab-a63d-7e88639e58f6" }
 
+  viewer_request_function = {
+    domain         = local.domain
+    canonical_host = "none"
+  }
+
   security_headers = {
     content_security_policy = {
       connect_src = ["https://${local.api_host}"]

@@ -1,113 +1,130 @@
 import React from 'react';
-import { GradientText, AnimatedOrb, GradientPanel } from '../common';
-import { useSiteContent, useInViewReveal } from '../../hooks';
-import { SocialIcon } from '../../utils';
+import { useInViewReveal } from '../../hooks';
+import { getSiteContent } from '../../content';
+import { SocialIcon } from '../../utils/socialIcons';
+import { RegistrationMarks, SectionHeading, Sheet } from '../drawing';
 
-const ContactTile: React.FC<{
+/** One contact channel as a row of the contact table. */
+const ContactRow: React.FC<{
   href: string;
   platform: string;
   label: string;
   value: string;
-  glow: string;
-}> = ({ href, platform, label, value, glow }) => (
-  <a
-    href={href}
-    target={href.startsWith('mailto:') ? undefined : '_blank'}
-    rel={href.startsWith('mailto:') ? undefined : 'noopener noreferrer'}
-    aria-label={label}
-    className={`group surface-glass surface-glass-hover rounded-2xl p-6 flex items-center gap-4 transition-all duration-500 hover:-translate-y-0.5 ${glow} focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950`}
-  >
-    <span className="flex items-center justify-center w-12 h-12 rounded-xl bg-linear-to-br from-accent-cyan-500/20 via-accent-violet-500/20 to-accent-fuchsia-500/20 border border-accent-violet-500/30 text-surface-100">
-      <SocialIcon platform={platform} className="w-5 h-5" />
-    </span>
-    <div className="flex-1 min-w-0">
-      <div className="text-xs uppercase tracking-[0.16em] text-accent-cyan-400">
-        {label}
-      </div>
-      <div className="font-display text-base text-surface-50 truncate">
-        {value}
-      </div>
-    </div>
-    <span className="text-surface-400 group-hover:text-surface-100 group-hover:translate-x-1 transition-all">
-      →
-    </span>
-  </a>
-);
+}> = ({ href, platform, label, value }) => {
+  const external = !href.startsWith('mailto:');
+  return (
+    <li className="border-b border-line">
+      <a
+        href={href}
+        target={external ? '_blank' : undefined}
+        rel={external ? 'noopener noreferrer' : undefined}
+        className="group grid grid-cols-[2rem_1fr_auto] items-center gap-3 py-4 transition-colors hover:bg-accent-soft sm:grid-cols-[2rem_8rem_1fr_auto] sm:px-3 sm:-mx-3"
+      >
+        <span className="flex h-8 w-8 items-center justify-center border border-line text-ink">
+          {platform === 'resume' ? (
+            <svg
+              className="h-3.5 w-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.75"
+              aria-hidden="true"
+            >
+              <path d="M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h7" />
+            </svg>
+          ) : platform === 'email' ? (
+            <svg
+              className="h-3.5 w-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.75"
+              aria-hidden="true"
+            >
+              <path d="M3 7l9 6 9-6M4 5h16v14H4z" />
+            </svg>
+          ) : (
+            <SocialIcon platform={platform} className="h-3.5 w-3.5" />
+          )}
+        </span>
+        <span className="mono-label hidden sm:block">{label}</span>
+        <span className="min-w-0 truncate text-base text-ink">
+          <span className="sr-only sm:hidden">{label}: </span>
+          {value}
+        </span>
+        <span
+          aria-hidden="true"
+          className="font-mono text-ink-muted transition-transform group-hover:text-ink motion-safe:group-hover:translate-x-0.5"
+        >
+          {external ? '↗' : '→'}
+        </span>
+      </a>
+    </li>
+  );
+};
 
 /** The Contact section, with the links from site content. */
 export const Contact: React.FC = () => {
-  const { data } = useSiteContent();
-  const { ref, isInView } = useInViewReveal<HTMLDivElement>({ threshold: 0.1 });
+  const data = getSiteContent();
+  const { ref, revealClass } = useInViewReveal<HTMLDivElement>({
+    threshold: 0.1,
+  });
 
-  const email = data?.email ?? 'tyler@webbpulse.com';
-  const github = data?.github_url ?? 'https://github.com/Tylert2610';
+  const email = data.email ?? 'tyler@webbpulse.com';
+  const github = data.github_url ?? 'https://github.com/Tylert2610';
   const linkedin =
-    data?.linkedin_url ?? 'https://www.linkedin.com/in/tylert2610/';
+    data.linkedin_url ?? 'https://www.linkedin.com/in/tylert2610/';
+  const resume = data.resume_url || '/Profile.pdf';
 
   return (
     <section
       id="contact"
-      className="relative py-24 sm:py-32 overflow-hidden bg-surface-950"
+      aria-labelledby="contact-title"
+      className="py-20 sm:py-28"
     >
-      <div className="absolute inset-0 bg-mesh-1 opacity-60 pointer-events-none" />
-      <AnimatedOrb
-        gradient="from-accent-cyan-500 to-accent-violet-500"
-        size="w-md h-112"
-        position="-top-32 -left-20"
-        variant={1}
-        opacity="opacity-25"
-      />
-      <AnimatedOrb
-        gradient="from-accent-fuchsia-500 to-accent-violet-500"
-        size="w-[24rem] h-96"
-        position="-bottom-24 -right-16"
-        variant={3}
-        opacity="opacity-25"
-      />
+      <Sheet>
+        <div ref={ref} className={revealClass}>
+          <SectionHeading
+            index="06"
+            label="Contact"
+            id="contact-title"
+            title="Get in touch"
+          >
+            Email is the fastest way to reach me. The resume has the full
+            history in one page.
+          </SectionHeading>
 
-      <div
-        ref={ref}
-        className={`relative z-10 max-w-4xl mx-auto px-6 sm:px-8 ${isInView ? 'animate-fade-in-up' : 'opacity-0'}`}
-      >
-        <GradientPanel className="px-8 py-14 sm:px-12 sm:py-20">
-          <div className="text-center mb-10">
-            <span className="inline-block text-xs uppercase tracking-[0.2em] text-accent-cyan-400 mb-4">
-              Get in touch
-            </span>
-            <h2 className="font-display text-4xl sm:text-5xl font-bold text-surface-50 mb-4">
-              Let's <GradientText as="span">build something</GradientText>
-            </h2>
-            <p className="text-surface-300 text-lg max-w-xl mx-auto">
-              Open to interesting work, side projects, or a chat about software,
-              networking, or infra.
-            </p>
+          <div className="relative max-w-3xl border border-line bg-paper-raised/70 px-5 sm:px-8">
+            <RegistrationMarks />
+            <ul className="-mb-px">
+              <ContactRow
+                href={`mailto:${email}`}
+                platform="email"
+                label="Email"
+                value={email}
+              />
+              <ContactRow
+                href={github}
+                platform="github"
+                label="GitHub"
+                value={github.replace(/^https?:\/\//, '')}
+              />
+              <ContactRow
+                href={resume}
+                platform="resume"
+                label="Resume"
+                value="Resume (PDF)"
+              />
+              <ContactRow
+                href={linkedin}
+                platform="linkedin"
+                label="LinkedIn"
+                value={linkedin.replace(/^https?:\/\//, '')}
+              />
+            </ul>
           </div>
-
-          <div className="grid sm:grid-cols-1 gap-3 max-w-xl mx-auto">
-            <ContactTile
-              href={`mailto:${email}`}
-              platform="website"
-              label="Email"
-              value={email}
-              glow="hover:shadow-glow-cyan"
-            />
-            <ContactTile
-              href={github}
-              platform="github"
-              label="GitHub"
-              value={github.replace(/^https?:\/\//, '')}
-              glow="hover:shadow-glow-violet"
-            />
-            <ContactTile
-              href={linkedin}
-              platform="linkedin"
-              label="LinkedIn"
-              value={linkedin.replace(/^https?:\/\//, '')}
-              glow="hover:shadow-glow-fuchsia"
-            />
-          </div>
-        </GradientPanel>
-      </div>
+        </div>
+      </Sheet>
     </section>
   );
 };

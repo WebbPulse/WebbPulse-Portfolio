@@ -19,4 +19,6 @@ module "staging_access_gate" {
   } : null
 
   identity_jwt_route_keys = local.identity_jwt_gate_enforced ? module.api.identity_jwt_route_keys : []
+
+  viewer_request_handler_js = module.frontend.viewer_request_handler_js
 }
