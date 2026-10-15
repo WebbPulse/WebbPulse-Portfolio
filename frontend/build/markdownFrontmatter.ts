@@ -11,7 +11,7 @@ const EXPORT = /^export default\s*("(?:[^"\\]|\\.)*")\s*;?\s*$/;
  * file has a body, so a listing knows a write-up exists without carrying it.
  */
 export function frontmatterOnly(raw: string): string {
-  const lines = raw.replace(/^﻿/, '').replace(/\r\n/g, '\n').split('\n');
+  const lines = raw.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').split('\n');
   const end =
     lines[0]?.trim() === FENCE
       ? lines.findIndex((line, i) => i > 0 && line.trim() === FENCE)
