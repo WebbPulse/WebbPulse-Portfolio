@@ -13,15 +13,12 @@ const ExperienceRow: React.FC<{ item: ExperienceType; index: number }> = ({
   item,
   index,
 }) => {
-  const { ref, isInView } = useInViewReveal<HTMLLIElement>({
+  const { ref, revealClass } = useInViewReveal<HTMLLIElement>({
     threshold: 0.15,
   });
 
   return (
-    <li
-      ref={ref}
-      className={`grid md:grid-cols-12 ${isInView ? 'motion-safe:animate-fade-in-up' : 'motion-safe:opacity-0'}`}
-    >
+    <li ref={ref} className={`grid md:grid-cols-12 ${revealClass}`}>
       <div className="relative pt-8 md:col-span-3 md:border-r md:border-line-strong md:py-8 md:pr-8">
         <span
           className={`absolute -right-[5px] top-[2.35rem] hidden h-[9px] w-[9px] border md:block ${index === 0 ? 'border-accent bg-accent' : 'border-line-strong bg-paper'}`}

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { SocialIcon } from '../../utils';
+import { SocialIcon } from '../../utils/socialIcons';
 import { getSiteContent } from '../../content';
 import { MonoLabel, Sheet } from '../drawing';
 

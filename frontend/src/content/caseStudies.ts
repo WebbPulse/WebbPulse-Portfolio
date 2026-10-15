@@ -77,7 +77,7 @@ export function resolveCaseStudy(
     stack: stack.length ? stack : (project?.technologies ?? []),
     facts: project?.facts ?? [],
     body: body || project?.description || '',
-    hasWriteUp: body.length > 0,
+    hasWriteUp: body.length > 0 || field(study, 'has_write_up') === 'true',
     links,
     mapNodeId: mapNodeForCaseStudy(
       slug,

@@ -1,9 +1,13 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { NavigationItem } from '../../types';
 import { useClientValue, useTheme } from '../../hooks';
-import { CommandMenu } from './CommandMenu';
 import { SITE_NAV } from './nav';
+
+/** Loads the command menu chunk. */
+const loadCommandMenu = () => import('./CommandMenu');
+
+const CommandMenu = lazy(loadCommandMenu);
 
 interface HeaderProps {
   navigationItems?: NavigationItem[];
@@ -158,6 +162,8 @@ const Header: React.FC<HeaderProps> = ({ navigationItems = SITE_NAV }) => {
           <button
             type="button"
             onClick={() => setMenuOpen(true)}
+            onPointerEnter={() => void loadCommandMenu()}
+            onFocus={() => void loadCommandMenu()}
             aria-haspopup="dialog"
             aria-label="Open command menu"
             className="flex h-8 items-center gap-2 border border-line px-2 text-ink-muted transition-colors hover:border-line-strong hover:text-ink"
@@ -226,12 +232,16 @@ const Header: React.FC<HeaderProps> = ({ navigationItems = SITE_NAV }) => {
         </nav>
       )}
 
-      <CommandMenu
-        open={menuOpen}
-        onClose={closeMenu}
-        items={navigationItems}
-        onToggleTheme={toggleTheme}
-      />
+      {menuOpen && (
+        <Suspense fallback={null}>
+          <CommandMenu
+            open={menuOpen}
+            onClose={closeMenu}
+            items={navigationItems}
+            onToggleTheme={toggleTheme}
+          />
+        </Suspense>
+      )}
     </header>
   );
 };

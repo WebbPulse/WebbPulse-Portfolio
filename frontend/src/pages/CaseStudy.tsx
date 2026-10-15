@@ -2,7 +2,8 @@ import React, { useLayoutEffect, useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { PublicShell } from '../components/layout';
 import { MonoLabel, Sheet } from '../components/drawing';
-import { getCaseStudy, getProjectBySlug } from '../content';
+import { getProjectBySlug } from '../content';
+import { findCaseStudy } from '../content/caseStudyBodies';
 import {
   listCaseStudies,
   manName,
@@ -257,7 +258,7 @@ export const CaseStudy: React.FC = () => {
   const { slug = '' } = useParams<{ slug: string }>();
   const view = resolveCaseStudy(
     slug,
-    getCaseStudy(slug),
+    findCaseStudy(slug),
     getProjectBySlug(slug)
   );
 
