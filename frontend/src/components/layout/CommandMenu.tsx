@@ -147,7 +147,7 @@ export const CommandMenu: React.FC<CommandMenuProps> = ({
               setQuery(e.target.value);
               setActive(0);
             }}
-            placeholder="Jump to a system, case study, post or page"
+            placeholder="Search the site"
             aria-label="Search the site"
             aria-controls="command-menu-list"
             aria-activedescendant={
@@ -199,7 +199,7 @@ export const CommandMenu: React.FC<CommandMenuProps> = ({
                     i === active ? 'bg-accent-soft text-ink' : 'text-ink-muted'
                   }`}
                 >
-                  <span className="truncate">{cmd.label}</span>
+                  <span className="min-w-0 break-words">{cmd.label}</span>
                   <span className="mono-label shrink-0">
                     {grouped ? cmd.hint : cmd.group}
                   </span>

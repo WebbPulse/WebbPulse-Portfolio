@@ -77,8 +77,8 @@ const ExperienceRow: React.FC<{ item: ExperienceType; index: number }> = ({
 /** One school as a title block cell. */
 const EducationCell: React.FC<{ item: EducationType }> = ({ item }) => (
   <li className="border-b border-r border-line p-5">
-    <div className="flex items-start justify-between gap-4">
-      <h4 className="text-base font-semibold leading-snug text-ink">
+    <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+      <h4 className="min-w-0 text-base font-semibold leading-snug text-ink">
         {item.degree}
       </h4>
       <span className="whitespace-nowrap font-mono text-xs text-ink-muted">
@@ -169,11 +169,11 @@ export const Experience: React.FC = () => {
           </ol>
         </div>
 
-        <div className="mt-20 grid gap-16 lg:grid-cols-2 lg:gap-10">
+        <div className="mt-20 grid grid-cols-1 gap-16 lg:grid-cols-2 lg:gap-10">
           <div>
             <SubHeading label="Education" title="Where I learned the basics" />
             {education.length > 0 && (
-              <ul className="grid border-l border-t border-line">
+              <ul className="grid grid-cols-1 border-l border-t border-line">
                 {education.map((e) => (
                   <EducationCell key={e.id} item={e} />
                 ))}
