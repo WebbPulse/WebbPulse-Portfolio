@@ -3,7 +3,7 @@ data "aws_kms_alias" "ssm" {
 }
 
 locals {
-  github_actions_e2e_statements = concat([
+  github_actions_e2e_statements = [
     {
       sid = "E2EReadGatewayRoutes"
       actions = [
@@ -19,13 +19,7 @@ locals {
       actions   = ["logs:FilterLogEvents"]
       resources = [module.api.access_log_group_arn, "${module.api.access_log_group_arn}:*"]
     },
-    ], var.environment == "staging" ? [
-    {
-      sid       = "E2EMintStagingIdentityToken"
-      actions   = ["kms:Sign", "kms:GetPublicKey"]
-      resources = local.identity_signing_key_arns
-    },
-  ] : [])
+  ]
 }
 
 locals {

@@ -5,7 +5,7 @@ The closure is computed statically rather than by importing, so it holds for the
 deployed image without needing AWS or an environment. Module level imports and
 function body imports are both followed, except that the per-domain lazy loaders
 are attributed only to the domain they load, which is the property that lets one
-`app/` tree ship as four single-domain functions.
+`app/` tree ship as one single-domain function per domain.
 """
 
 import ast
@@ -18,10 +18,7 @@ COMMON_DIR = APP / "common"
 DOMAINS_DIR = APP / "domains"
 DOMAINS = sorted(path.name for path in DOMAINS_DIR.iterdir() if path.is_dir() and not path.name.startswith("__"))
 
-LAZY_DOMAIN_HOSTS = (
-    COMMON_DIR / "composition" / "wiring.py",
-    COMMON_DIR / "core" / "middleware.py",
-)
+LAZY_DOMAIN_HOSTS = (COMMON_DIR / "composition" / "wiring.py",)
 """Files whose function body `app.domains.<name>` imports belong to `<name>` alone."""
 
 SHARED = {DOMAINS_DIR / "__init__.py"}
@@ -170,7 +167,7 @@ def test_the_domains_each_have_an_entrypoint():
 
 @pytest.mark.parametrize("domain", DOMAINS)
 def test_an_entrypoint_reaches_no_other_domain(domain):
-    """Rule 3. The claim that lets one tree deploy as four single-domain functions."""
+    """Rule 3. The claim that lets one tree deploy as single-domain functions."""
     foreign = sorted(_rel(path) for path in CLOSURES[domain] if (_domain_of(path) or domain) != domain)
     assert foreign == []
 

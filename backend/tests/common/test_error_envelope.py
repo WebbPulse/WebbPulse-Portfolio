@@ -3,13 +3,12 @@ not change.
 """
 
 import pytest
+from pydantic import BaseModel
 from starlette.testclient import TestClient
 
 from app.common.composition.app import build_app
 from app.common.composition.wiring import DOMAINS, ERROR_ENVELOPE, build_domain_app
 
-UNAUTHORIZED_MESSAGE = "Invalid authentication credentials"
-LOGIN_FAILED_MESSAGE = "Incorrect username or password"
 NOT_FOUND_MESSAGE = "The requested resource was not found."
 VALIDATION_MESSAGE = "Request validation failed."
 INTERNAL_MESSAGE = "Internal server error."
@@ -24,26 +23,23 @@ def envelope(response):
     return body
 
 
-@pytest.mark.api
-def test_a_rejected_token_carries_unauthorized(client: TestClient):
-    """A rejected bearer token answers 401 with the UNAUTHORIZED code."""
-    response = client.get("/api/v1/posts/admin", headers={"Authorization": "Bearer invalid_token"})
+class _Login(BaseModel):
+    """A body with two required fields, so a bad one names both in `details`."""
 
-    assert response.status_code == 401
-    body = envelope(response)
-    assert body["error_code"] == "UNAUTHORIZED"
-    assert body["message"] == UNAUTHORIZED_MESSAGE
+    username: str
+    password: str
 
 
-@pytest.mark.api
-def test_a_failed_login_carries_unauthorized(client: TestClient, test_admin_user):
-    """The other 401, and the one a form actually shows a user."""
-    response = client.post("/api/v1/admin/login", json={"username": "adminuser", "password": "wrong"})
+@pytest.fixture
+def validating_client(client: TestClient):
+    """The suite client with one test route that validates a JSON body."""
 
-    assert response.status_code == 401
-    body = envelope(response)
-    assert body["error_code"] == "UNAUTHORIZED"
-    assert body["message"] == LOGIN_FAILED_MESSAGE
+    @client.app.post("/api/v1/_validates_for_the_test")
+    def _validates(body: _Login) -> dict:
+        """Route whose body model rejects a malformed request."""
+        return {"ok": True}
+
+    return client
 
 
 @pytest.mark.api
@@ -58,21 +54,9 @@ def test_an_unmatched_route_carries_not_found(client: TestClient):
 
 
 @pytest.mark.api
-def test_a_missing_item_carries_not_found(client: TestClient):
-    """A 404 a route raised, not one Starlette produced."""
-    response = client.get("/api/v1/projects/999999")
-
-    assert response.status_code == 404
-    body = envelope(response)
-    assert body["error_code"] == "NOT_FOUND"
-    assert body["message"] != NOT_FOUND_MESSAGE
-    assert body["message"]
-
-
-@pytest.mark.api
-def test_a_rejected_body_carries_validation_error(client: TestClient):
+def test_a_rejected_body_carries_validation_error(validating_client: TestClient):
     """A body that fails validation answers 422 with the VALIDATION_ERROR code."""
-    response = client.post("/api/v1/admin/login", json={"username": 5})
+    response = validating_client.post("/api/v1/_validates_for_the_test", json={"username": 5})
 
     assert response.status_code == 422
     body = envelope(response)
@@ -104,17 +88,15 @@ def test_an_unhandled_exception_carries_internal_error():
 @pytest.mark.parametrize(
     ("status", "expected_message", "expected_code"),
     [
-        (401, UNAUTHORIZED_MESSAGE, "UNAUTHORIZED"),
         (404, NOT_FOUND_MESSAGE, "NOT_FOUND"),
         (422, VALIDATION_MESSAGE, "VALIDATION_ERROR"),
     ],
 )
-def test_messages_are_unchanged(client: TestClient, status, expected_message, expected_code):
+def test_messages_are_unchanged(validating_client: TestClient, status, expected_message, expected_code):
     """Every message is the string it was before the codes were turned on."""
     responses = {
-        401: lambda: client.get("/api/v1/posts/admin", headers={"Authorization": "Bearer invalid_token"}),
-        404: lambda: client.get("/api/v1/no-such-route"),
-        422: lambda: client.post("/api/v1/admin/login", json={"username": 5}),
+        404: lambda: validating_client.get("/api/v1/no-such-route"),
+        422: lambda: validating_client.post("/api/v1/_validates_for_the_test", json={"username": 5}),
     }
     response = responses[status]()
 
@@ -133,9 +115,9 @@ def test_the_base_fields_keep_their_order(client: TestClient):
 
 
 @pytest.mark.api
-def test_a_422_carries_one_details_entry_per_offending_field(client: TestClient):
+def test_a_422_carries_one_details_entry_per_offending_field(validating_client: TestClient):
     """The shape `@webbpulse/api-client` surfaces as `getWebbPulseError().details`."""
-    response = client.post("/api/v1/admin/login", json={"username": 5})
+    response = validating_client.post("/api/v1/_validates_for_the_test", json={"username": 5})
 
     assert response.status_code == 422
     body = envelope(response)
@@ -149,9 +131,9 @@ def test_a_422_carries_one_details_entry_per_offending_field(client: TestClient)
 
 
 @pytest.mark.api
-def test_the_legacy_errors_key_is_gone(client: TestClient):
+def test_the_legacy_errors_key_is_gone(validating_client: TestClient):
     """`details` replaces `errors`; the `"detailed"` shape drops the legacy key."""
-    response = client.post("/api/v1/admin/login", json={"username": 5})
+    response = validating_client.post("/api/v1/_validates_for_the_test", json={"username": 5})
 
     body = envelope(response)
     assert "errors" not in body

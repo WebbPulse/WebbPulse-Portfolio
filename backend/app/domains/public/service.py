@@ -1,18 +1,21 @@
 """Health reporting for the public domain.
 
-Read only: the site-content singleton is the cheapest single-item read that
-proves the DynamoDB path works end to end.
+A single item read on the public cache table, the cheapest call that proves the
+DynamoDB path works end to end.
 """
 
 from app.common.core.logging import logger
+from app.common.db.client import table
+from app.common.db.tables import PUBLIC_CACHE
 
-from .repository import SITE_CONTENT_ID, site_content
+HEALTH_KEY = "health"
+"""The partition key the health read asks for. It need not exist."""
 
 
 def database_status() -> str:
-    """Report "healthy" when the site content read succeeds, "unhealthy" otherwise."""
+    """Report "healthy" when the cache table read succeeds, "unhealthy" otherwise."""
     try:
-        site_content.get(SITE_CONTENT_ID)
+        table(PUBLIC_CACHE).get_item(Key={"pk": HEALTH_KEY})
         return "healthy"
     except Exception as error:
         logger.exception("Database health check failed", extra={"error": str(error)})

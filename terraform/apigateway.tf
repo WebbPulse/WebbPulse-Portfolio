@@ -1,59 +1,5 @@
 locals {
-  routed_lambda_domains = ["public", "resume", "content", "identity"]
-
-  resume_collections = [
-    "projects",
-    "experience",
-    "skills",
-    "education",
-    "certifications",
-  ]
-
-  content_prefixes = [
-    "posts",
-    "site-content",
-  ]
-
-  domain_identity_jwt_route_paths = {
-    content = [
-      "GET /api/v1/posts/admin",
-      "POST /api/v1/posts/admin",
-      "PUT /api/v1/posts/admin/{post_id}",
-      "DELETE /api/v1/posts/admin/{post_id}",
-      "POST /api/v1/posts/admin/{post_id}/publish",
-      "POST /api/v1/posts/categories",
-      "PUT /api/v1/posts/categories/{category_id}",
-      "DELETE /api/v1/posts/categories/{category_id}",
-      "PUT /api/v1/site-content",
-    ]
-
-    resume = [
-      "POST /api/v1/certifications",
-      "PUT /api/v1/certifications/{item_id}",
-      "DELETE /api/v1/certifications/{item_id}",
-      "POST /api/v1/education",
-      "PUT /api/v1/education/{item_id}",
-      "DELETE /api/v1/education/{item_id}",
-      "POST /api/v1/experience",
-      "PUT /api/v1/experience/{item_id}",
-      "DELETE /api/v1/experience/{item_id}",
-      "POST /api/v1/projects",
-      "PUT /api/v1/projects/{item_id}",
-      "DELETE /api/v1/projects/{item_id}",
-      "POST /api/v1/skills",
-      "PUT /api/v1/skills/{item_id}",
-      "DELETE /api/v1/skills/{item_id}",
-    ]
-  }
-
-  domain_identity_jwt_route_keys = merge([
-    for domain, keys in local.domain_identity_jwt_route_paths : {
-      for key in keys : key => {
-        integration          = domain
-        require_identity_jwt = var.domain_jwt_enforced
-      }
-    }
-  ]...)
+  routed_lambda_domains = ["public"]
 }
 
 module "api" {
@@ -67,162 +13,18 @@ module "api" {
     for name in local.routed_lambda_domains : name => {
       lambda_function_name = module.lambda_domain[name].function_name
       lambda_invoke_arn    = module.lambda_domain[name].invoke_arn
+
+      lambda_permission_statement_id = "AllowAPIGatewayInvoke-${name}"
     }
   }
 
   default_integration = null
 
-  routes = merge(
-    {
-      "GET /health"      = { integration = "public" }
-      "GET /"            = { integration = "public" }
-      "GET /sitemap.xml" = { integration = "public" }
-      "GET /robots.txt"  = { integration = "public" }
-
-      "GET /api/v1/public/figures" = { integration = "public" }
-    },
-
-    merge([
-      for collection in local.resume_collections : {
-        "ANY /api/v1/${collection}"          = { integration = "resume" }
-        "ANY /api/v1/${collection}/{proxy+}" = { integration = "resume" }
-      }
-    ]...),
-
-    merge([
-      for prefix in local.content_prefixes : {
-        "ANY /api/v1/${prefix}"          = { integration = "content" }
-        "ANY /api/v1/${prefix}/{proxy+}" = { integration = "content" }
-      }
-    ]...),
-
-    {
-      "ANY /api/v1/admin"          = { integration = "identity" }
-      "ANY /api/v1/admin/{proxy+}" = { integration = "identity" }
-    },
-
-    {
-      "GET /api/auth/.well-known/jwks.json" = {
-        integration        = "identity"
-        authorization_type = "NONE"
-      }
-      "GET /api/auth/.well-known/openid-configuration" = {
-        integration        = "identity"
-        authorization_type = "NONE"
-      }
-    },
-
-    {
-      "GET /api/auth/health" = { integration = "identity" }
-    },
-
-    {
-      "POST /api/auth/register" = { integration = "identity" }
-      "POST /api/auth/login"    = { integration = "identity" }
-      "POST /api/auth/password" = {
-        integration          = "identity"
-        require_identity_jwt = true
-      }
-      "POST /api/auth/refresh" = { integration = "identity" }
-      "POST /api/auth/logout"  = { integration = "identity" }
-      "POST /api/auth/logout-all" = {
-        integration          = "identity"
-        require_identity_jwt = true
-      }
-    },
-
-    {
-      "POST /api/auth/verify-email"         = { integration = "identity" }
-      "POST /api/auth/verify-email/confirm" = { integration = "identity" }
-      "POST /api/auth/reset"                = { integration = "identity" }
-      "POST /api/auth/reset/confirm"        = { integration = "identity" }
-    },
-
-    {
-      "POST /api/auth/login/totp" = { integration = "identity" }
-      "POST /api/auth/totp/enrol" = {
-        integration          = "identity"
-        require_identity_jwt = true
-      }
-      "POST /api/auth/totp/activate" = {
-        integration          = "identity"
-        require_identity_jwt = true
-      }
-      "POST /api/auth/totp/disable" = {
-        integration          = "identity"
-        require_identity_jwt = true
-      }
-      "POST /api/auth/recovery-codes" = {
-        integration          = "identity"
-        require_identity_jwt = true
-      }
-      "POST /api/auth/step-up" = {
-        integration          = "identity"
-        require_identity_jwt = true
-      }
-    },
-
-    {
-      "GET /api/auth/passkeys/availability" = { integration = "identity" }
-      "POST /api/auth/passkeys/register/options" = {
-        integration          = "identity"
-        require_identity_jwt = true
-      }
-      "POST /api/auth/passkeys/register/verify" = {
-        integration          = "identity"
-        require_identity_jwt = true
-      }
-      "POST /api/auth/login/passkey/options" = { integration = "identity" }
-      "POST /api/auth/login/passkey/verify"  = { integration = "identity" }
-      "GET /api/auth/passkeys" = {
-        integration          = "identity"
-        require_identity_jwt = true
-      }
-      "PATCH /api/auth/passkeys/{credential_id}" = {
-        integration          = "identity"
-        require_identity_jwt = true
-      }
-      "DELETE /api/auth/passkeys/{credential_id}" = {
-        integration          = "identity"
-        require_identity_jwt = true
-      }
-      "POST /api/auth/step-up/passkey/options" = {
-        integration          = "identity"
-        require_identity_jwt = true
-      }
-    },
-
-    {
-      "GET /api/auth/oauth/providers"        = { integration = "identity" }
-      "GET /api/auth/oauth/{provider}/start" = { integration = "identity" }
-      "GET /api/auth/oauth/callback"         = { integration = "identity" }
-      "POST /api/auth/oauth/{provider}/link" = {
-        integration          = "identity"
-        require_identity_jwt = true
-      }
-      "GET /api/auth/oauth/links" = {
-        integration          = "identity"
-        require_identity_jwt = true
-      }
-      "DELETE /api/auth/oauth/{provider}/link" = {
-        integration          = "identity"
-        require_identity_jwt = true
-      }
-    },
-
-    local.ephemeral_users_enabled ? {
-      "POST /api/auth/e2e/users" = {
-        integration          = "identity"
-        require_identity_jwt = true
-      }
-      "DELETE /api/auth/e2e/users/{user_id}" = {
-        integration          = "identity"
-        require_identity_jwt = true
-      }
-    } : {},
-
-    local.domain_identity_jwt_route_keys,
-  )
+  routes = {
+    "GET /health"                = { integration = "public" }
+    "GET /"                      = { integration = "public" }
+    "GET /api/v1/public/figures" = { integration = "public" }
+  }
 
   throttling_burst_limit = 200
   throttling_rate_limit  = 100
@@ -263,13 +65,6 @@ module "api" {
 
   disable_execute_api_endpoint = local.staging_gate_enabled
   authorizer_id                = local.staging_gate_enabled ? one(module.staging_access_gate[*].http_api_authorizer_id) : null
-
-  identity_jwt = local.identity_jwt_native_enforced ? {
-    issuer   = local.identity_issuer
-    audience = local.identity_audience
-  } : null
-
-  identity_jwt_depends_on = local.identity_jwt_native_enforced ? [module.lambda_domain["identity"]] : []
 
   domain_name     = local.custom_domains_enabled ? local.api_host : null
   certificate_arn = module.api_certificate.certificate_arn
