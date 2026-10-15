@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 
 /** The two drawing themes: paper and ink, or blueprint. */
 export type Theme = 'light' | 'dark';
 
 const STORAGE_KEY = 'cp-theme';
+
+const listeners = new Set<() => void>();
 
 /** Reads the saved theme choice, or null when none is saved or storage is blocked. */
 function readSaved(): Theme | null {
@@ -40,35 +42,45 @@ function currentTheme(): Theme {
   return readSaved() ?? systemTheme();
 }
 
+/** The theme the prerender and the hydrating render draw with. */
+const serverTheme = (): Theme => 'light';
+
+/** Puts a theme on the document and tells every subscriber. */
+function applyTheme(theme: Theme): void {
+  document.documentElement.setAttribute('data-theme', theme);
+  listeners.forEach((listener) => listener());
+}
+
+/** Follows theme changes, including OS changes while no choice is saved. */
+function subscribe(onChange: () => void): () => void {
+  listeners.add(onChange);
+  const mq = window.matchMedia
+    ? window.matchMedia('(prefers-color-scheme: dark)')
+    : null;
+  const onSystem = (e: MediaQueryListEvent) => {
+    if (readSaved() === null) applyTheme(e.matches ? 'dark' : 'light');
+  };
+  mq?.addEventListener('change', onSystem);
+  return () => {
+    listeners.delete(onChange);
+    mq?.removeEventListener('change', onSystem);
+  };
+}
+
 /**
  * The active theme and a toggle that saves the choice.
  *
  * Follows the OS preference until the visitor picks a theme, then keeps that
- * choice in localStorage when storage is available.
+ * choice in localStorage when storage is available. Reads light while
+ * hydrating, so markup that depends on it matches the prerendered HTML.
  */
 export function useTheme(): { theme: Theme; toggleTheme: () => void } {
-  const [theme, setTheme] = useState<Theme>(currentTheme);
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-  }, [theme]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return;
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const handler = (e: MediaQueryListEvent) => {
-      if (readSaved() === null) setTheme(e.matches ? 'dark' : 'light');
-    };
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
-  }, []);
+  const theme = useSyncExternalStore(subscribe, currentTheme, serverTheme);
 
   const toggleTheme = useCallback(() => {
-    setTheme((prev) => {
-      const next: Theme = prev === 'dark' ? 'light' : 'dark';
-      save(next);
-      return next;
-    });
+    const next: Theme = currentTheme() === 'dark' ? 'light' : 'dark';
+    save(next);
+    applyTheme(next);
   }, []);
 
   return { theme, toggleTheme };

@@ -6,7 +6,7 @@ import { useDocumentMeta } from '../hooks';
 
 /** The catch-all page for a URL that matches no route. */
 export const NotFound: React.FC = () => {
-  useDocumentMeta({ title: 'Page not found' });
+  useDocumentMeta({ title: 'Page not found', noindex: true });
   return (
     <PublicShell>
       <main id="main" className="flex-1" data-testid="page-not-found">
