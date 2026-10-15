@@ -19,7 +19,7 @@ describe('Privacy', () => {
     expect(
       screen.getByRole('heading', { name: /privacy policy/i, level: 1 })
     ).toBeInTheDocument();
-    expect(screen.getByText(/October 10, 2026/)).toBeInTheDocument();
+    expect(screen.getByText(/October 14, 2026/)).toBeInTheDocument();
   });
 
   it('uses the contact address from the committed site content', () => {

@@ -89,7 +89,7 @@ def test_a_non_http_scope_passes_straight_through():
     assert seen == ["lifespan"]
 
 
-@pytest.mark.parametrize("domain", ["content", "resume", "identity", "public"])
+@pytest.mark.parametrize("domain", ["public"])
 def test_each_domain_application_reports_its_own_name(domain):
     """Root B stamps the domain name, which is the whole point of the header."""
     from app.common.composition.wiring import build_domain_app

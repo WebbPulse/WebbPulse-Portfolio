@@ -10,10 +10,6 @@ x-domain-service: &domain-service
     DYNAMODB_ENDPOINT_URL: http://dynamodb-local:8000
     DYNAMODB_TABLE_PREFIX: webbpulse-development
     LOG_LEVEL: INFO
-    SECRET_KEY: dev-secret
-    ADMIN_USERNAME: admin
-    ADMIN_PASSWORD: admin
-    ADMIN_EMAIL: admin@example.com
     AWS_ACCESS_KEY_ID: local
     AWS_SECRET_ACCESS_KEY: local
     AWS_DEFAULT_REGION: us-west-2
@@ -33,45 +29,6 @@ services:
     volumes:
       - portfolio_dynamodb:/home/dynamodblocal/data
     restart: unless-stopped
-
-  content:
-    <<: *domain-service
-    container_name: portfolio-content
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        DOMAIN: content
-      secrets:
-        - codeartifact_token
-    ports:
-      - "8010:8080"
-
-  resume:
-    <<: *domain-service
-    container_name: portfolio-resume
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        DOMAIN: resume
-      secrets:
-        - codeartifact_token
-    ports:
-      - "8011:8080"
-
-  identity:
-    <<: *domain-service
-    container_name: portfolio-identity
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        DOMAIN: identity
-      secrets:
-        - codeartifact_token
-    ports:
-      - "8012:8080"
 
   public:
     <<: *domain-service

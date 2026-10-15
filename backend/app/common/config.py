@@ -7,7 +7,6 @@ know which composition root built the settings it reads.
 from .composition.settings import (
     DEFAULT_CORS_ORIGINS,
     LOCALHOST_ORIGINS,
-    SECRET_FIELDS,
     Settings,
     get_settings,
     reset_settings_cache,
@@ -17,7 +16,6 @@ from .composition.settings import (
 __all__ = [
     "DEFAULT_CORS_ORIGINS",
     "LOCALHOST_ORIGINS",
-    "SECRET_FIELDS",
     "Settings",
     "get_settings",
     "reset_settings_cache",

@@ -1,19 +1,16 @@
 """The public domain's router: the unauthenticated, unprefixed surface.
 
-Mounts the service root, the health check and the SEO documents with no prefix
-and no tags, and the live system figures under `/api/v1/public`."""
+Mounts the service root and the health check with no prefix and no tags, and the
+live system figures under `/api/v1/public`."""
 
 from fastapi import APIRouter, Response
 
 from app.common.version import VERSION
 
 from .figures import FiguresResponse, current_figures
-from .seo import router as seo_router
 from .service import database_status
 
 router = APIRouter()
-
-router.include_router(seo_router)
 
 
 @router.get("/")

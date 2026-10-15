@@ -2,7 +2,6 @@ import type { SiteContent } from './types';
 
 /** The copy and links behind the hero, about, contact and footer. */
 export const siteContent: SiteContent = {
-  hero_title: "Hi, I'm Tyler Webb",
   hero_subtitle: 'Software Engineer',
   hero_description:
     'Software engineer building reliable, well-crafted software. Background in network engineering and full-stack web.',

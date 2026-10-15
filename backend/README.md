@@ -1,41 +1,41 @@
 # Portfolio API Backend
 
-Four FastAPI applications, one per domain (`content`, `resume`, `identity`,
-`public`), each running as its own container-image Lambda behind an API Gateway
-HTTP API, with DynamoDB as the datastore.
+One FastAPI application, the `public` domain, running as a container-image
+Lambda behind an API Gateway HTTP API, with one DynamoDB cache table. It serves
+the live system figures the site shows. Every other page is static content in
+`frontend/src/content/`, and the frontend build writes `sitemap.xml` and
+`robots.txt`.
 
 ## Layout
 
 ```
 app/
 ├── common/                 Non-domain logic. Imports no domain package
-│   ├── config.py           Settings (env vars, the APP_SECRETS_ARN JSON secret)
+│   ├── config.py           Settings, re-exported from composition
 │   ├── version.py          The version reported by OpenAPI, / and /health
 │   ├── composition/        Root A: the whole surface in one process
-│   │   ├── wiring.py       The four domains, and build_domain_app
-│   │   ├── app.py          Every domain's routers on one application
+│   │   ├── wiring.py       The domain registry and build_domain_app
+│   │   ├── app.py          Every router on one application
 │   │   └── settings.py     Portfolio's Settings on the shared package's base
-│   ├── core/               security, login_limiter, middleware, logging
-│   └── db/                 tables, client, serializer, repository, ordering, entities
-└── domains/                One package per domain, no imports between them
-    ├── content/            posts, categories, the site-content singleton
-    ├── resume/             projects, experience, skills, education, certifications
-    ├── identity/           POST /api/v1/admin/login, the legacy bearer login
-    │   ├── package_glue.py Builds the shared identity router from webbpulse.identity
-    │   └── identity_hooks.py  Product callbacks the identity package calls
-    └── public/             /, /health, /sitemap.xml, /robots.txt
-scripts/                    create_local_tables, build_image.sh, the migration scripts
+│   ├── core/               logging
+│   └── db/                 tables, client
+└── domains/
+    └── public/             /, /health, /api/v1/public/figures
+scripts/                    create_local_tables, build_image.sh
 tests/                      pytest suite backed by moto
 ```
 
-Each domain package also carries an `entrypoint.py`: root B, the module its
-deployed function runs. A change under `app/domains/<name>/` therefore belongs to
-that one Lambda, and a change under `app/common/` fans out to whoever imports it.
+`app/domains/public/entrypoint.py` is root B, the module the deployed function
+runs. The registry in `wiring.py` keeps the shared `webbpulse.composition`
+shape, so a second domain would be one more row and one more entrypoint.
 
-The `/api/auth` surface is not repo code. `app/domains/identity/package_glue.py` calls
-`build_identity_router` from `webbpulse.identity`, so sessions, email links, MFA,
-OAuth and passkeys all ship in the shared package. `app/domains/identity/` holds
-only the legacy bearer login.
+## Routes
+
+| Route | What it does |
+| --- | --- |
+| `GET /` | Service name and version |
+| `GET /health` | Liveness plus a read on the cache table, 503 when the read fails |
+| `GET /api/v1/public/figures` | Live public figures, cached in `public-cache` and refreshed about every 15 minutes |
 
 ## Configuration
 
@@ -43,55 +43,17 @@ only the legacy bearer login.
 | --- | --- | --- |
 | `DYNAMODB_TABLE_PREFIX` | Tables are named `{prefix}-{entity}` | `webbpulse-development` |
 | `DYNAMODB_ENDPOINT_URL` | Point at DynamoDB Local | unset |
-| `APP_SECRETS_ARN` | The Secrets Manager secret `webbpulse-<env>/app`, a JSON object keyed by `SECRET_KEY`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ADMIN_EMAIL` | unset |
-| `SECRET_KEY`, `ADMIN_*` | The same four as env vars. An env value wins per field | required |
 | `ENVIRONMENT` | Environment label | `development` |
-| `CORS_ORIGINS` | Comma-separated origins; localhost dev origins are always added | empty |
-| `SITE_URL` | Base URL used in sitemap and robots | `https://portfolio.webbpulse.com` |
+| `CORS_ORIGINS` | Comma-separated origins; localhost dev origins are always added | the portfolio origin and localhost |
 | `LOG_LEVEL` | Root log level | `INFO` |
-| `LOGIN_MAX_FAILURES` / `LOGIN_FAILURE_WINDOW_SECONDS` | Login limiter | `10` / `900` |
 
-Staging is never rate limited: the login limiter follows
-`settings.rate_limiting_enabled`, the shared `webbpulse` convention that is
-False on `staging` and True in every other environment.
-
-The identity function additionally receives `IDENTITY_*` variables from
-`module.identity` and `lambda_domains.tf`. See `docs/identity-cutover.md`.
-
-**Secrets resolve lazily and are checked once at startup.** Importing
-`app.common.config` reads nothing and constructing `Settings` makes no Secrets Manager
-call, so every entrypoint is importable with no credentials. The blob is fetched
-on first read and cached for the life of the execution environment. Each domain
-declares what it cannot serve without in `Domain.requires_secrets`, and
-`check_required_secrets` raises on `staging` and `production` and warns
-elsewhere. `identity` needs all four, `content` and `resume` need `SECRET_KEY`,
-and `public` needs none, which is why `public` needs no
-`secretsmanager:GetSecretValue` at all.
+The function reads no secret, so it has no `secretsmanager:GetSecretValue` grant.
 
 ## Data model
 
-One on-demand table per entity: `users`, `categories`, `posts`, `projects`,
-`experience`, `skills`, `education`, `certifications`, `site-content`, plus
-`meta` and `rate-limits`, plus the identity tables the platform module owns
-(`credentials`, `refresh-tokens`, `login-attempts`, `identity-tokens`,
-`totp-factors`, `recovery-codes`, `oauth-states`, `oauth-links`, `passkeys`,
-`webauthn-challenges`).
-
-- Entity tables have a numeric hash key `id`, from atomic counters, so ids stay
-  integers and kept their values through the Postgres migration.
-- `posts` has `published-index` (`published_flag` = `"1"`, range `published_at`)
-  for public listings and `category-index` (`category_id`, range `id`) for the
-  category delete guard. Draft posts carry no `published_flag`, so they never
-  appear in the index.
-- `meta` (hash key `pk`, TTL `ttl`) holds `COUNTER#<entity>` items and
-  `UNIQUE#<entity>#<field>#<value>` lookup items that enforce unique slugs,
-  usernames and emails inside a transaction.
-- `rate-limits` (hash key `pk`) holds the login limiter's `LOGIN_FAIL#<ip>`
-  items.
-- Timestamps are fixed-width UTC ISO-8601 strings, dates are `YYYY-MM-DD`, and
-  absent values are omitted rather than stored as NULL.
-
-`app/common/db/tables.py` is the single source of truth for table and index names.
+One on-demand table, `public-cache`, keyed by a string `pk` with TTL on `ttl`.
+It holds the computed `public-figures` item and its refresh lease.
+`app/common/db/tables.py` is the single source of truth for its shape.
 
 ## Local development
 
@@ -110,34 +72,30 @@ uv sync
 docker compose up -d
 export DYNAMODB_ENDPOINT_URL=http://localhost:8001
 export DYNAMODB_TABLE_PREFIX=webbpulse-development
-export SECRET_KEY=dev-secret ADMIN_USERNAME=admin ADMIN_PASSWORD=admin ADMIN_EMAIL=admin@example.com
 uv run python scripts/create_local_tables.py
 ```
 
-**All 45 routes in one process.** `app.common.composition.app` is root A, built from
-the same `wiring.DOMAINS` list the four entrypoints read. Nothing deploys it.
+**Root A**, `app.common.composition.app`, is built from the same `wiring.DOMAINS`
+list as the entrypoint. Nothing deploys it.
 
 ```bash
 uv run uvicorn app.common.composition.app:app --reload   # http://localhost:8000
 ```
 
-**One domain, the way Lambda runs it.** `app.domains.<domain>.entrypoint` is root B and
-is exactly what the image runs. `run_uvicorn` binds `AWS_LWA_PORT`, then `PORT`,
-then 8080.
+**Root B**, the way Lambda runs it. `run_uvicorn` binds `AWS_LWA_PORT`, then
+`PORT`, then 8080.
 
 ```bash
-PORT=8010 uv run python -m app.domains.content.entrypoint
 PORT=8013 uv run python -m app.domains.public.entrypoint
 ```
 
-This is the faithful one: a domain here answers only its own routes, so a
-request for another domain's path 404s exactly as it would if API Gateway routed
-it to the wrong function.
-
-The admin user is created or reconciled on the first request handled by each
-process, so there is no separate seed step. Docs are at `/docs` and `/redoc`.
+Docs are at `/docs` and `/redoc`.
 
 ## Tests and lint
+
+CI runs these through `.github/workflows/ci.yml`, which delegates to the org
+reusable `python-ci.yml@v3` and additionally runs `pyright`, `bandit -r app -ll`
+and `pip-audit` over `uv export`.
 
 ```bash
 uv run python -m pytest
@@ -146,56 +104,38 @@ uv run ruff format --check app tests
 ```
 
 Tests run against moto; no AWS credentials or local DynamoDB are needed. See
-`tests/README.md`. `pytest.ini` defines the markers `unit`, `api`,
-`integration`, `auth` and `admin`, so `-m unit` runs one category.
+`tests/README.md`. `pytest.ini` defines the markers `unit`, `api` and
+`integration`.
 
-CI runs the same commands through `.github/workflows/ci.yml`, which delegates to
-the org reusable `python-ci.yml@v3` and additionally runs `pyright`, `bandit -r
-app -ll` and `pip-audit` over `uv export`. Test domains are the immediate
-subdirectories of `tests/domains`, each matching an `app/domains/<name>/entrypoint.py`
-module; CI runs one job per domain and a shared job over the rest of `tests`.
-
-`tests/entrypoints/test_gateway_routes.py` is load-bearing: it keeps the
-gateway's route keys and the served paths in agreement in both directions, and
-asserts the set of routes requiring an administrator equals the flagged keys in
-`apigateway.tf`.
+`tests/entrypoints/test_gateway_routes.py` keeps the gateway's route keys in
+`apigateway.tf` and the served paths in agreement in both directions.
 
 ## Logging
 
-One JSON object per line on stdout, from `webbpulse.logging`. Each entrypoint's
+One JSON object per line on stdout, from `webbpulse.logging`. The entrypoint's
 `main()` calls `configure_logging(...)` before building the application, and
 `app/common/core/logging.py` exports the `logger` every module imports.
 
-`request_id` and `user_id` come from `webbpulse.log_context` ContextVars that
-the formatter merges into every record. `request_id` is bound by
-`RequestIdMiddleware`: an inbound `X-Request-ID` is honoured and bounded to 128
-characters, a UUID4 minted otherwise, and the value echoed on the response.
-`user_id` is bound by `get_current_user` once it resolves a principal, so an
-anonymous request has no `user_id` key rather than a null one. Both also go onto
-the active OpenTelemetry span as `webbpulse.request_id` and `webbpulse.user_id`.
+`request_id` comes from a `webbpulse.log_context` ContextVar that the formatter
+merges into every record. It is bound by `RequestIdMiddleware`: an inbound
+`X-Request-ID` is honoured and bounded to 128 characters, a UUID4 minted
+otherwise, and the value echoed on the response. It also goes onto the active
+OpenTelemetry span as `webbpulse.request_id`.
 
-Extra fields go through `extra={...}`; the keyword form some call sites used
-under Powertools raises.
+Extra fields go through `extra={...}`.
 
 ```python
-logger.info("Seeded site content", extra={"id": SITE_CONTENT_ID})
+logger.info("Refreshed figures", extra={"count": 3})
 ```
 
-`aws-lambda-powertools` is gone. Its correlation is a handler decorator and
-there is no handler under the Web Adapter, so it never ran. No custom metrics
-are emitted yet; `webbpulse.metrics` is what to use when that starts, and it
-needs an explicit `namespace`.
+## Container image
 
-## Container images
-
-One `Dockerfile` builds all four images. `DOMAIN` selects the entrypoint and the
-adapter readiness protocol; the `CMD` is
-`python -m app.domains.${DOMAIN}.entrypoint`. There is no Lambda handler and no Mangum:
-the Lambda Web Adapter starts before the application and turns each invoke into
-an HTTP request against `127.0.0.1:8080`, so the same image runs on Lambda and
-under `docker run`.
-
-### Building one domain
+The `Dockerfile` builds the `public` image. `DOMAIN` selects the entrypoint and
+the adapter readiness protocol; the `CMD` is
+`python -m app.domains.${DOMAIN}.entrypoint`. There is no Lambda handler and no
+Mangum: the Lambda Web Adapter starts before the application and turns each
+invoke into an HTTP request against `127.0.0.1:8080`, so the same image runs on
+Lambda and under `docker run`.
 
 The image installs `webbpulse` from CodeArtifact, so the build needs a token.
 
@@ -204,76 +144,45 @@ export CODEARTIFACT_AUTH_TOKEN="$(aws codeartifact get-authorization-token \
   --domain webbpulse --domain-owner 432410731887 \
   --region us-west-2 --query authorizationToken --output text)"
 
-scripts/build_image.sh content
 scripts/build_image.sh public sha-1a2b3c4
 ```
 
 The token reaches pip as a BuildKit secret mount, never as a build arg and never
 as an `ENV`: both persist in `docker history` for anyone who can pull the image.
-The script sets the platform to
-`linux/arm64`, and otherwise passes through to `docker buildx build`. `PUSH=1`
-pushes instead of loading locally. Tokens last 12 hours; a 401 from the index
-usually just needs a fresh one.
+The script sets the platform to `linux/arm64`, and otherwise passes through to
+`docker buildx build`. `PUSH=1` pushes instead of loading locally. Tokens last 12
+hours; a 401 from the index usually just needs a fresh one.
 
-### The readiness check, and why `public` is different
+### The readiness check
 
-`AWS_LWA_READINESS_CHECK_PATH` is `/health` on all four, but the protocol is
-not. The adapter polls it on every cold start, so it must not do I/O.
+The adapter polls its readiness check on every cold start, so it must not do
+I/O. `public` serves its own `GET /health`, which reads the cache table to report
+`database`, and `build_domain_app` sets `include_health=False` for it. So
+`public` builds with `AWS_LWA_READINESS_CHECK_PROTOCOL=tcp`, and the adapter
+waits for the port to accept a connection instead. The Dockerfile derives this
+from `DOMAIN` through the final `FROM readiness-${DOMAIN}` stage, so a `DOMAIN`
+with no stage fails the build.
 
-Three domains get `create_app`'s liveness-only `GET /health`, which returns 200
-without touching DynamoDB, and use the HTTP check. `public` is the exception:
-its own `GET /health` reads the site-content singleton to report `database`, the
-deploy smoke test asserts on that field, and `build_domain_app` sets
-`include_health=False` for it. Pointing the adapter at that path would put a
-DynamoDB read in front of every `public` cold start. So `public` builds with
-`AWS_LWA_READINESS_CHECK_PROTOCOL=tcp`, and the adapter waits for the port to
-accept a connection instead.
-
-The Dockerfile derives this from `DOMAIN` rather than taking it as a build arg:
-the last stage is `FROM readiness-${DOMAIN}`, and each `readiness-<domain>`
-stage sets the protocol. No caller can get the pairing wrong, which matters
-because getting it wrong is a delayed failure: the image starts fine and only
-fails on a cold start that races an unavailable table. A `DOMAIN` that is not
-one of the four names no stage, so the build fails.
-
-### Running all four locally
+### Running the image locally
 
 ```bash
-export CODEARTIFACT_AUTH_TOKEN="$(aws codeartifact get-authorization-token \
-  --domain webbpulse --domain-owner 432410731887 \
-  --region us-west-2 --query authorizationToken --output text)"
-
 docker compose --profile domains up --build
+curl localhost:8013/health
 ```
 
-| Service | Host port | Routes |
-| --- | --- | --- |
-| `content` | 8010 | posts, categories, site-content, under `/api/v1` |
-| `resume` | 8011 | projects, experience, skills, education, certifications |
-| `identity` | 8012 | `POST /api/v1/admin/login` and the `/api/auth` surface |
-| `public` | 8013 | `/`, `/health`, `/sitemap.xml`, `/robots.txt` |
-| `dynamodb-local` | 8001 | the datastore all four share |
-
-The four are behind the `domains` profile, so a bare `docker compose up` still
-starts only DynamoDB Local. Create the tables once before the first run.
-
-```bash
-curl localhost:8013/health          # public, the database check
-curl localhost:8010/api/v1/posts/   # content
-curl localhost:8010/                # 404: that route belongs to public
-```
+The service is behind the `domains` profile, so a bare `docker compose up`
+starts only DynamoDB Local on 8001. Create the table once before the first run.
 
 ## Deploys
 
 A push to `staging` or `main` touching `backend/**` runs `deploy-backend.yml`,
 a thin caller of the org `lambda-domains-deploy.yml@v3`. That workflow picks the
-GitHub Environment from the branch, builds the affected domains' images through
-`container-image.yml@v3`, assembles a digest-pinned function image map, points
-each existing function at its digest through `lambda-image-deploy.yml@v3`, and
-invokes each with a synthesised HTTP API v2 event asserting `GET /health` is 200.
+GitHub Environment from the branch, builds the image through
+`container-image.yml@v3`, points the function at its digest through `lambda-image-deploy.yml@v3`, and
+invokes it with a synthesised HTTP API v2 event asserting `GET /health` is 200.
 A rerun whose `sha-<commit>` tag already exists reuses that image rather than
-failing on the IMMUTABLE repository. The e2e suite, which the deploy triggers, verifies that
-each domain's paths are served by that domain's function.
+failing on the IMMUTABLE repository. The e2e suite, which the deploy triggers, then runs read only against the live
+gateway.
 
 The only gate is `STAGING_DEPLOY_ENABLED`, which turns staging deploys off and
 never touches production.
@@ -284,17 +193,11 @@ floats `webbpulse`, so that layer rebuilds when a new `webbpulse` is published a
 otherwise comes from the buildx cache. A change to `pyproject.toml` or `uv.lock`
 still rebuilds it immediately, because those are copied in above it. Dispatching
 the workflow with `fresh-dependencies=true` substitutes the run id, which forces
-the layer and every domain to rebuild.
+the layer to rebuild.
 
 ## Scripts
 
 | Script | What it does |
 | --- | --- |
 | `create_local_tables.py` | Create every table against DynamoDB Local |
-| `build_image.sh` | Build one domain's image |
-| `migrate_credentials_to_identity.py` | Copy bcrypt hashes from `users` into the identity `credentials` table |
-| `clear_legacy_credentials.py` | Remove the legacy `hashed_password` column once the copy is confirmed. Dry run unless `--apply` |
-| `migrate_postgres_to_dynamo.py` | The one-time Postgres copy. Historical |
-
-`clear_legacy_credentials.py` is identity runbook Step 11 and is still pending in
-production. See `docs/identity-cutover.md` before running it.
+| `build_image.sh` | Build the domain image |

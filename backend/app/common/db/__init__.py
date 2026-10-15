@@ -1,1 +1,1 @@
-"""DynamoDB access: table definitions, serialization and the repository base."""
+"""DynamoDB access: table definitions and the cached clients."""

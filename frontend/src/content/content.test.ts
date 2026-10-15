@@ -10,7 +10,7 @@ import {
 
 describe('committed content', () => {
   it('carries every public section', () => {
-    expect(getSiteContent().hero_title).toBeTruthy();
+    expect(getSiteContent().hero_subtitle).toBeTruthy();
     expect(getProjects().length).toBeGreaterThan(0);
     expect(getExperience().length).toBeGreaterThan(0);
     expect(getSkills().length).toBeGreaterThan(0);

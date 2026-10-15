@@ -1,1 +1,1 @@
-"""The four service domains: content, resume, identity and public."""
+"""The service domains. Public is the only one."""

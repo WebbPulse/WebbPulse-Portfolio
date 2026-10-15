@@ -11,10 +11,10 @@ Terraform. **License:** [PolyForm Strict License 1.0.0](LICENSE).
 ## Structure
 
 ```
-backend/    Four per-domain FastAPI apps, DynamoDB repositories
+backend/    The public FastAPI app serving the live figures
 frontend/   React + Vite + Tailwind CSS
 terraform/  AWS infrastructure
-docs/       The identity runbook, the migration retrospective, the resume PDF
+docs/       The migration retrospective, the resume PDF
 ```
 
 ## Development
@@ -30,8 +30,8 @@ docker compose up -d                        # DynamoDB Local on :8001
 export DYNAMODB_ENDPOINT_URL=http://localhost:8001
 python scripts/create_local_tables.py
 
-uvicorn app.common.composition.app:app --reload    # all 45 routes on :8000, docs at /docs
-PORT=8010 python -m app.domains.content.entrypoint # one domain, the way its image runs it
+uvicorn app.common.composition.app:app --reload    # every route on :8000, docs at /docs
+PORT=8013 python -m app.domains.public.entrypoint  # the way the image runs it
 
 pytest tests/                               # moto-backed, no AWS or database
 ruff check app tests
@@ -39,7 +39,7 @@ ruff format --check app tests
 ```
 
 See `backend/README.md` for configuration, the data model and the container
-images.
+image.
 
 ### Frontend
 
@@ -61,19 +61,15 @@ environment, and `e2e (local)` on a pull request, against a stack the runner
 builds from the commit under test. The local check is advisory, so it reports a
 result without gating the merge.
 
-The local stack signs its own tokens. `IDENTITY_SIGNER=local` derives an RSA key
-from a seed instead of calling KMS, `IDENTITY_ISSUER` carries the `/api/auth`
-path the identity routes mount under, and `LocalAuthorizerMiddleware` verifies
-the bearer token in process and attaches the claims the API Gateway authorizer
-would have attached, which nothing else on a gateway-free stack would supply.
-The middleware refuses to run in any environment but `local`.
+Both runs are anonymous and read only. Nothing on the site signs in, so there
+are no e2e login users.
 
 To run it locally, start DynamoDB Local and the backend as above, build and
 serve the frontend, then point the suite at both:
 
 ```bash
 cd backend
-export E2E_ENVIRONMENT=local E2E_READ_ONLY=false E2E_AWS_REGION=us-west-2
+export E2E_ENVIRONMENT=local E2E_READ_ONLY=true E2E_AWS_REGION=us-west-2
 export E2E_API_BASE_URL=http://127.0.0.1:8000 E2E_WEB_BASE_URL=http://127.0.0.1:5173
 export E2E_RUN_ID=local E2E_BROWSER=chromium E2E_HEADLESS=true
 uv run python -m pytest e2e -o addopts=
@@ -92,12 +88,12 @@ against.
 
 ## Architecture
 
-Four FastAPI apps, one per domain (`content`, `resume`, `identity`, `public`),
-each its own Lambda `webbpulse-<env>-<domain>` built as a container image from
-one `backend/Dockerfile`. There is no Lambda handler and no Mangum: the Lambda
-Web Adapter runs ahead of the process and turns each invoke into an HTTP request
-against `127.0.0.1:8080`, so the same image runs on Lambda and under
-`docker run`.
+One FastAPI app, the `public` domain, runs as the Lambda
+`webbpulse-<env>-public`, built as a container image from `backend/Dockerfile`.
+It serves `/`, `/health` and the live figures at `/api/v1/public/figures`.
+There is no Lambda handler and no Mangum: the Lambda Web Adapter runs ahead of
+the process and turns each invoke into an HTTP request against
+`127.0.0.1:8080`, so the same image runs on Lambda and under `docker run`.
 
 API Gateway routes with explicit route keys and no `$default`, so an unmatched
 path is a gateway 404 rather than a fall-through. CORS is owned by the gateway,
@@ -105,9 +101,8 @@ not the functions: with only explicit method keys, an `OPTIONS` preflight
 matches no route and gets a 404 with no CORS headers, so `module "api"` sets
 `cors_configuration`.
 
-DynamoDB holds one table per entity, `webbpulse-<env>-<entity>`. Integer ids
-come from counter items in `meta`, and uniqueness is enforced with lookup items
-inside `TransactWriteItems`.
+DynamoDB holds one table, `webbpulse-<env>-public-cache`, where the figures are
+cached with a TTL.
 
 ## Infrastructure
 
@@ -144,8 +139,7 @@ Parts of the stack come from `terraform.webbpulse.com/WebbPulse/platform-modules
 | `staging-dns` | The `staging.portfolio.webbpulse.com` child zone and its NS delegation; a no-op in production (`route53.tf`) |
 | `http-api` | The HTTP API, `$default` stage, integrations, routes, access log group, custom domain (`apigateway.tf`) |
 | `staging-access-gate` | Cognito, the login Lambda, signed-cookie key group, viewer-request function, origin-verify secret, HTTP API authorizer (`staging_access_gate.tf`) |
-| `identity` | The KMS signing key and alias, the identity tables, and the two IAM grants the identity function needs (`identity.tf`) |
-| `ecr-repository` | The four domain image repositories (`ecr.tf`) |
+| `ecr-repository` | The public image repository (`ecr.tf`) |
 
 The ACM certificates (`acm.tf`) and the site and `api` alias records
 (`route53.tf`) stay hand-written, because a module has one `aws` provider and
@@ -157,27 +151,6 @@ resources stay hand-written. `spa-frontend` applies its `cache_mode` to the
 those. `github-actions-role` validates `policy_statements` with
 `coalesce(s.sid, "")`, which errors on any statement without a `sid`, and none
 here carry one.
-
-### Identity
-
-`terraform/identity.tf` calls the `identity` module, which owns the signing key,
-its `alias/webbpulse-<env>-identity-signing` alias, the identity tables and the
-`identity-signing` and `identity-tables` policies. The issuer, audience and
-registrable domain are derived in `identity.tf` and passed in, because all three
-are close to irreversible.
-
-The module's `identity_environment` output is merged **last** into the identity
-function's environment in `lambda_domains.tf`, so `IDENTITY_ISSUER`,
-`IDENTITY_AUDIENCE`, `IDENTITY_SIGNING_KEY_ARNS`, `IDENTITY_COOKIE_DOMAIN` and
-`IDENTITY_RP_ID` come from the same place the resources do.
-
-`http_api_id` is deliberately not passed, so the module creates no JWT
-authorizer: a route takes exactly one authorizer and the staging access gate
-already occupies that slot.
-
-Rotating a signing key is two applies against `signing_key_count` and
-`active_signing_key`, never a mutation of one key. `kid` is derived from the key
-material, so rotating material behind one key id strands every issued token.
 
 ### Transaction Search and the `aws/spans` log group
 
@@ -233,7 +206,5 @@ can move to its own repo with moved blocks.
 
 ## Documentation
 
-- `docs/identity-cutover.md`: current identity state, the two pending steps, and
-  the reference for MFA, OAuth and passkeys.
 - `docs/migration/RETROSPECTIVE.md`: what the per-domain and identity migrations
   changed, when they landed, and what is still open.

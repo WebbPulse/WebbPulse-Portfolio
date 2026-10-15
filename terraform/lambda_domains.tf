@@ -1,28 +1,9 @@
 locals {
   lambda_domains = {
-    content = {
-      secrets     = true
-      memory      = 512
-      tables      = ["posts", "categories", "site-content", "meta"]
-      read_tables = ["users"]
-    }
-    resume = {
-      secrets     = true
-      memory      = 512
-      tables      = ["projects", "experience", "skills", "education", "certifications", "meta"]
-      read_tables = ["site-content", "users"]
-    }
-    identity = {
-      secrets     = true
-      memory      = 512
-      tables      = ["users", "rate-limits", "meta"]
-      read_tables = []
-    }
     public = {
-      secrets     = false
       memory      = 256
       tables      = ["public-cache"]
-      read_tables = ["posts", "site-content"]
+      read_tables = []
     }
   }
 
@@ -69,7 +50,7 @@ locals {
 }
 
 variable "bootstrap_image_tag" {
-  description = "Image tag seeding every per-domain function at create time. It must already exist in all four ECR repositories; image_uri is ignored thereafter, so deploys own it."
+  description = "Image tag seeding every per-domain function at create time. It must already exist in every per-domain ECR repository; image_uri is ignored thereafter, so deploys own it."
   type        = string
 
   validation {
@@ -98,46 +79,16 @@ module "lambda_domain" {
     image_uri = "${module.registry.repository_urls[each.key]}:${var.bootstrap_image_tag}"
   }
 
-  environment_variables = merge(
-    {
-      DYNAMODB_TABLE_PREFIX = local.prefix
-      ENVIRONMENT           = var.environment
-      SERVICE_NAME          = "webbpulse-portfolio-${each.key}"
-      CORS_ORIGINS          = local.cors_origins
-      SITE_URL              = local.frontend_url
-      LOG_LEVEL             = "INFO"
+  environment_variables = {
+    DYNAMODB_TABLE_PREFIX = local.prefix
+    ENVIRONMENT           = var.environment
+    SERVICE_NAME          = "webbpulse-portfolio-${each.key}"
+    CORS_ORIGINS          = local.cors_origins
+    LOG_LEVEL             = "INFO"
 
-      WEBBPULSE_OTEL_SAMPLE_RATIO        = var.environment == "production" ? "0.1" : "1.0"
-      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = "https://xray.${var.aws_region}.amazonaws.com/v1/traces"
-    },
-    each.value.secrets ? { APP_SECRETS_ARN = module.app_secrets.arns["app"] } : {},
-
-    each.key == "identity" ? merge({
-      IDENTITY_ENVIRONMENT       = var.environment
-      IDENTITY_RP_NAME           = var.identity_rp_name
-      IDENTITY_PRODUCT_NAME      = "WebbPulse Portfolio"
-      IDENTITY_SUPPORT_EMAIL     = local.support_email
-      IDENTITY_FRONTEND_BASE_URL = "https://${local.domain}"
-
-      IDENTITY_EMAIL_FROM            = local.identity_email_from
-      IDENTITY_SES_CONFIGURATION_SET = local.identity_ses_configuration_set
-      IDENTITY_REGISTRATION_ENABLED  = "false"
-
-      IDENTITY_TOTP_CIPHER = "secret"
-
-      IDENTITY_OAUTH_REDIRECT_URIS = local.identity_oauth_redirect_uris
-      IDENTITY_GOOGLE_CLIENT_ID    = var.oauth_google_client_id
-      IDENTITY_GITHUB_CLIENT_ID    = var.oauth_github_client_id
-
-      IDENTITY_PASSKEYS_ENABLED      = tostring(local.passkeys_enabled)
-      IDENTITY_PASSKEYS_PASSWORDLESS = tostring(local.passkeys_passwordless)
-      IDENTITY_WEBAUTHN_ORIGINS      = local.identity_webauthn_origins
-
-      IDENTITY_EPHEMERAL_USERS_ENABLED = tostring(local.ephemeral_users_enabled)
-      },
-
-    module.identity.identity_environment) : {},
-  )
+    WEBBPULSE_OTEL_SAMPLE_RATIO        = var.environment == "production" ? "0.1" : "1.0"
+    OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = "https://xray.${var.aws_region}.amazonaws.com/v1/traces"
+  }
 
   log_retention_days           = 7
   log_format                   = "JSON"
@@ -150,7 +101,6 @@ module "lambda_domain" {
 
   enable_log_write = true
   enable_xray      = true
-  app_secret_arns  = each.value.secrets ? [module.app_secrets.arns["app"]] : []
 }
 
 resource "aws_iam_role_policy" "lambda_domain" {

@@ -1,1 +1,1 @@
-"""Cross-cutting concerns: security, middleware, logging and rate limiting."""
+"""Cross-cutting concerns: logging."""

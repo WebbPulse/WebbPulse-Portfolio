@@ -93,27 +93,3 @@ variable "manage_spans_log_group" {
   type        = bool
   default     = false
 }
-
-variable "identity_jwt_mode" {
-  description = "Which mechanism enforces identity access tokens at the gateway: the staging gate's Lambda authorizer (gate), API Gateway's own JWT authorizer (native), or nothing (off)."
-
-  type    = string
-  default = "off"
-
-  validation {
-    condition     = contains(["native", "gate", "off"], var.identity_jwt_mode)
-    error_message = "identity_jwt_mode must be one of native, gate or off."
-  }
-
-  validation {
-    condition     = var.identity_jwt_mode != "native" || var.environment != "staging"
-    error_message = "identity_jwt_mode must not be native in staging. Every route there carries the staging access gate's REQUEST authorizer and a route takes exactly one authorizer, so a native JWT authorizer has no slot to occupy. Use gate, which moves the same check into the gate's own Lambda."
-  }
-}
-
-variable "domain_jwt_enforced" {
-  description = "Whether the /api/v1 admin route keys additionally require an identity access token at the gateway. The keys exist either way; this only marks them as enforced."
-
-  type    = bool
-  default = false
-}
