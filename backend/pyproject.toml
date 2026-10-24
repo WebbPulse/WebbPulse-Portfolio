@@ -15,7 +15,7 @@ dependencies = [
 
 [dependency-groups]
 e2e = [
-  "webbpulse[e2e,fastapi,dynamodb]>=0.39.0,<1",
+  "webbpulse[e2e,fastapi,dynamodb]>=0.94.0,<1",
   "fastapi>=0.156.5",
   "httpx>=0.28.1",
   "pydantic>=2.14.1",
