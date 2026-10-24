@@ -2819,7 +2819,7 @@ e2e = [
     { name = "pydantic", specifier = ">=2.14.1" },
     { name = "pydantic-settings", specifier = ">=2.16.1" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
-    { name = "webbpulse", extras = ["e2e", "fastapi", "dynamodb"], specifier = ">=0.39.0,<1", index = "https://webbpulse-432410731887.d.codeartifact.us-west-2.amazonaws.com/pypi/python/simple/" },
+    { name = "webbpulse", extras = ["e2e", "fastapi", "dynamodb"], specifier = ">=0.94.0,<1", index = "https://webbpulse-432410731887.d.codeartifact.us-west-2.amazonaws.com/pypi/python/simple/" },
 ]
 
 [[package]]
