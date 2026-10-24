@@ -93,6 +93,10 @@ module "company_site" {
 
   viewer_request_function_arn = one(aws_cloudfront_function.company_site[*].arn)
 
+  security_headers = {
+    content_security_policy = { mode = "enforce" }
+  }
+
   access_gate = local.company_site_gate_enabled ? {
     key_group_id                                           = module.company_site_gate[0].key_group_id
     viewer_request_function_arn                            = module.company_site_gate[0].viewer_request_function_arn
