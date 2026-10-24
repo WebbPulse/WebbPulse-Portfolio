@@ -187,22 +187,10 @@ them, so its plan is a no-op.
 
 ### Company site
 
-The static company site in `site/` is a second `spa-frontend` in the same
-accounts and workspaces, defined entirely in `terraform/company_site.tf` so it
-can move to its own repo with moved blocks.
-
-- Production serves it at `webbpulse.com`, with `www.webbpulse.com` on the same
-  distribution. Staging serves `staging.webbpulse.com` and
-  `www.staging.webbpulse.com` from its own child zone, behind a second
-  staging access gate whose cookies are scoped to `staging.webbpulse.com`.
-- The viewer-request handler is
-  `terraform/company_site_functions/app_handler.js.tftpl`. It sends `www` to the
-  apex, sends the old portfolio paths (`/blog`, `/privacy` and anything
-  under them) with a 301 to the
-  portfolio host, serves `/` and files with an extension from the bucket, and
-  answers any other path with a 404 page.
-- `deploy-site.yml` builds `site/` and syncs it to the bucket named by the
-  `SITE_S3_BUCKET` environment variable (`company_site_bucket` output).
+The webbpulse.com company site moved to
+[WebbPulse-Site](https://github.com/WebbPulse/WebbPulse-Site). Its resources were
+forgotten here with `removed` blocks in `terraform/company_site_removed.tf`, not
+destroyed, and are now managed by that repo's workspaces.
 
 ## Documentation
 

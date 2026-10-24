@@ -155,8 +155,8 @@ module "github_actions_role" {
   ], local.github_actions_codeartifact_statements, local.github_actions_gate_statements, local.github_actions_e2e_statements)
 
   spa_deploy = {
-    bucket_arns       = [module.frontend.bucket_arn, module.company_site.bucket_arn]
-    distribution_arns = [module.frontend.distribution_arn, module.company_site.distribution_arn]
+    bucket_arns       = [module.frontend.bucket_arn]
+    distribution_arns = [module.frontend.distribution_arn]
   }
 }
 
