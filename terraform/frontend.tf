@@ -20,9 +20,8 @@ module "frontend" {
 
   security_headers = {
     content_security_policy = {
+      mode        = "enforce"
       connect_src = ["https://${local.api_host}"]
-      style_src   = ["https://fonts.googleapis.com"]
-      font_src    = ["https://fonts.gstatic.com"]
     }
   }
 
