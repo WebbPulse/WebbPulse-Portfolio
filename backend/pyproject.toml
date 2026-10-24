@@ -5,21 +5,21 @@ requires-python = ">=3.13"
 license = "LicenseRef-PolyForm-Strict-1.0.0"
 dependencies = [
   "webbpulse[fastapi,dynamodb,otel,aws-otel]>=0.48.0,<1",
-  "fastapi>=0.141.1",
-  "boto3>=1.43.90",
+  "fastapi>=0.156.5",
+  "boto3>=1.43.116",
   "httpx>=0.28.1",
-  "pydantic>=2.13.5",
-  "pydantic-settings>=2.15.0",
+  "pydantic>=2.14.1",
+  "pydantic-settings>=2.16.1",
   "uvicorn[standard]>=0.52.4",
 ]
 
 [dependency-groups]
 e2e = [
   "webbpulse[e2e,fastapi,dynamodb]>=0.39.0,<1",
-  "fastapi>=0.141.1",
+  "fastapi>=0.156.5",
   "httpx>=0.28.1",
-  "pydantic>=2.13.5",
-  "pydantic-settings>=2.15.0",
+  "pydantic>=2.14.1",
+  "pydantic-settings>=2.16.1",
   "pytest-xdist>=3.8.0",
 ]
 dev = [
@@ -29,7 +29,7 @@ dev = [
   "pytest-cov>=7.1.0",
   "pytest-xdist>=3.8.0",
   "httpx>=0.28.1",
-  "ruff>=0.16.6",
+  "ruff>=0.17.1",
   "pyright>=1.1.408",
   "bandit>=1.9.2",
   "pip-audit>=2.9.0",
