@@ -2724,15 +2724,15 @@ wheels = [
 
 [[package]]
 name = "webbpulse"
-version = "0.108.0"
+version = "0.105.0"
 source = { registry = "https://webbpulse-432410731887.d.codeartifact.us-west-2.amazonaws.com/pypi/python/simple/" }
 dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
 ]
-sdist = { url = "https://webbpulse-432410731887.d.codeartifact.us-west-2.amazonaws.com/pypi/python/simple/webbpulse/0.108.0/webbpulse-0.108.0.tar.gz", hash = "sha512:888f9ef9badb7d03a5e5d266fa9b88c8cec9a03d3c8bad7a20900865c0b03a6a84661b41f81f0c7785f99242aa8350524cababcf30e23fcbbb2dd78b61068057", size = 631300, upload-time = "2026-11-01T06:57:24.085Z" }
+sdist = { url = "https://webbpulse-432410731887.d.codeartifact.us-west-2.amazonaws.com/pypi/python/simple/webbpulse/0.105.0/webbpulse-0.105.0.tar.gz", hash = "sha512:15135cf77b5e61c53db9a1f440c047ec5fb0ef6af69d7eb876855d7d5133876662c7371793692e4ae2983519239367d23e7601e97dfe47917067780579260423", size = 629271, upload-time = "2026-10-25T21:26:56.6Z" }
 wheels = [
-    { url = "https://webbpulse-432410731887.d.codeartifact.us-west-2.amazonaws.com/pypi/python/simple/webbpulse/0.108.0/webbpulse-0.108.0-py3-none-any.whl", hash = "sha512:b539172a738a0c34d4a8347e9aa074ebe0feca692917896329a68d68efb147d0701dd7afd1b598b38524594f0199ffa01a75ec5f9ce279cca0b1f26f469ef3ed", size = 690805, upload-time = "2026-11-01T06:57:23.614Z" },
+    { url = "https://webbpulse-432410731887.d.codeartifact.us-west-2.amazonaws.com/pypi/python/simple/webbpulse/0.105.0/webbpulse-0.105.0-py3-none-any.whl", hash = "sha512:71c67508fa2b08b720d23e345c525872115d3372bd3e12039224e8ab6be0c6e7bc79855405a82eaef73f82514ebca73265ad30c6272021d7e1e51ec3c208e06c", size = 688704, upload-time = "2026-10-25T21:26:56.173Z" },
 ]
 
 [package.optional-dependencies]
@@ -2835,7 +2835,7 @@ e2e = [
     { name = "pydantic", specifier = ">=2.14.1" },
     { name = "pydantic-settings", specifier = ">=2.16.1" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
-    { name = "webbpulse", extras = ["e2e", "fastapi", "dynamodb"], specifier = ">=0.94.0,<1", index = "https://webbpulse-432410731887.d.codeartifact.us-west-2.amazonaws.com/pypi/python/simple/" },
+    { name = "webbpulse", extras = ["e2e", "fastapi", "dynamodb"], specifier = ">=0.105.0,<1", index = "https://webbpulse-432410731887.d.codeartifact.us-west-2.amazonaws.com/pypi/python/simple/" },
 ]
 
 [[package]]
